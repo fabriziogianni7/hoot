@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800px" height="1200px" viewBox="0 0 800 1200" version="1.1" xmlns="http://www.w3.org/2000/svg">
+    <title>Network Background</title>
+    <g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g stroke="#FFFFFF" stroke-width="0.5" opacity="0.3">
+            <!-- Horizontal lines -->
+            <line x1="0" y1="100" x2="800" y2="200"></line>
+            <line x1="0" y1="300" x2="800" y2="250"></line>
+            <line x1="0" y1="500" x2="800" y2="450"></line>
+            <line x1="0" y1="700" x2="800" y2="750"></line>
+            <line x1="0" y1="900" x2="800" y2="850"></line>
+            <line x1="0" y1="1100" x2="800" y2="1050"></line>
+            
+            <!-- Diagonal lines -->
+            <line x1="100" y1="0" x2="300" y2="1200"></line>
+            <line x1="300" y1="0" x2="500" y2="1200"></line>
+            <line x1="500" y1="0" x2="700" y2="1200"></line>
+            <line x1="700" y1="0" x2="200" y2="1200"></line>
+            <line x1="0" y1="200" x2="800" y2="1000"></line>
+            <line x1="0" y1="800" x2="800" y2="200"></line>
+        </g>
+        
+        <!-- Nodes/dots -->
+        <g fill="#FFFFFF" opacity="0.5">
+            <circle cx="100" cy="100" r="3"></circle>
+            <circle cx="300" cy="200" r="3"></circle>
+            <circle cx="500" cy="150" r="3"></circle>
+            <circle cx="700" cy="250" r="3"></circle>
+            <circle cx="200" cy="350" r="3"></circle>
+            <circle cx="400" cy="400" r="3"></circle>
+            <circle cx="600" cy="450" r="3"></circle>
+            <circle cx="150" cy="550" r="3"></circle>
+            <circle cx="350" cy="600" r="3"></circle>
+            <circle cx="550" cy="650" r="3"></circle>
+            <circle cx="750" cy="700" r="3"></circle>
+            <circle cx="250" cy="800" r="3"></circle>
+            <circle cx="450" cy="850" r="3"></circle>
+            <circle cx="650" cy="900" r="3"></circle>
+            <circle cx="200" cy="1000" r="3"></circle>
+            <circle cx="400" cy="1050" r="3"></circle>
+            <circle cx="600" cy="1100" r="3"></circle>
+        </g>
+    </g>
+</svg>

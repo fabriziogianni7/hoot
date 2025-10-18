@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: #ffffff;
+    --foreground: #171717;
+    --card: #ffffff;
+    --card-foreground: #171717;
+    --popover: #ffffff;
+    --popover-foreground: #171717;
+    --primary: #6366f1;
+    --primary-foreground: #ffffff;
+    --secondary: #f59e0b;
+    --secondary-foreground: #171717;
+    --muted: #f3f4f6;
+    --muted-foreground: #6b7280;
+    --accent: #ec4899;
+    --accent-foreground: #ffffff;
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+    --border: #e5e7eb;
+    --input: #e5e7eb;
+    --ring: #6366f1;
+    --radius: 0.75rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: #0a0a0a;
+      --foreground: #ededed;
+      --card: #1a1a1a;
+      --card-foreground: #ededed;
+      --popover: #1a1a1a;
+      --popover-foreground: #ededed;
+      --primary: #818cf8;
+      --primary-foreground: #0a0a0a;
+      --secondary: #fbbf24;
+      --secondary-foreground: #0a0a0a;
+      --muted: #2a2a2a;
+      --muted-foreground: #a1a1aa;
+      --accent: #f472b6;
+      --accent-foreground: #0a0a0a;
+      --destructive: #f87171;
+      --destructive-foreground: #0a0a0a;
+      --border: #2a2a2a;
+      --input: #2a2a2a;
+      --ring: #818cf8;
+    }
+  }
+
+  html,
+  body {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  body {
+    color: var(--foreground);
+    background: var(--background);
+    font-family: var(--font-inter), sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  code {
+    background-color: rgba(0, 0, 0, 0.05);
+    border-radius: 6px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    font-family: var(--font-source-code-pro), monospace;
+    font-size: 0.875rem;
+    padding: 0.25rem 0.5rem calc(0.25rem + 2px);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    code {
+      background-color: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+  }
+
+  * {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    html {
+      color-scheme: dark;
+    }
+  }
+  
+  /* Patrick Hand Font */
+  .patrick-hand {
+    font-family: "Patrick Hand", var(--font-patrick-hand), cursive;
+    font-weight: 400;
+    font-style: normal;
+  }
+}
