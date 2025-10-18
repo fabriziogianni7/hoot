@@ -2,6 +2,24 @@
 
 An onchain version of Kahoot with web3 dynamics, featuring smart contracts for prize distribution, real-time gameplay, and automatic reward distribution to top players.
 
+## 📋 Table of Contents
+
+- [🚀 Features](#-features)
+- [🏗️ Architecture](#️-architecture)
+- [🏆 Sponsor: Enclave](#-sponsor-enclave)
+- [📋 Prerequisites](#-prerequisites)
+- [🛠️ Setup Instructions](#️-setup-instructions)
+- [🎮 How to Use](#-how-to-use)
+- [🔧 Configuration](#-configuration)
+- [🧪 Testing](#-testing)
+- [📁 Project Structure](#-project-structure)
+- [🔒 Security Features](#-security-features)
+- [🚀 Deployment](#-deployment)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
+- [🆘 Troubleshooting](#-troubleshooting)
+- [🎯 Future Enhancements](#-future-enhancements)
+
 ## 🚀 Features
 
 - **Smart Contract Prize Distribution**: ETH and ERC20 token support with automatic distribution to top 3 players (10% treasury fee)
@@ -32,6 +50,22 @@ An onchain version of Kahoot with web3 dynamics, featuring smart contracts for p
 - **Real-time UI**: Live game state updates
 - **Mobile First**: Responsive design
 - **Game Flow**: Create → Join → Play → Results
+
+## 🏆 Sponsor: Enclave
+
+This project is proudly integrating [Enclave](https://enclave.gg), a cutting-edge protocol that enables E3 encryption on Ethereum. Enclave provides the infrastructure and tools needed to build privacy-preserving smart contracts that can perform computations on encrypted data without revealing sensitive information.
+
+### 🤝 Enclave Integration
+
+The `hoot-enclave/` directory contains a specialized FHE implementation that demonstrates advanced privacy-preserving capabilities:
+
+- **FHE Program**: Computes the difference between two encrypted numbers
+- **Risc0 ZKVM Integration**: Provides zero-knowledge proofs for FHE computations
+- **Privacy-Preserving Logic**: Players can submit encrypted inputs for secure computation
+
+The FHE component allows for secure, private computations where sensitive game data (like scores or strategic inputs) can be processed without exposing the underlying values to the network or other players.
+
+here the small video demo: https://youtu.be/4yskVfkffic
 
 ## 📋 Prerequisites
 
@@ -311,6 +345,12 @@ hoot/
 │   │   ├── contexts/
 │   │   └── components/
 │   └── package.json
+├── hoot-enclave/             # FHE implementation (Enclave Protocol)
+│   ├── program/              # Risc0 zkvm FHE computation program
+│   │   └── src/lib.rs        # Computes difference between 2 encrypted numbers
+│   ├── contracts/            # Smart contracts for FHE operations
+│   ├── client/               # Frontend for FHE interactions
+│   └── server/               # Coordination server for FHE computations
 └── README.md
 ```
 

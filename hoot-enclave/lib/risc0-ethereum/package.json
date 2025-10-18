@@ -1,0 +1,8 @@
+{
+  "name": "@risc0/ethereum",
+  "version": "0.0.0-enclave.1",
+  "description": "",
+  "exports": {
+    "./contracts/*": "./contracts/src/*"
+  }
+}
