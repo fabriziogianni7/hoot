@@ -45,6 +45,29 @@ $ forge snapshot
 $ anvil
 ```
 
+### Tunnel Anvil with ngrok
+
+To make your local Anvil network accessible to external services (like Supabase Edge Functions), use the ngrok tunnel script:
+
+```shell
+$ ./tunnel-anvil.sh
+```
+
+This will:
+1. Check if Anvil is running on port 8545
+2. Start an ngrok tunnel to expose Anvil publicly
+3. Display the public URL you can use in your environment variables
+
+**Update Supabase secrets with the ngrok URL:**
+```shell
+$ supabase secrets set RPC_URL_LOCAL=https://xxxxx.ngrok.io
+```
+
+**Note:** You need to have ngrok installed. Get it from https://ngrok.com/download or install via homebrew:
+```shell
+$ brew install ngrok/ngrok/ngrok
+```
+
 ### Deploy
 
 ```shell

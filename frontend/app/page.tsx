@@ -22,8 +22,8 @@ export default function Home() {
   const [gamePin, setGamePin] = useState("");
   const router = useRouter();
   const [error, setError] = useState("");
-  const { quizzes, startGame, getQuizById } = useQuiz();
-  const [availableQuizzes, setAvailableQuizzes] = useState<string[]>([]);
+  const { findGameByRoomCode } = useQuiz();
+  const [isJoining, setIsJoining] = useState(false);
 
   // Initialize the miniapp
   useEffect(() => {
@@ -40,35 +40,36 @@ export default function Home() {
     };
   }, [setFrameReady, isFrameReady]);
 
-  // Estrai gli ID dei quiz disponibili
-  useEffect(() => {
-    if (quizzes.length > 0) {
-      const quizIds = quizzes.map(q => q.id);
-      setAvailableQuizzes(quizIds);
-      console.log('Quiz disponibili:', quizIds);
-    }
-  }, [quizzes]);
-
   const { data: authData, isLoading: isAuthLoading, error: authError } = useQuickAuth<AuthResponse>(
     "/api/auth",
     { method: "GET" }
   );
 
-  const handleJoin = (e: React.FormEvent) => {
+  const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (gamePin.trim()) {
-      // Cerca il quiz con l'ID corrispondente al PIN inserito
-      const quiz = getQuizById(gamePin.trim());
+    if (gamePin.trim() && !isJoining) {
+      setIsJoining(true);
+      setError("");
       
-      if (quiz) {
-        // Se il quiz esiste, avvia il gioco con quell'ID
-        startGame(quiz.id);
-        router.push(`/quiz/lobby`);
-      } else {
-        // Se il quiz non esiste, mostra un errore
-        setError(`Quiz con PIN "${gamePin}" non trovato. Controlla il PIN e riprova.`);
-        setTimeout(() => setError(""), 5000); // Rimuovi l'errore dopo 5 secondi
+      try {
+        // Find game session by room code
+        const gameSession = await findGameByRoomCode(gamePin.trim().toUpperCase());
+        
+        if (gameSession) {
+          // Navigate to lobby with room code
+          router.push(`/quiz/lobby?room=${gamePin.trim().toUpperCase()}`);
+        } else {
+          // Game session not found
+          setError(`Game with PIN "${gamePin}" not found. Check the PIN and try again.`);
+          setTimeout(() => setError(""), 5000);
+        }
+      } catch (err) {
+        console.error('Error joining game:', err);
+        setError('Error joining game. Please try again.');
+        setTimeout(() => setError(""), 5000);
+      } finally {
+        setIsJoining(false);
       }
     }
   };
@@ -178,35 +179,29 @@ export default function Home() {
               border: "none",
               borderRadius: "0.5rem",
               marginBottom: "0.75rem",
-              textAlign: "center",
-              fontSize: "1rem"
-            }}
-            list="available-quizzes"
-          />
-          
-          {/* Datalist per mostrare i quiz disponibili */}
-          <datalist id="available-quizzes">
-            {availableQuizzes.map(id => (
-              <option key={id} value={id} />
-            ))}
-          </datalist>
-          
-          <button
+            textAlign: "center",
+            fontSize: "1rem"
+          }}
+        />
+        
+        <button
             type="submit"
+            disabled={isJoining}
             style={{
               width: "100%",
               padding: "0.75rem",
-              backgroundColor: "#222",
+              backgroundColor: isJoining ? "#444" : "#222",
               color: "white",
               border: "none",
               borderRadius: "0.5rem",
-              cursor: "pointer",
+              cursor: isJoining ? "not-allowed" : "pointer",
               fontSize: "1rem",
               fontWeight: "500",
-              marginBottom: "1rem"
+              marginBottom: "1rem",
+              opacity: isJoining ? 0.7 : 1
             }}
           >
-            Jump
+            {isJoining ? "Joining..." : "Jump"}
           </button>
         </form>
         
@@ -223,29 +218,6 @@ export default function Home() {
             color: "#fca5a5"
           }}>
             {error}
-          </div>
-        )}
-        
-        {/* Quiz disponibili */}
-        {availableQuizzes.length > 0 && (
-          <div style={{
-            backgroundColor: "rgba(59, 130, 246, 0.1)",
-            border: "1px solid #3b82f6",
-            borderRadius: "0.5rem",
-            padding: "0.75rem",
-            marginBottom: "2rem",
-            width: "100%"
-          }}>
-            <h3 style={{ marginBottom: "0.5rem", fontSize: "0.875rem", color: "#93c5fd" }}>
-              Quiz disponibili:
-            </h3>
-            <ul style={{ fontSize: "0.875rem", paddingLeft: "1rem" }}>
-              {quizzes.map(quiz => (
-                <li key={quiz.id} style={{ marginBottom: "0.25rem" }}>
-                  <span style={{ color: "#93c5fd" }}>{quiz.id}</span>: {quiz.title}
-                </li>
-              ))}
-            </ul>
           </div>
         )}
         

@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
+import { useSupabase } from "@/lib/supabase-context";
 
 export default function PlayQuizPage() {
   const router = useRouter();
-  const { currentGame, getCurrentQuiz, submitAnswer, nextQuestion } = useQuiz();
+  const searchParams = useSearchParams();
+  const { currentGame, getCurrentQuiz, submitAnswer, nextQuestion, setCurrentQuiz } = useQuiz();
+  const { supabase } = useSupabase();
   const [timeLeft, setTimeLeft] = useState<number>(15);
   const [initialTime] = useState<number>(15); // Tempo iniziale fisso per calcolare la percentuale
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
@@ -19,10 +22,84 @@ export default function PlayQuizPage() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const timePercentageRef = useRef<number>(100);
   
+  const [isLoadingFromUrl, setIsLoadingFromUrl] = useState(true);
+  
   const quiz = getCurrentQuiz();
+  
+  // Load quiz from URL parameters if not in context
+  useEffect(() => {
+    const loadQuizFromUrl = async () => {
+      const quizIdFromUrl = searchParams?.get('quizId');
+      const roomCodeFromUrl = searchParams?.get('room');
+      
+      console.log('Play page - URL params:', { quizIdFromUrl, roomCodeFromUrl });
+      
+      // If quiz is already loaded, we're good
+      if (quiz || !quizIdFromUrl) {
+        setIsLoadingFromUrl(false);
+        return;
+      }
+      
+      try {
+        console.log('Loading quiz from backend with ID:', quizIdFromUrl);
+        
+        // Fetch quiz from backend
+        const { data: quizData, error: quizError } = await supabase
+          .from('quizzes')
+          .select('*')
+          .eq('id', quizIdFromUrl)
+          .single();
+          
+        if (quizError || !quizData) {
+          console.error('Failed to load quiz:', quizError);
+          setIsLoadingFromUrl(false);
+          return;
+        }
+        
+        // Fetch questions
+        const { data: questionsData, error: questionsError } = await supabase
+          .from('questions')
+          .select('*')
+          .eq('quiz_id', quizIdFromUrl)
+          .order('order_index', { ascending: true });
+          
+        if (questionsError) {
+          console.error('Failed to load questions:', questionsError);
+          setIsLoadingFromUrl(false);
+          return;
+        }
+        
+        // Convert to frontend format and add to context
+        const loadedQuiz = {
+          id: quizData.id,
+          title: quizData.title,
+          description: quizData.description || "",
+          questions: (questionsData || []).map((q: { id: string; question_text: string; options: string[]; correct_answer_index: number; time_limit: number }) => ({
+            id: q.id,
+            text: q.question_text,
+            options: q.options,
+            correctAnswer: q.correct_answer_index,
+            timeLimit: q.time_limit || 15
+          })),
+          createdAt: new Date(quizData.created_at)
+        };
+        
+        console.log('Setting current quiz:', loadedQuiz.id);
+        setCurrentQuiz(loadedQuiz);
+        setIsLoadingFromUrl(false);
+      } catch (err) {
+        console.error('Error loading quiz from URL:', err);
+        setIsLoadingFromUrl(false);
+      }
+    };
+    
+    loadQuizFromUrl();
+  }, [searchParams, quiz, supabase, setCurrentQuiz]);
   
   // Redirect if no game is active
   useEffect(() => {
+    if (isLoadingFromUrl) return; // Wait for URL loading to complete
+    
     if (!currentGame) {
       router.push("/quiz");
       return;
@@ -36,7 +113,7 @@ export default function PlayQuizPage() {
     // Aggiorna l'indice della domanda corrente
     setCurrentQuestionIndex(currentGame.currentQuestionIndex);
     console.log("Current question index updated:", currentGame.currentQuestionIndex);
-  }, [currentGame, router]);
+  }, [currentGame, router, isLoadingFromUrl]);
   
   // Reset states when question changes
   useEffect(() => {
@@ -156,10 +233,35 @@ export default function PlayQuizPage() {
     nextQuestion();
   };
   
-  if (!currentGame || !quiz) {
+  // Debug logging
+  useEffect(() => {
+    console.log('Play page - currentGame:', currentGame);
+    console.log('Play page - quiz:', quiz);
+    console.log('Play page - isLoadingFromUrl:', isLoadingFromUrl);
+    if (currentGame) {
+      console.log('Play page - currentGame.quizId:', currentGame.quizId);
+      console.log('Play page - Looking for quiz with ID:', currentGame.quizId);
+    }
+  }, [currentGame, quiz, isLoadingFromUrl]);
+
+  if (isLoadingFromUrl || !currentGame || !quiz) {
     return (
       <div className="min-h-screen w-full bg-black text-white relative overflow-hidden flex items-center justify-center">
-        <div className="animate-pulse text-2xl font-bold">Loading...</div>
+        <div className="text-center">
+          <div className="animate-pulse text-2xl font-bold mb-4">Loading...</div>
+          <div className="text-sm text-gray-400">
+            {isLoadingFromUrl && <p>Loading quiz data from server...</p>}
+            {!isLoadingFromUrl && !currentGame && <p>Waiting for game state...</p>}
+            {!isLoadingFromUrl && !quiz && <p>Waiting for quiz data...</p>}
+            {currentGame && (
+              <>
+                <p>Game ID: {currentGame.quizId || 'EMPTY'}</p>
+                <p>Game Status: {currentGame.status}</p>
+                <p>Players: {currentGame.players.length}</p>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     );
   }

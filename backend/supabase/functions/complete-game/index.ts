@@ -215,77 +215,164 @@ serve(async (req) => {
   }
 
   try {
+    console.log('🎯 complete-game function called')
     const supabase = initSupabaseClient(true)
-    const { game_session_id, creator_wallet_address }: CompleteGameRequest = await req.json()
+    const requestBody = await req.json()
+    console.log('📥 Request body:', JSON.stringify(requestBody, null, 2))
+    
+    const { game_session_id, creator_wallet_address }: CompleteGameRequest = requestBody
 
     // Validate required fields
+    console.log('🔍 Validating required fields...')
     const validationError = validateRequired({ game_session_id, creator_wallet_address })
     if (validationError) {
+      console.error('❌ Validation error:', validationError)
       return errorResponse(validationError, 400)
     }
+    console.log('✅ Validation passed')
 
     // Fetch game session with quiz details
+    console.log('🔍 Fetching game session:', game_session_id)
     const gameSession = await fetchGameSession(supabase, game_session_id)
     if (!gameSession) {
+      console.error('❌ Game session not found')
       return errorResponse('Game session not found', 404)
     }
+    console.log('✅ Game session found:', {
+      id: gameSession.id,
+      quiz_id: gameSession.quiz_id,
+      status: gameSession.status,
+      quiz_title: gameSession.quizzes?.title,
+      prize_amount: gameSession.quizzes?.prize_amount,
+      contract_address: gameSession.quizzes?.contract_address,
+      creator_address: gameSession.quizzes?.creator_address
+    })
 
     // Verify creator authorization
+    console.log('🔍 Verifying creator authorization...')
+    console.log('Creator from DB:', gameSession.quizzes?.creator_address)
+    console.log('Creator from request:', creator_wallet_address)
     const authError = verifyCreatorAuthorization(gameSession, creator_wallet_address)
     if (authError) {
+      console.error('❌ Authorization error:', authError)
       return errorResponse(authError, 403)
     }
+    console.log('✅ Creator authorized')
 
-    // Check if already completed
-    if (gameSession.status === GAME_STATUS.COMPLETED) {
-      return successResponse({ message: 'Game already completed' })
+    // Check if prizes have already been distributed
+    const prizesAlreadyDistributed = gameSession.quizzes?.status === QUIZ_STATUS.COMPLETED || 
+                                      gameSession.quizzes?.contract_tx_hash
+    if (prizesAlreadyDistributed) {
+      console.log('⚠️ Prizes already distributed')
+      console.log('Quiz status:', gameSession.quizzes?.status)
+      console.log('Contract tx hash:', gameSession.quizzes?.contract_tx_hash)
+      return successResponse({ 
+        success: true, 
+        message: 'Prizes already distributed',
+        contract_tx_hash: gameSession.quizzes?.contract_tx_hash
+      })
     }
 
     // Fetch questions and players
+    console.log('🔍 Fetching questions for quiz:', gameSession.quiz_id)
     const questions = await fetchQuestions(supabase, gameSession.quiz_id)
+    console.log('✅ Questions fetched:', questions.length)
+    
+    console.log('🔍 Fetching player sessions...')
     const playerSessions = await fetchPlayerSessions(supabase, game_session_id)
+    console.log('✅ Player sessions fetched:', playerSessions.length)
+    console.log('Players:', playerSessions.map(p => ({
+      id: p.id,
+      name: p.player_name,
+      wallet: p.wallet_address,
+      score: p.total_score
+    })))
 
     // Validate all players have completed
+    console.log('🔍 Validating game completion...')
     const allCompleted = await validateGameCompletion(supabase, playerSessions, questions.length)
     if (!allCompleted) {
+      console.error('❌ Not all players have completed the game')
       return errorResponse('Not all players have completed the game', 400)
     }
+    console.log('✅ All players completed')
 
-    // Mark game as completed
-    await markGameAsCompleted(supabase, game_session_id)
+    // Mark game as completed (if not already)
+    if (gameSession.status !== GAME_STATUS.COMPLETED) {
+      console.log('🔍 Marking game as completed...')
+      await markGameAsCompleted(supabase, game_session_id)
+      console.log('✅ Game marked as completed')
+    } else {
+      console.log('⚠️ Game already marked as completed, skipping update')
+    }
 
     // Calculate top players
+    console.log('🔍 Calculating top players...')
     const { winners, scores } = calculateTopPlayers(playerSessions, gameSession.quizzes!.creator_address)
+    console.log('✅ Top players calculated:')
+    console.log('Winners:', winners)
+    console.log('Scores:', scores)
 
     // Handle prize distribution
     let prizeDistributed = false
     const contractAddress = gameSession.quizzes?.contract_address
     const prizeAmount = gameSession.quizzes?.prize_amount || 0
 
+    console.log('🔍 Prize distribution check:')
+    console.log('Contract address:', contractAddress)
+    console.log('Prize amount:', prizeAmount)
+
     if (contractAddress && prizeAmount > 0) {
+      console.log('💰 Starting prize distribution...')
+      
       const treasuryAddress = Deno.env.get('TREASURY_ADDRESS')
+      console.log('Treasury address from env:', treasuryAddress)
+      
       if (!treasuryAddress) {
+        console.error('❌ TREASURY_ADDRESS environment variable is missing')
         throw new Error('TREASURY_ADDRESS environment variable is required')
       }
 
       const distribution = calculatePrizeDistribution(prizeAmount, winners, treasuryAddress)
+      console.log('💰 Prize distribution calculated:')
+      console.log('Total prize:', distribution.totalPrize.toString())
+      console.log('First place:', distribution.firstPlacePrize.toString())
+      console.log('Second place:', distribution.secondPlacePrize.toString())
+      console.log('Third place:', distribution.thirdPlacePrize.toString())
+      console.log('Treasury fee:', distribution.treasuryFee.toString())
+      console.log('Winners array:', distribution.winners4)
+      console.log('Amounts array:', distribution.amounts4.map(a => a.toString()))
+      
+      console.log('🔍 Calling smart contract...')
+      console.log('Contract address:', contractAddress)
+      console.log('Quiz ID:', gameSession.quiz_id)
+      
       const txHash = await distributePrizesOnChain(contractAddress, gameSession.quiz_id, distribution)
+      console.log('✅ Transaction successful! Hash:', txHash)
+      
+      console.log('🔍 Updating quiz with transaction...')
       await updateQuizWithTransaction(supabase, gameSession.quiz_id, txHash)
+      console.log('✅ Quiz updated')
       
       prizeDistributed = true
+    } else {
+      console.log('⚠️ Skipping prize distribution (no contract or no prize)')
     }
 
-    return successResponse({
+    const responseData = {
       success: true,
       message: 'Game completed successfully',
       winners: winners.slice(0, 3),
       scores: scores.slice(0, 3),
       contract_address: contractAddress,
       prize_distributed: prizeDistributed
-    })
+    }
+    console.log('📤 Sending success response:', JSON.stringify(responseData, null, 2))
+    return successResponse(responseData)
 
   } catch (error) {
-    console.error('Error completing game:', error)
+    console.error('❌ Error completing game:', error)
+    console.error('Error stack:', error.stack)
     return errorResponse(error.message || 'Internal server error', 500)
   }
 })

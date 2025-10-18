@@ -1,180 +1,358 @@
 "use client"
 
-import { createContext, useContext, useState, useCallback, type ReactNode, useEffect } from "react"
+import { createContext, useContext, useState, useCallback, type ReactNode, useEffect, useRef } from "react"
 import type { Quiz, GameState, PlayerAnswer } from "./types"
+import { useSupabase } from "./supabase-context"
+import { callEdgeFunction } from "./supabase-client"
+import type { 
+  CreateQuizRequest, 
+  CreateQuizResponse,
+  JoinGameRequest, 
+  JoinGameResponse,
+  SubmitAnswerRequest,
+  SubmitAnswerResponse,
+  GameSession as BackendGameSession,
+  PlayerSession as BackendPlayerSession,
+  Quiz as BackendQuiz,
+  Question as BackendQuestion
+} from "./backend-types"
+import type { RealtimeChannel } from "@supabase/supabase-js"
 
 interface QuizContextType {
-  quizzes: Quiz[]
+  currentQuiz: Quiz | null
   currentGame: GameState | null
-  addQuiz: (quiz: Quiz) => void
-  startGame: (quizId: string) => void
-  joinGame: (playerName: string) => string
-  submitAnswer: (playerId: string, questionId: string, answer: number, timeToAnswer: number) => void
+  setCurrentQuiz: (quiz: Quiz) => void
+  createQuizOnBackend: (quiz: Quiz, contractAddress?: string, contractTxHash?: string, creatorAddress?: string, prizeAmount?: number) => Promise<string>
+  startGame: (quizId: string, roomCode?: string) => Promise<string>
+  joinGame: (playerName: string, walletAddress?: string, providedRoomCode?: string) => Promise<string>
+  submitAnswer: (playerId: string, questionId: string, answer: number, timeToAnswer: number) => Promise<void>
   nextQuestion: () => void
   endGame: () => void
-  getCurrentQuiz: () => Quiz | undefined
-  getQuizById: (id: string) => Quiz | undefined
+  getCurrentQuiz: () => Quiz | null
+  findGameByRoomCode: (roomCode: string) => Promise<GameSession | null>
+  gameSessionId: string | null
+  roomCode: string | null
 }
 
 const QuizContext = createContext<QuizContextType | undefined>(undefined)
 
-// Funzioni di utilità per il localStorage
-const saveQuizzesToLocalStorage = (quizzes: Quiz[]) => {
-  try {
-    // Converti le date in stringhe prima di salvare
-    const quizzesForStorage = quizzes.map(quiz => ({
-      ...quiz,
-      createdAt: quiz.createdAt.toISOString()
-    }));
-    localStorage.setItem('quizzes', JSON.stringify(quizzesForStorage));
-  } catch (error) {
-    console.error('Errore nel salvataggio dei quiz:', error);
+// Helper to convert backend quiz to frontend quiz format
+function convertBackendQuizToQuiz(backendQuiz: BackendQuiz, questions: BackendQuestion[]): Quiz {
+  return {
+    id: backendQuiz.id,
+    title: backendQuiz.title,
+    description: backendQuiz.description || "",
+    questions: questions.map(q => ({
+      id: q.id,
+      text: q.question_text,
+      options: q.options,
+      correctAnswer: q.correct_answer_index,
+      timeLimit: q.time_limit || 15
+    })),
+    createdAt: backendQuiz.created_at ? new Date(backendQuiz.created_at) : new Date()
   }
-};
+}
 
-const loadQuizzesFromLocalStorage = (): Quiz[] => {
-  try {
-    const storedQuizzes = localStorage.getItem('quizzes');
-    if (!storedQuizzes) return [];
-    
-    // Converti le stringhe di date in oggetti Date
-    return JSON.parse(storedQuizzes).map((quiz: any) => ({
-      ...quiz,
-      createdAt: new Date(quiz.createdAt)
-    }));
-  } catch (error) {
-    console.error('Errore nel caricamento dei quiz:', error);
-    return [];
+// Helper to convert backend game session to frontend game state
+function convertBackendGameToGameState(
+  gameSession: BackendGameSession, 
+  players: BackendPlayerSession[]
+): GameState {
+  console.log('convertBackendGameToGameState - gameSession.quiz_id:', gameSession.quiz_id);
+  console.log('convertBackendGameToGameState - full gameSession:', gameSession);
+  
+  return {
+    quizId: gameSession.quiz_id,
+    status: gameSession.status === 'waiting' ? 'waiting' : 
+            gameSession.status === 'in_progress' ? 'question' : 'finished',
+    currentQuestionIndex: gameSession.current_question_index,
+    players: players.map(p => ({
+      id: p.id,
+      name: p.player_name,
+      score: p.total_score,
+      answers: [] // Answers will be fetched separately if needed
+    })),
+    startTime: gameSession.started_at ? new Date(gameSession.started_at).getTime() : Date.now(),
+    questionStartTime: null
   }
-};
-
-const saveGameToLocalStorage = (game: GameState | null) => {
-  try {
-    localStorage.setItem('currentGame', game ? JSON.stringify(game) : 'null');
-  } catch (error) {
-    console.error('Errore nel salvataggio del gioco:', error);
-  }
-};
-
-const loadGameFromLocalStorage = (): GameState | null => {
-  try {
-    const storedGame = localStorage.getItem('currentGame');
-    if (!storedGame || storedGame === 'null') return null;
-    return JSON.parse(storedGame);
-  } catch (error) {
-    console.error('Errore nel caricamento del gioco:', error);
-    return null;
-  }
-};
+}
 
 export function QuizProvider({ children }: { children: ReactNode }) {
-  const [quizzes, setQuizzes] = useState<Quiz[]>([])
+  const { supabase } = useSupabase()
+  const [currentQuiz, setCurrentQuiz] = useState<Quiz | null>(null)
   const [currentGame, setCurrentGame] = useState<GameState | null>(null)
+  const [gameSessionId, setGameSessionId] = useState<string | null>(null)
+  const [roomCode, setRoomCode] = useState<string | null>(null)
   
-  // Carica i quiz e il gioco corrente dal localStorage all'avvio
-  useEffect(() => {
-    const loadedQuizzes = loadQuizzesFromLocalStorage();
-    const loadedGame = loadGameFromLocalStorage();
-    
-    setQuizzes(loadedQuizzes);
-    setCurrentGame(loadedGame);
-    
-    // Log per debug
-    console.log('Quiz caricati:', loadedQuizzes);
-  }, []);
+  // Realtime channels
+  const gameChannelRef = useRef<RealtimeChannel | null>(null)
+  const playersChannelRef = useRef<RealtimeChannel | null>(null)
 
-  // Salva i quiz nel localStorage quando cambiano
-  useEffect(() => {
-    if (quizzes.length > 0) {
-      saveQuizzesToLocalStorage(quizzes);
-      console.log('Quiz salvati:', quizzes);
-    }
-  }, [quizzes]);
-
-  // Salva il gioco corrente nel localStorage quando cambia
-  useEffect(() => {
-    saveGameToLocalStorage(currentGame);
-    console.log('Game state salvato:', currentGame);
-  }, [currentGame]);
-
-  const addQuiz = useCallback((quiz: Quiz) => {
-    setQuizzes((prev) => {
-      // Controlla se esiste già un quiz con lo stesso ID
-      const existingQuizIndex = prev.findIndex(q => q.id === quiz.id);
-      
-      if (existingQuizIndex >= 0) {
-        // Aggiorna il quiz esistente
-        const updatedQuizzes = [...prev];
-        updatedQuizzes[existingQuizIndex] = quiz;
-        return updatedQuizzes;
-      } else {
-        // Aggiungi un nuovo quiz
-        return [...prev, quiz];
+  const createQuizOnBackend = useCallback(async (
+    quiz: Quiz, 
+    contractAddress?: string, 
+    contractTxHash?: string,
+    creatorAddress?: string,
+    prizeAmount?: number
+  ): Promise<string> => {
+    try {
+      const request: CreateQuizRequest = {
+        title: quiz.title,
+        description: quiz.description,
+        questions: quiz.questions.map(q => ({
+          question_text: q.text,
+          options: q.options,
+          correct_answer_index: q.correctAnswer,
+          time_limit: q.timeLimit
+        })),
+        prize_amount: prizeAmount || 0,
+        creator_address: creatorAddress || '0x0000000000000000000000000000000000000000',
+        contract_address: contractAddress,
+        contract_tx_hash: contractTxHash
       }
-    });
+
+      const response = await callEdgeFunction<CreateQuizRequest, CreateQuizResponse>(
+        'create-quiz',
+        request
+      )
+
+      return response.quiz_id
+    } catch (error) {
+      console.error('Error creating quiz on backend:', error)
+      throw error
+    }
   }, [])
 
-  const startGame = useCallback((quizId: string) => {
-    console.log('Starting game with quiz ID:', quizId);
-    
-    // Prima verifica che il quiz esista
-    const quiz = quizzes.find(q => q.id === quizId);
-    if (!quiz) {
-      console.error('Quiz non trovato con ID:', quizId);
-      return;
+  const findGameByRoomCode = useCallback(async (roomCode: string): Promise<GameSession | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('game_sessions')
+        .select(`
+          *,
+          quizzes (*)
+        `)
+        .eq('room_code', roomCode)
+        .single()
+
+      if (error || !data) return null
+
+      return data as unknown as GameSession
+    } catch (error) {
+      console.error('Error finding game by room code:', error)
+      return null
     }
-    
-    // Inizializza il gioco con la prima domanda (indice 0)
+  }, [supabase])
+
+  const startGame = useCallback(async (quizId: string, customRoomCode?: string): Promise<string> => {
+    try {
+      console.log('startGame called with quizId:', quizId);
+      
+      // Generate a room code if not provided
+      const generatedRoomCode = customRoomCode || `${Math.random().toString(36).substring(2, 8).toUpperCase()}`
+      
+      // Create game session in database
+      const { data: gameSession, error: gameError } = await supabase
+        .from('game_sessions')
+        .insert({
+          quiz_id: quizId,
+          room_code: generatedRoomCode,
+          status: 'waiting',
+          current_question_index: 0
+        })
+        .select()
+        .single()
+
+      if (gameError) throw gameError
+
+      console.log('Game session created with quiz_id:', gameSession.quiz_id);
+
+      setGameSessionId(gameSession.id)
+      setRoomCode(generatedRoomCode)
+
+      // Initialize empty game state
     setCurrentGame({
       quizId,
       status: "waiting",
-      currentQuestionIndex: 0, // Assicurati che questo sia 0
+        currentQuestionIndex: 0,
       players: [],
       startTime: Date.now(),
       questionStartTime: null,
-    });
-    
-    console.log('Game state inizializzato con indice domanda 0');
-  }, [quizzes])
+      })
 
-  const joinGame = useCallback((playerName: string): string => {
-    const playerId = `player-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      console.log('currentGame initialized with quizId:', quizId);
+
+      // Subscribe to realtime updates for this game session
+      subscribeToGameUpdates(gameSession.id)
+      
+      console.log('Game session created:', gameSession.id, 'Room code:', generatedRoomCode)
+      
+      return generatedRoomCode
+    } catch (error) {
+      console.error('Error starting game:', error)
+      throw error
+    }
+  }, [supabase])
+
+  const joinGame = useCallback(async (playerName: string, walletAddress?: string, providedRoomCode?: string): Promise<string> => {
+    try {
+      const roomCodeToUse = providedRoomCode || roomCode;
+      if (!roomCodeToUse) {
+        throw new Error('No room code provided')
+      }
+
+      console.log('joinGame called for room:', roomCodeToUse);
+
+      const request: JoinGameRequest = {
+        room_code: roomCodeToUse,
+        player_name: playerName,
+        wallet_address: walletAddress
+      }
+
+      const response = await callEdgeFunction<JoinGameRequest, JoinGameResponse>(
+        'join-game',
+        request
+      )
+
+      console.log('joinGame response - game_session.quiz_id:', response.game_session.quiz_id);
+      console.log('joinGame response - quiz.id:', response.quiz.id);
+
+      // Update local state
+      setGameSessionId(response.game_session.id)
+      setRoomCode(roomCodeToUse)
+      
+      // Load quiz from backend and set as current quiz
+      console.log('Loading quiz from backend');
+      const { data: questionsData } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('quiz_id', response.quiz.id)
+        .order('order_index', { ascending: true })
+
+      const fullQuiz = convertBackendQuizToQuiz(response.quiz, questionsData || [])
+      console.log('Setting current quiz with ID:', fullQuiz.id);
+      setCurrentQuiz(fullQuiz)
+
+      // Subscribe to realtime updates
+      subscribeToGameUpdates(response.game_session.id)
+
+      // Update current game state
+      const newGameState = convertBackendGameToGameState(response.game_session, response.players);
+      console.log('Setting currentGame with quizId:', newGameState.quizId);
+      setCurrentGame(newGameState)
+
+      return response.player_session_id
+    } catch (error) {
+      console.error('Error joining game:', error)
+      throw error
+    }
+  }, [roomCode, supabase])
+
+  const subscribeToGameUpdates = useCallback((gameId: string) => {
+    // Unsubscribe from previous channels
+    if (gameChannelRef.current) {
+      gameChannelRef.current.unsubscribe()
+    }
+    if (playersChannelRef.current) {
+      playersChannelRef.current.unsubscribe()
+    }
+
+    // Subscribe to game_sessions updates
+    const gameChannel = supabase
+      .channel(`game_session:${gameId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'game_sessions',
+          filter: `id=eq.${gameId}`
+        },
+        (payload) => {
+          console.log('Game session updated:', payload.new)
+          const updated = payload.new as BackendGameSession
 
     setCurrentGame((prev) => {
       if (!prev) return prev
+            
+            console.log('Realtime update - prev.quizId:', prev.quizId);
+            console.log('Realtime update - updated.quiz_id:', updated.quiz_id);
 
       return {
         ...prev,
-        players: [
-          ...prev.players,
-          {
-            id: playerId,
-            name: playerName,
-            score: 0,
-            answers: [],
-          },
-        ],
+              quizId: prev.quizId || updated.quiz_id, // Preserve or set quizId from backend
+              status: updated.status === 'waiting' ? 'waiting' : 
+                      updated.status === 'in_progress' ? 'question' : 'finished',
+              currentQuestionIndex: updated.current_question_index
+            }
+          })
+        }
+      )
+      .subscribe()
+
+    gameChannelRef.current = gameChannel
+
+    // Subscribe to player_sessions inserts/updates
+    const playersChannel = supabase
+      .channel(`players:${gameId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'player_sessions',
+          filter: `game_session_id=eq.${gameId}`
+        },
+        async () => {
+          // Reload all players
+          const { data: playersData } = await supabase
+            .from('player_sessions')
+            .select('*')
+            .eq('game_session_id', gameId)
+            .order('joined_at', { ascending: true })
+
+          if (playersData) {
+            setCurrentGame((prev) => {
+              if (!prev) return prev
+              return {
+                ...prev,
+                players: playersData.map(p => ({
+                  id: p.id,
+                  name: p.player_name,
+                  score: p.total_score,
+                  answers: []
+                }))
+              }
+            })
+          }
+        }
+      )
+      .subscribe()
+
+    playersChannelRef.current = playersChannel
+  }, [supabase])
+
+  const submitAnswer = useCallback(async (
+    playerId: string, 
+    questionId: string, 
+    answer: number, 
+    timeToAnswer: number
+  ): Promise<void> => {
+    try {
+      const request: SubmitAnswerRequest = {
+        player_session_id: playerId,
+        question_id: questionId,
+        answer_index: answer,
+        time_taken: timeToAnswer
       }
-    })
 
-    return playerId
-  }, [])
+      const response = await callEdgeFunction<SubmitAnswerRequest, SubmitAnswerResponse>(
+        'submit-answer',
+        request
+      )
 
-  const submitAnswer = useCallback(
-    (playerId: string, questionId: string, answer: number, timeToAnswer: number) => {
+      // Update local player score
       setCurrentGame((prev) => {
         if (!prev) return prev
-
-        const quiz = quizzes.find((q) => q.id === prev.quizId)
-        if (!quiz) return prev
-
-        const question = quiz.questions.find((q) => q.id === questionId)
-        if (!question) return prev
-
-        const isCorrect = question.correctAnswer === answer
-        const basePoints = 1000
-        const timeBonus = answer >= 0 ? Math.max(0, basePoints * (1 - timeToAnswer / (question.timeLimit * 1000))) : 0
-        const points = isCorrect ? Math.round(basePoints + timeBonus) : 0
 
         return {
           ...prev,
@@ -185,78 +363,109 @@ export function QuizProvider({ children }: { children: ReactNode }) {
               questionId,
               selectedAnswer: answer,
               timeToAnswer,
-              isCorrect,
+              isCorrect: response.is_correct,
             }
 
             return {
               ...player,
-              score: player.score + points,
+              score: response.new_total_score,
               answers: [...player.answers, playerAnswer],
             }
           }),
         }
       })
-    },
-    [quizzes],
-  )
+    } catch (error) {
+      console.error('Error submitting answer:', error)
+      throw error
+    }
+  }, [])
 
-  const nextQuestion = useCallback(() => {
-    setCurrentGame((prev) => {
-      if (!prev) return prev
+  const nextQuestion = useCallback(async () => {
+    try {
+      if (!gameSessionId) return
 
-      const quiz = quizzes.find((q) => q.id === prev.quizId)
-      if (!quiz) return prev
+      const nextIndex = (currentGame?.currentQuestionIndex || 0) + 1
+      const quiz = getCurrentQuiz()
 
-      const nextIndex = prev.currentQuestionIndex + 1
-      console.log('Moving to next question index:', nextIndex);
+      if (!quiz) return
 
       if (nextIndex >= quiz.questions.length) {
-        console.log('Quiz completed, showing results');
-        return {
-          ...prev,
-          status: "finished",
-          questionStartTime: null,
-        }
-      }
+        // End game
+        await supabase
+          .from('game_sessions')
+          .update({ 
+            status: 'completed',
+            ended_at: new Date().toISOString()
+          })
+          .eq('id', gameSessionId)
 
-      console.log('Setting next question index to:', nextIndex);
-      return {
-        ...prev,
-        status: "question",
-        currentQuestionIndex: nextIndex,
-        questionStartTime: Date.now(),
+        setCurrentGame((prev) => prev ? { ...prev, status: 'finished' } : null)
+      } else {
+        // Move to next question
+        await supabase
+          .from('game_sessions')
+          .update({ 
+            current_question_index: nextIndex,
+            status: 'in_progress'
+          })
+          .eq('id', gameSessionId)
+
+        // Local update will be handled by realtime subscription
       }
-    })
-  }, [quizzes])
+    } catch (error) {
+      console.error('Error moving to next question:', error)
+    }
+  }, [gameSessionId, currentGame, supabase])
 
   const endGame = useCallback(() => {
+    // Unsubscribe from channels
+    if (gameChannelRef.current) {
+      gameChannelRef.current.unsubscribe()
+      gameChannelRef.current = null
+    }
+    if (playersChannelRef.current) {
+      playersChannelRef.current.unsubscribe()
+      playersChannelRef.current = null
+    }
+
     setCurrentGame(null)
+    setCurrentQuiz(null)
+    setGameSessionId(null)
+    setRoomCode(null)
   }, [])
 
   const getCurrentQuiz = useCallback(() => {
-    if (!currentGame) return undefined
-    const quiz = quizzes.find((q) => q.id === currentGame.quizId)
-    console.log('Getting current quiz:', quiz?.id, 'for game:', currentGame.quizId);
-    return quiz;
-  }, [currentGame, quizzes])
-  
-  const getQuizById = useCallback((id: string) => {
-    return quizzes.find((q) => q.id === id)
-  }, [quizzes])
+    return currentQuiz
+  }, [currentQuiz])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (gameChannelRef.current) {
+        gameChannelRef.current.unsubscribe()
+      }
+      if (playersChannelRef.current) {
+        playersChannelRef.current.unsubscribe()
+      }
+    }
+  }, [])
 
   return (
     <QuizContext.Provider
       value={{
-        quizzes,
+        currentQuiz,
         currentGame,
-        addQuiz,
+        setCurrentQuiz,
+        createQuizOnBackend,
         startGame,
         joinGame,
         submitAnswer,
         nextQuestion,
         endGame,
         getCurrentQuiz,
-        getQuizById
+        findGameByRoomCode,
+        gameSessionId,
+        roomCode
       }}
     >
       {children}
@@ -270,4 +479,14 @@ export function useQuiz() {
     throw new Error("useQuiz must be used within a QuizProvider")
   }
   return context
+}
+
+// Type exports for game session
+export interface GameSession {
+  id: string
+  quiz_id: string
+  room_code: string
+  status: string
+  current_question_index: number
+  quizzes?: BackendQuiz
 }

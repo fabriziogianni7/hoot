@@ -5,6 +5,8 @@ import { OnchainKitProvider } from "@coinbase/onchainkit";
 // Rimuoviamo temporaneamente questo import per risolvere il conflitto con Tailwind
 // import "@coinbase/onchainkit/styles.css";
 import { QuizProvider } from "@/lib/quiz-context";
+import { SupabaseProvider } from "@/lib/supabase-context";
+import { WalletProvider } from "@/lib/wallet-context";
 
 export function RootProvider({ children }: { children: ReactNode }) {
   return (
@@ -26,9 +28,13 @@ export function RootProvider({ children }: { children: ReactNode }) {
         notificationProxyUrl: undefined,
       }}
     >
-      <QuizProvider>
-        {children}
-      </QuizProvider>
+      <SupabaseProvider>
+        <WalletProvider>
+          <QuizProvider>
+            {children}
+          </QuizProvider>
+        </WalletProvider>
+      </SupabaseProvider>
     </OnchainKitProvider>
   );
 }

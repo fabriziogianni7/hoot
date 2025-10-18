@@ -3,7 +3,11 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
-import { Button } from "@/components/ui/button";
+import { useWallet } from "@/lib/wallet-context";
+import { useSupabase } from "@/lib/supabase-context";
+import { useMiniKit } from "@coinbase/onchainkit/minikit";
+import { createQuizOnChain } from "@/lib/contract-helpers";
+import { formatAddress, getEthBalance } from "@/lib/contract-helpers";
 
 interface QuestionOption {
   text: string;
@@ -18,7 +22,11 @@ interface QuizQuestion {
 
 export default function AdminPage() {
   const router = useRouter();
-  const { addQuiz, startGame } = useQuiz();
+  const { startGame, createQuizOnBackend, joinGame: joinGameContext } = useQuiz();
+  const { account, provider, signer, connectWallet } = useWallet();
+  const { supabase } = useSupabase();
+  const { context } = useMiniKit();
+  
   const [currentQuestion, setCurrentQuestion] = useState<QuizQuestion>({
     text: "",
     options: [
@@ -32,7 +40,32 @@ export default function AdminPage() {
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [quizTitle, setQuizTitle] = useState("New Quiz");
-  const [gamePin, setGamePin] = useState("");
+  const [prizeAmount, setPrizeAmount] = useState("0.001");
+  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState("");
+  const [ethBalance, setEthBalance] = useState<string>("");
+  const [creationStep, setCreationStep] = useState<string>("");
+
+  // Determine wallet info (Farcaster or MetaMask)
+  const farcasterUser = context?.user as { addresses?: string[] } | undefined;
+  const walletAddress = account || farcasterUser?.addresses?.[0];
+  const isInFarcaster = !!context;
+
+  // Load ETH balance
+  useEffect(() => {
+    const loadBalance = async () => {
+      if (walletAddress && provider) {
+        try {
+          const balance = await getEthBalance(walletAddress, provider);
+          setEthBalance(balance);
+        } catch (err) {
+          console.error('Error loading balance:', err);
+        }
+      }
+    };
+
+    loadBalance();
+  }, [walletAddress, provider]);
 
   // Effetto per caricare la domanda corrente quando cambia l'indice
   useEffect(() => {
@@ -134,47 +167,134 @@ export default function AdminPage() {
     setCurrentQuestionIndex(questions.length + (currentQuestion.text.trim() !== "" ? 1 : 0));
   };
 
-  const handleSaveQuiz = () => {
-    // Salva la domanda corrente se ha contenuto
-    let allQuestions = [...questions];
-    if (currentQuestion.text.trim() !== "") {
-      if (currentQuestionIndex < questions.length) {
-        // Aggiorna la domanda esistente
-        allQuestions[currentQuestionIndex] = currentQuestion;
-      } else {
-        // Aggiungi la nuova domanda
-        allQuestions.push(currentQuestion);
+  const handleSaveQuiz = async () => {
+    if (isCreating) return;
+    
+    setIsCreating(true);
+    setError("");
+    setCreationStep("");
+    
+    try {
+      // Validate wallet
+      if (!walletAddress) {
+        setError("Please connect your wallet first");
+        setIsCreating(false);
+        return;
       }
+      
+      if (!signer && !isInFarcaster) {
+        setError("No signer available. Please reconnect your wallet.");
+        setIsCreating(false);
+        return;
+      }
+      
+      // Salva la domanda corrente se ha contenuto
+      const allQuestions = [...questions];
+      if (currentQuestion.text.trim() !== "") {
+        if (currentQuestionIndex < questions.length) {
+          allQuestions[currentQuestionIndex] = currentQuestion;
+        } else {
+          allQuestions.push(currentQuestion);
+        }
+      }
+      
+      if (allQuestions.length === 0) {
+        setError("Please add at least one question");
+        setIsCreating(false);
+        return;
+      }
+      
+      // Validate prize amount
+      const prizeAmountNum = parseFloat(prizeAmount);
+      if (isNaN(prizeAmountNum) || prizeAmountNum <= 0) {
+        setError("Invalid prize amount");
+        setIsCreating(false);
+        return;
+      }
+      
+      // Check balance
+      if (ethBalance && parseFloat(ethBalance) < prizeAmountNum) {
+        setError(`Insufficient balance. You have ${ethBalance} ETH but need ${prizeAmount} ETH`);
+        setIsCreating(false);
+        return;
+      }
+      
+      // Step 1: Create quiz in backend first (to get quiz_id)
+      setCreationStep("Saving quiz to database...");
+      
+      const quiz = {
+        id: `quiz-${Date.now()}`, // Temporary ID, backend will generate the real one
+        title: quizTitle || "New Quiz",
+        description: "Created from the admin interface",
+        questions: allQuestions.map((q, i) => ({
+          id: `q-${i}`,
+          text: q.text,
+          options: q.options.map(opt => opt.text),
+          correctAnswer: q.correctAnswer,
+          timeLimit: 15
+        })),
+        createdAt: new Date()
+      };
+      
+      // Get contract address from environment
+      const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "";
+      
+      // Create in backend with prize amount and contract address
+      const backendQuizId = await createQuizOnBackend(
+        quiz,
+        contractAddress, // Pass the contract address
+        undefined, // tx hash will be set after on-chain creation
+        walletAddress,
+        prizeAmountNum // Pass the prize amount
+      );
+      
+      console.log("Quiz saved to backend with ID:", backendQuizId);
+      
+      // Step 2: Create quiz on-chain with prize deposit using the backend quiz_id
+      setCreationStep("Creating quiz on blockchain and depositing prize...");
+      
+      if (signer) {
+        const { txHash } = await createQuizOnChain(backendQuizId, prizeAmount, signer);
+        console.log("Quiz created on-chain with prize deposit:", txHash);
+        console.log("Prize amount deposited:", prizeAmount, "ETH");
+        console.log("Contract address:", process.env.NEXT_PUBLIC_CONTRACT_ADDRESS);
+      }
+      
+      // Step 3: Start game session and join as creator
+      setCreationStep("Creating game session...");
+      
+      const generatedRoomCode = await startGame(backendQuizId);
+      
+      // Auto-join as the creator
+      const creatorPlayerId = await joinGameContext("Creator", walletAddress, generatedRoomCode);
+      
+      // Update game session with creator
+      const { data: gameSessionData } = await supabase
+        .from('game_sessions')
+        .select('id')
+        .eq('room_code', generatedRoomCode)
+        .single();
+        
+      if (gameSessionData) {
+        await supabase
+          .from('game_sessions')
+          .update({ creator_session_id: creatorPlayerId })
+          .eq('id', gameSessionData.id);
+      }
+      
+      // Store creator ID in localStorage
+      localStorage.setItem("quizPlayerId", creatorPlayerId);
+      
+      // Navigate to lobby with room code
+      router.push(`/quiz/lobby?room=${generatedRoomCode}`);
+      
+    } catch (err) {
+      console.error("Error creating quiz:", err);
+      const errorMessage = err instanceof Error ? err.message : "Failed to create quiz. Please try again.";
+      setError(errorMessage);
+      setIsCreating(false);
+      setCreationStep("");
     }
-    
-    if (allQuestions.length === 0) {
-      alert("Please add at least one question");
-      return;
-    }
-    
-    // Crea l'oggetto quiz
-    const quiz = {
-      id: gamePin || `quiz-${Date.now()}`,
-      title: quizTitle || "New Quiz",
-      description: "Created from the admin interface",
-      questions: allQuestions.map((q, i) => ({
-        id: `q-${i}`,
-        text: q.text,
-        options: q.options.map(opt => opt.text),
-        correctAnswer: q.correctAnswer,
-        timeLimit: 15
-      })),
-      createdAt: new Date()
-    };
-    
-    // Aggiungi il quiz al contesto
-    addQuiz(quiz);
-    
-    // Avvia il gioco
-    startGame(quiz.id);
-    
-    // Naviga alla lobby
-    router.push("/quiz/lobby");
   };
 
   const handleUseAI = () => {
@@ -216,22 +336,80 @@ export default function AdminPage() {
       
       {/* Content container */}
       <div className="relative z-10 flex flex-col items-center min-h-screen px-4 py-8">
+        {/* Wallet Connection Section */}
+        <div className="w-full max-w-md mb-6 bg-gray-900/50 rounded-lg p-4">
+          {!walletAddress ? (
+            <div className="flex flex-col items-center space-y-3">
+              <div className="text-sm text-gray-300">Connect wallet to create quiz with prizes</div>
+              {!isInFarcaster && (
+                <button
+                  onClick={connectWallet}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium"
+                >
+                  Connect Wallet
+                </button>
+              )}
+              {isInFarcaster && (
+                <div className="text-sm text-green-400">Using Farcaster Wallet</div>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-gray-300">Connected:</span>
+                <span className="font-mono text-sm">{formatAddress(walletAddress)}</span>
+              </div>
+              {ethBalance && (
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-300">Balance:</span>
+                  <span className="text-sm">{parseFloat(ethBalance).toFixed(4)} ETH</span>
+                </div>
+              )}
+              <div className="flex flex-col space-y-1">
+                <label className="text-sm text-gray-300">Prize Amount (ETH):</label>
+                <input
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={prizeAmount}
+                  onChange={(e) => setPrizeAmount(e.target.value)}
+                  className="px-3 py-2 rounded bg-white text-black"
+                  placeholder="0.001"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Error/Status Messages */}
+        {error && (
+          <div className="w-full max-w-md mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+            {error}
+          </div>
+        )}
+        {creationStep && (
+          <div className="w-full max-w-md mb-4 bg-blue-500/20 border border-blue-500 rounded-lg p-3 text-center text-blue-200">
+            {creationStep}
+          </div>
+        )}
+
         {/* Top navigation */}
         <div className="w-full max-w-md flex justify-between items-center mb-4">
           <div className="text-sm">Question Editor</div>
           <div className="flex space-x-2">
             <input
               type="text"
-              value={gamePin}
-              onChange={(e) => setGamePin(e.target.value)}
-              placeholder="Pin for Game"
-              className="px-1 py-1 text-sm rounded bg-white text-black"
+              value={quizTitle}
+              onChange={(e) => setQuizTitle(e.target.value)}
+              placeholder="Quiz Title"
+              className="px-2 py-1 text-sm rounded bg-white text-black"
             />
             <button
               onClick={handleSaveQuiz}
-              className="px-3 py-1 text-sm rounded bg-gray-700 hover:bg-gray-600"
+              disabled={isCreating || !walletAddress}
+              className="px-3 py-1 text-sm rounded bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Save
+              {isCreating ? 'Creating...' : 'Create & Start'}
             </button>
           </div>
         </div>
