@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+
+// Disable pre-rendering for this page
+export const dynamic = 'force-dynamic';
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 
-export default function JoinQuizPage() {
+function JoinQuizContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { quizzes, currentGame, joinGame } = useQuiz();
@@ -173,5 +176,13 @@ export default function JoinQuizPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function JoinQuizPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen w-full bg-black text-white flex items-center justify-center">Loading...</div>}>
+      <JoinQuizContent />
+    </Suspense>
   );
 }
