@@ -65,6 +65,8 @@ The `hoot-enclave/` directory contains a specialized FHE implementation that dem
 
 The FHE component allows for secure, private computations where sensitive game data (like scores or strategic inputs) can be processed without exposing the underlying values to the network or other players.
 
+here the small video demo: https://youtu.be/4yskVfkffic
+
 ## 📋 Prerequisites
 
 - Node.js 18+
