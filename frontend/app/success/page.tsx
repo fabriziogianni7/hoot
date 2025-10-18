@@ -34,6 +34,24 @@ export default function Success() {
         ✕
       </button>
       
+      {/* Logo */}
+      <div style={{
+        position: "absolute",
+        top: "2rem",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 10
+      }}>
+        <img 
+          src="/Logo.png" 
+          alt="Hoot Logo" 
+          style={{
+            height: "60px",
+            width: "auto"
+          }}
+        />
+      </div>
+      
       <div className={styles.content}>
         <div className={styles.successMessage}>
           <div className={styles.checkmark}>

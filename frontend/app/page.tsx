@@ -142,6 +142,24 @@ export default function Home() {
         </div>
       </div>
       
+      {/* Logo */}
+      <div style={{
+        position: "absolute",
+        top: "2rem",
+        left: "50%",
+        transform: "translateX(-50%)",
+        zIndex: 10
+      }}>
+        <img 
+          src="/Logo.png" 
+          alt="Hoot Logo" 
+          style={{
+            height: "250px",
+            width: "auto"
+          }}
+        />
+      </div>
+
       {/* Main content */}
       <div style={{
         position: "relative",
@@ -154,15 +172,6 @@ export default function Home() {
         maxWidth: "400px",
         padding: "0 1.5rem"
       }}>
-        {/* Logo */}
-        <div style={{
-          fontSize: "3rem",
-          fontWeight: "bold",
-          marginBottom: "4rem",
-          letterSpacing: "0.05em"
-        }}>
-          LOGO
-        </div>
         
         {/* Game pin input form */}
         <form onSubmit={handleJoin} style={{ width: "100%" }}>
@@ -225,7 +234,7 @@ export default function Home() {
         <Link href="/quiz/admin" style={{
           width: "100%",
           padding: "0.75rem",
-          backgroundColor: "#1e40af",
+          backgroundColor: "#8A63D2",
           color: "white",
           border: "none",
           borderRadius: "0.5rem",

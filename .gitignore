@@ -72,3 +72,4 @@ frontend/supabase/.temp/
 # pnpm-lock.yaml
 
 
+.vercel

@@ -66,6 +66,15 @@ function JoinQuizContent() {
         }}
       />
       
+      {/* Logo */}
+      <div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-10">
+        <img 
+          src="/Logo.png" 
+          alt="Hoot Logo" 
+          className="h-16 w-auto"
+        />
+      </div>
+      
       {/* Content container */}
       <div className="relative z-10 flex flex-col items-center min-h-screen px-4 py-8">
         {/* Top navigation */}

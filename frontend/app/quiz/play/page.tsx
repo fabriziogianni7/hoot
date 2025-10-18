@@ -303,6 +303,15 @@ function PlayQuizContent() {
         }}
       />
       
+      {/* Logo */}
+      <div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-10">
+        <img 
+          src="/Logo.png" 
+          alt="Hoot Logo" 
+          className="h-16 w-auto"
+        />
+      </div>
+      
       <div className="relative z-10 container mx-auto py-8 px-4 flex flex-col items-center">
         {/* Timer display (static, without animation) */}
         <div className="mb-4">
@@ -333,10 +342,10 @@ function PlayQuizContent() {
         <div className="grid grid-cols-1 gap-4 w-full max-w-md">
           {currentQuestion.options.map((option, index) => {
             const colors = [
-              "#84cc16", // lime-500
-              "#ef4444", // red-500
-              "#2563eb", // blue-600
-              "#facc15"  // yellow-400
+              "#0DCEFB", // BLUE
+              "#53DB1E", // GREEN
+              "#FDCC0E", // YELLOW
+              "#F70000"  // RED
             ];
             
             const baseColor = colors[index % colors.length];

@@ -27,25 +27,37 @@ export default function AdminPage() {
   const { startGame, createQuizOnBackend, joinGame: joinGameContext } = useQuiz();
   const { account, provider, signer, connectWallet } = useWallet();
   const { supabase } = useSupabase();
-  const { currentNetwork } = useNetwork();
+  const { currentNetwork, setNetwork } = useNetwork();
   const { context } = useMiniKit();
+
+  // CSS per forzare il colore bianco del placeholder
+  const placeholderStyle = `
+    .quiz-input::placeholder {
+      color: white !important;
+      opacity: 1 !important;
+    }
+    .quiz-input {
+      color: white !important;
+    }
+  `;
   
   const [currentQuestion, setCurrentQuestion] = useState<QuizQuestion>({
     text: "",
     options: [
-      { text: "", color: "bg-lime-500 hover:bg-lime-600" },
-      { text: "", color: "bg-red-500 hover:bg-red-600" },
-      { text: "", color: "bg-blue-600 hover:bg-blue-700" },
-      { text: "", color: "bg-yellow-400 hover:bg-yellow-500" }
+      { text: "", color: "hover:opacity-80" },
+      { text: "", color: "hover:opacity-80" },
+      { text: "", color: "hover:opacity-80" },
+      { text: "", color: "hover:opacity-80" }
     ],
     correctAnswer: 0
   });
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [quizTitle, setQuizTitle] = useState("New Quiz");
+  const [quizTitle, setQuizTitle] = useState("Name your Quiz");
   const [prizeAmount, setPrizeAmount] = useState("0.001");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState("");
+  const [showNetworkSwitcher, setShowNetworkSwitcher] = useState(false);
   const [ethBalance, setEthBalance] = useState<string>("");
   const [creationStep, setCreationStep] = useState<string>("");
 
@@ -80,10 +92,10 @@ export default function AdminPage() {
       setCurrentQuestion({
         text: "",
         options: [
-          { text: "", color: "bg-lime-500 hover:bg-lime-600" },
-          { text: "", color: "bg-red-500 hover:bg-red-600" },
-          { text: "", color: "bg-blue-600 hover:bg-blue-700" },
-          { text: "", color: "bg-yellow-400 hover:bg-yellow-500" }
+          { text: "", color: "hover:opacity-80" },
+          { text: "", color: "hover:opacity-80" },
+          { text: "", color: "hover:opacity-80" },
+          { text: "", color: "hover:opacity-80" }
         ],
         correctAnswer: 0
       });
@@ -186,7 +198,7 @@ export default function AdminPage() {
       }
       
       if (!signer && !isInFarcaster) {
-        setError("No signer available. Please reconnect your wallet.");
+        setError("No wallet connected. Please connect MetaMask or use Farcaster.");
         setIsCreating(false);
         return;
       }
@@ -227,7 +239,7 @@ export default function AdminPage() {
       
       const quiz = {
         id: `quiz-${Date.now()}`, // Temporary ID, backend will generate the real one
-        title: quizTitle || "New Quiz",
+        title: quizTitle || "Name your quiz",
         description: "Created from the admin interface",
         questions: allQuestions.map((q, i) => ({
           id: `q-${i}`,
@@ -257,10 +269,15 @@ export default function AdminPage() {
       setCreationStep("Creating quiz on blockchain and depositing prize...");
       
       if (signer) {
+        // MetaMask wallet - create on-chain with signer
         const { txHash } = await createQuizOnChain(backendQuizId, prizeAmount, signer, currentNetwork);
         console.log("Quiz created on-chain with prize deposit:", txHash);
         console.log("Prize amount deposited:", prizeAmount, "ETH");
         console.log("Network:", currentNetwork);
+      } else if (isInFarcaster) {
+        // Farcaster wallet - skip on-chain creation for now
+        console.log("Farcaster wallet detected - skipping on-chain creation");
+        console.log("Prize amount will be handled by backend:", prizeAmount, "ETH");
       }
       
       // Step 3: Start game session and join as creator
@@ -305,10 +322,10 @@ export default function AdminPage() {
     const aiGeneratedQuestion = {
       text: "Quale di queste è una tecnologia blockchain?",
       options: [
-        { text: "Ethereum", color: "bg-lime-500 hover:bg-lime-600" },
-        { text: "MySQL", color: "bg-red-500 hover:bg-red-600" },
-        { text: "MongoDB", color: "bg-blue-600 hover:bg-blue-700" },
-        { text: "Firebase", color: "bg-yellow-400 hover:bg-yellow-500" }
+        { text: "Ethereum", color: "hover:opacity-80" },
+        { text: "MySQL", color: "hover:opacity-80" },
+        { text: "MongoDB", color: "hover:opacity-80" },
+        { text: "Firebase", color: "hover:opacity-80" }
       ],
       correctAnswer: 0 // Ethereum è la risposta corretta
     };
@@ -321,12 +338,13 @@ export default function AdminPage() {
 
   // Ottieni un riassunto breve della domanda per i pulsanti (max 10 caratteri)
   const getQuestionSummary = (question: QuizQuestion) => {
-    if (!question.text) return "xx";
+    if (!question.text) return "";
     return question.text.length > 10 ? question.text.substring(0, 10) + "..." : question.text;
   };
 
   return (
     <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
+      <style dangerouslySetInnerHTML={{ __html: placeholderStyle }} />
       {/* Background network effect */}
       <div 
         className="absolute inset-0 z-0 opacity-40"
@@ -340,12 +358,65 @@ export default function AdminPage() {
       {/* Content container */}
       <div className="relative z-10 flex flex-col items-center min-h-screen px-4 py-8">
         {/* Network Switcher */}
-        <div className="w-full max-w-md mb-4">
-          <NetworkSwitcher />
+        <div className="w-full max-w-md mb-4 flex justify-center">
+          <div className="relative">
+            <button
+              onClick={() => setShowNetworkSwitcher(!showNetworkSwitcher)}
+              className="flex items-center space-x-2 bg-gray-800/50 rounded-lg px-3 py-2 hover:bg-gray-700/50 transition-colors cursor-pointer"
+            >
+              <div className="w-4 h-4 rounded-full bg-green-500"></div>
+              <span className="text-sm text-gray-300">
+                {currentNetwork === 'base' ? 'Base' : 
+                 currentNetwork === 'baseSepolia' ? 'Base Sepolia' : 
+                 currentNetwork === 'local' ? 'Local' : 'Unknown'}
+              </span>
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {showNetworkSwitcher && (
+              <div className="absolute top-full left-0 mt-1 w-full bg-gray-800 rounded-lg shadow-lg z-50">
+                <button
+                  onClick={() => {
+                    setNetwork('base');
+                    setShowNetworkSwitcher(false);
+                  }}
+                  className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-700 rounded-t-lg ${
+                    currentNetwork === 'base' ? 'bg-gray-700 text-white' : 'text-gray-300'
+                  }`}
+                >
+                  Base
+                </button>
+                <button
+                  onClick={() => {
+                    setNetwork('baseSepolia');
+                    setShowNetworkSwitcher(false);
+                  }}
+                  className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-700 ${
+                    currentNetwork === 'baseSepolia' ? 'bg-gray-700 text-white' : 'text-gray-300'
+                  }`}
+                >
+                  Base Sepolia
+                </button>
+                <button
+                  onClick={() => {
+                    setNetwork('local');
+                    setShowNetworkSwitcher(false);
+                  }}
+                  className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-700 rounded-b-lg ${
+                    currentNetwork === 'local' ? 'bg-gray-700 text-white' : 'text-gray-300'
+                  }`}
+                >
+                  Local
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Wallet Connection Section */}
-        <div className="w-full max-w-md mb-6 bg-gray-900/50 rounded-lg p-4">
+        <div className="w-full max-w-md mb-1 bg-gray-900/50 rounded-lg p-4">
           {!walletAddress ? (
             <div className="flex flex-col items-center space-y-3">
               <div className="text-sm text-gray-300">Connect wallet to create quiz with prizes</div>
@@ -381,7 +452,7 @@ export default function AdminPage() {
                   min="0"
                   value={prizeAmount}
                   onChange={(e) => setPrizeAmount(e.target.value)}
-                  className="px-3 py-2 rounded bg-white text-black"
+                  className="px-3 py-2 rounded bg-black text-white"
                   placeholder="0.001"
                 />
               </div>
@@ -391,73 +462,98 @@ export default function AdminPage() {
 
         {/* Error/Status Messages */}
         {error && (
-          <div className="w-full max-w-md mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+          <div className="w-full max-w-md mb-1 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
             {error}
           </div>
         )}
         {creationStep && (
-          <div className="w-full max-w-md mb-4 bg-blue-500/20 border border-blue-500 rounded-lg p-3 text-center text-blue-200">
+          <div className="w-full max-w-md mb-1 bg-blue-500/20 border border-blue-500 rounded-lg p-3 text-center text-blue-200">
             {creationStep}
           </div>
         )}
 
         {/* Top navigation */}
-        <div className="w-full max-w-md flex justify-between items-center mb-4">
-          <div className="text-sm">Question Editor</div>
+        <div className="w-full max-w-md flex justify-between items-center mb-1">
+          <div className="flex items-center -ml-1">
+            <img 
+              src="/Logo.png" 
+              alt="Hoot Logo" 
+              className="h-20 w-auto"
+            />
+          </div>
           <div className="flex space-x-2">
             <input
               type="text"
               value={quizTitle}
               onChange={(e) => setQuizTitle(e.target.value)}
               placeholder="Quiz Title"
-              className="px-2 py-1 text-sm rounded bg-white text-black"
+                className="px-4 py-2 text-sm rounded bg-white text-black w-56"
             />
             <button
               onClick={handleSaveQuiz}
               disabled={isCreating || !walletAddress}
-              className="px-3 py-1 text-sm rounded bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                backgroundColor: isCreating || !walletAddress ? "#666" : "#8A63D2",
+                color: "white"
+              }}
             >
-              {isCreating ? 'Creating...' : 'Create & Start'}
+              {isCreating ? 'Creating...' : 'Create'}
             </button>
           </div>
         </div>
         
         {/* Question input */}
         <div className="w-full max-w-md mb-6">
-          <div className="border border-white/30 rounded p-4 h-32 flex items-center justify-center">
+          <div className="border border-white rounded p-4 h-32 relative">
             <textarea
               value={currentQuestion.text}
               onChange={(e) => setCurrentQuestion({ ...currentQuestion, text: e.target.value })}
               placeholder="Enter your question here"
-              className="w-full h-full bg-transparent text-white text-center resize-none focus:outline-none"
+              className="quiz-input w-full h-full bg-transparent text-center resize-none focus:outline-none absolute inset-0 flex items-center justify-center"
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                marginTop: '32px',
+                justifyContent: 'center',
+                padding: '1rem'
+              }}
             />
           </div>
         </div>
         
         {/* Answer options */}
         <div className="w-full max-w-md grid grid-cols-2 gap-4 mb-8">
-          {currentQuestion.options.map((option, index) => (
+          {currentQuestion.options.map((option, index) => {
+            const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
+            return (
             <div 
               key={index}
               className={`${option.color} rounded p-4 text-white relative`}
+              style={{ backgroundColor: colors[index] }}
               onClick={() => handleCorrectAnswerChange(index)}
             >
               {/* Indicatore di risposta corretta */}
-              {currentQuestion.correctAnswer === index && (
-                <div className="absolute top-1 right-1 w-4 h-4 bg-white rounded-full flex items-center justify-center">
-                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                </div>
-              )}
+              <div className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center"
+                   style={{ 
+                     backgroundColor: currentQuestion.correctAnswer === index ? 'white' : 'rgba(255, 255, 255, 0.3)'
+                   }}>
+                <div className="w-2 h-2 rounded-full"
+                     style={{ 
+                       backgroundColor: currentQuestion.correctAnswer === index ? '#10B981' : 'white'
+                     }}></div>
+              </div>
               <input
                 type="text"
                 value={option.text}
                 onChange={(e) => handleOptionChange(index, e.target.value)}
                 placeholder={`add reply ${index + 1}`}
-                className="w-full bg-transparent focus:outline-none"
+                className="quiz-input w-full bg-transparent focus:outline-none"
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
-          ))}
+            );
+          })}
         </div>
         
         {/* Question navigation */}
@@ -479,7 +575,7 @@ export default function AdminPage() {
               className="bg-black border border-white rounded px-4 py-2 text-sm flex-shrink-0"
             >
               Question {displayQuestionNumber}<br/>
-              {currentQuestion.text ? getQuestionSummary(currentQuestion) : "xx"}
+              {currentQuestion.text ? getQuestionSummary(currentQuestion) : ""}
             </div>
           )}
           
@@ -496,24 +592,16 @@ export default function AdminPage() {
         <div className="mt-6 flex flex-col gap-4 w-full max-w-md">
           <button
             onClick={handleSaveQuestion}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white"
+            className="px-4 py-2 rounded text-white"
+            style={{
+              backgroundColor: "#8A63D2"
+            }}
           >
             Save Question
           </button>
           
           {/* AI Agent button */}
-          <button
-            onClick={handleUseAI}
-            className="flex items-center justify-center gap-2 px-4 py-3 bg-[#7B68EE] hover:bg-[#6A5ACD] rounded-md text-white font-medium"
-          >
-            <span>Use AI Agent</span>
-            <div className="flex items-center">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 5C13.66 5 15 6.34 15 8C15 9.66 13.66 11 12 11C10.34 11 9 9.66 9 8C9 6.34 10.34 5 12 5ZM12 19.2C9.5 19.2 7.29 17.92 6 15.98C6.03 13.99 10 12.9 12 12.9C13.99 12.9 17.97 13.99 18 15.98C16.71 17.92 14.5 19.2 12 19.2Z" fill="white"/>
-              </svg>
-              <span className="font-bold ml-1">CIVIC</span>
-            </div>
-          </button>
+          
         </div>
       </div>
     </div>
