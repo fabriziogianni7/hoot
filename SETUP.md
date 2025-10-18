@@ -49,108 +49,74 @@ cd ..
 
 ## 🛠️ Step 2: Blockchain Setup (Anvil)
 
-### 2.1 Start Local Blockchain
+### 2.1 Start Blockchain Services
+
+**Terminal 1** - Start both Anvil blockchain and ngrok tunnel:
 ```bash
+./start-anvil.sh
+```
+
+This script will:
+- Start the Anvil blockchain on port 8545
+- Set up ngrok tunnel for external access
+- Display the ngrok URL (e.g., `https://abc123.ngrok.io`)
+
+**Keep this terminal open** and note the **ngrok URL** for the next step.
+
+**Alternative: Manual approach**
+If you prefer manual control:
+```bash
+# Terminal 1a - Anvil blockchain
 cd contracts
 anvil --port 8545
-```
 
-**Keep this terminal window open** - this runs your local Ethereum testnet.
-
-**Expected Output:**
-```
-Listening on 127.0.0.1:8545
-```
-
-### 2.2 Set Up ngrok Tunnel
-
-In a **new terminal window**:
-
-#### Install ngrok (if not already installed)
-```bash
-# macOS
-brew install ngrok/ngrok/ngrok
-
-# Or download from https://ngrok.com/download
-```
-
-#### Set up ngrok authentication
-```bash
-ngrok config add-authtoken YOUR_AUTH_TOKEN
-```
-
-#### Start ngrok tunnel
-```bash
+# Terminal 1b - ngrok tunnel (separate terminal)
 cd contracts
 ngrok http 8545 --log=stdout
 ```
 
-**Keep this terminal open** and note the **public URL** it provides (e.g., `https://abc123.ngrok.io`).
-
-This URL will be used as `RPC_URL_LOCAL` in the next steps.
-
 ## 🔧 Step 3: Smart Contract Deployment
 
-### 3.1 Configure Contract Environment
+Deploy the smart contract and update all configurations:
 ```bash
+./deploy-contract.sh <ngrok-url>
+```
+
+Replace `<ngrok-url>` with the URL from Step 2 (e.g., `https://abc123.ngrok.io`).
+
+This script will:
+- Deploy the HootQuizManager contract
+- Extract the contract address
+- Update environment files with the ngrok URL
+- Update frontend contract configuration
+
+**Alternative: Manual deployment**
+```bash
+# Configure environment
 cd contracts
 cp env.example .env
-```
+# Edit .env file as needed
 
-Edit the `.env` file with your values:
-```bash
-# Private key for deployment (anvil account 0)
-PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-
-# Treasury address (anvil account 1)
-TREASURY_ADDRESS=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
-
-# API keys (not needed for local development)
-BASESCAN_API_KEY=
-
-# RPC URLs
-RPC_URL_LOCAL=http://127.0.0.1:8545
-```
-
-### 3.2 Deploy Contract
-```bash
+# Deploy contract
 forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast
-```
 
-**Expected Output:**
-```
-Deployer: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
-Deployed to: 0x5FbDB2315678afecb367f032d93F642f64180aa3  # <- Note this address!
-```
-
-**Important:** Copy the deployed contract address (it will be different each time).
-
-### 3.3 Update Frontend Contract Configuration
-
-Edit `frontend/lib/contracts.ts`:
-```typescript
-// Contract addresses for different networks
-export const CONTRACT_ADDRESSES = {
-  local: "0x5FbDB2315678afecb367f032d93F642f64180aa3", // <- Replace with your deployed address
-  baseSepolia: "", // Add when deployed
-  base: "" // Add when deployed
-}
+# Update frontend manually
+# Edit frontend/lib/contracts.ts with the deployed address
 ```
 
 ## 🗄️ Step 4: Database Setup (Supabase)
 
 ### 4.1 Start Supabase
 
-**Option A: Using Supabase CLI (Recommended)**
+**Terminal 2** - Start Supabase:
+```bash
+./start-supabase.sh
+```
+
+**Alternative: Manual approach**
 ```bash
 cd backend/supabase
 supabase start
-```
-
-**Option B: Using Docker (if you have Supabase running in Docker)**
-```bash
-# If you already have Supabase running in Docker, just verify it's accessible
-curl http://localhost:54321/health
 ```
 
 ### 4.2 Verify Supabase Status
@@ -224,55 +190,46 @@ supabase secrets set RPC_URL_LOCAL=https://abc123.ngrok.io
 
 ## ⚛️ Step 5: Frontend Setup
 
-### 5.1 Install Dependencies (if not done already)
+**Terminal 3** - Start the frontend:
 ```bash
+./start-frontend.sh
+```
+
+This script will:
+- Install dependencies if needed
+- Start the Next.js development server
+- Open http://localhost:3000
+
+**Alternative: Manual approach**
+```bash
+# Install dependencies
 cd frontend
 npm install
-```
 
-### 5.2 Environment Variables
-
-Create `.env.local` file in the frontend directory:
-```bash
-# Supabase Configuration
-NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_from_supabase_status
-
-# Contract Configuration
-NEXT_PUBLIC_CONTRACT_ADDRESS=0x5FbDB2315678afecb367f032d93F642f64180aa3
-
-# OnchainKit Configuration (if needed)
-NEXT_PUBLIC_ONCHAINKIT_API_KEY=your_api_key
-```
-
-## 🚀 Step 6: Start All Services
-
-### 6.1 Start Backend Service
-```bash
-cd backend/src
+# Start development server
 npm run dev
 ```
 
-**Keep this terminal open** for the backend API server.
+## 🚀 Step 6: All Services Running
 
-### 6.2 Start Frontend
-```bash
-cd frontend
-npm run dev
-```
+At this point, all services should be running in their respective terminals:
 
-**Keep this terminal open** - this is your development server.
+- **Terminal 1**: `./start-anvil.sh` (Blockchain + ngrok)
+- **Terminal 2**: `./start-supabase.sh` (Database)
+- **Terminal 3**: `./start-frontend.sh` (Frontend)
+
+The deployment script (`./deploy-contract.sh`) was already run in Step 3 and configured everything automatically.
 
 ## ✅ Step 7: Verification
 
 ### 7.1 Check All Services
 Verify all services are running:
 
-1. **Anvil Blockchain** (Terminal 1): Should show "Listening on 127.0.0.1:8545"
-2. **ngrok Tunnel** (Terminal 2): Should show public URL
-3. **Supabase** (Terminal 3): Should show "supabase local development setup is running"
-4. **Backend API** (Terminal 4): Should show server running
-5. **Frontend** (Terminal 5): Should show "Ready - started server on 0.0.0.0:3000"
+1. **Blockchain** (Terminal 1): Should show "Blockchain services started successfully!"
+2. **Supabase** (Terminal 2): Should show "Supabase started successfully!"
+3. **Frontend** (Terminal 3): Should show "Frontend started successfully!"
+
+Each terminal should show their respective success messages and keep running.
 
 ### 7.2 Access Points
 - **Frontend**: http://localhost:3000
@@ -335,27 +292,28 @@ lsof -i:8545
 
 ### Individual Service Restart
 ```bash
-# Restart Anvil
-pkill -f anvil && anvil --port 8545
+# Restart Blockchain (Terminal 1)
+./start-anvil.sh
 
-# Restart Supabase
-supabase stop && supabase start
+# Restart Supabase (Terminal 2)
+./start-supabase.sh
 
-# Restart Frontend
-cd frontend && npm run dev
+# Restart Frontend (Terminal 3)
+./start-frontend.sh
 
-# Restart Backend
-cd backend/src && npm run dev
+# Redeploy contracts (if needed)
+./deploy-contract.sh <ngrok-url>
 ```
 
 ### Full Cleanup and Restart
 ```bash
-# Kill all related processes
+# Stop all services
+pkill -f "start-anvil.sh"
+pkill -f "start-supabase.sh"
+pkill -f "start-frontend.sh"
 pkill -f anvil
 pkill -f ngrok
 pkill -f supabase
-pkill -f "next dev"
-pkill -f "npm run dev"
 
 # Then restart everything following the setup steps
 ```
