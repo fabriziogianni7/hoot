@@ -196,7 +196,7 @@ export default function AdminPage() {
         setIsCreating(false);
         return;
       }
-      
+      console.log("wallet Address", walletAddress);
       if (!signer && !isInFarcaster) {
         setError("No wallet connected. Please connect MetaMask or use Farcaster.");
         setIsCreating(false);

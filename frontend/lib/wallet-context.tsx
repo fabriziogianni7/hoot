@@ -36,6 +36,8 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       if (typeof window !== 'undefined' && typeof window.ethereum !== 'undefined') {
         const provider = new ethers.BrowserProvider(window.ethereum)
         const accounts = await provider.send('eth_requestAccounts', [])
+        console.log("accounts", accounts);
+        console.log("provider", provider);
         
         if (accounts.length > 0) {
           const signer = await provider.getSigner()
