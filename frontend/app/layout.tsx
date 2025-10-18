@@ -3,6 +3,7 @@ import { Inter, Source_Code_Pro, Patrick_Hand } from "next/font/google";
 import { SafeArea } from "@coinbase/onchainkit/minikit";
 import { minikitConfig } from "../minikit.config";
 import { RootProvider } from "./rootProvider";
+import Providers from "@/components/providers";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -55,7 +56,9 @@ export default function RootLayout({
           <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet" />
         </head>
         <body className={`${inter.variable} ${sourceCodePro.variable} ${patrickHand.variable}`}>
-          <SafeArea>{children}</SafeArea>
+          <SafeArea>
+            <Providers>{children}</Providers>
+          </SafeArea>
         </body>
       </html>
     </RootProvider>
