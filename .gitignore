@@ -62,6 +62,10 @@ tmp/
 temp/
 *.tmp
 
+# Supabase CLI temporary files
+**/supabase/.temp/
+frontend/supabase/.temp/
+
 # Package manager lock files (optional - comment out if you want to keep them)
 # package-lock.json
 # yarn.lock

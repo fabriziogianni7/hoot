@@ -7,9 +7,10 @@ import { HOOT_QUIZ_MANAGER_ABI, getCurrentContractAddress, ZERO_ADDRESS } from '
 export async function createQuizOnChain(
   quizId: string,
   prizeAmount: string, // in ETH
-  signer: ethers.Signer
+  signer: ethers.Signer,
+  network?: string
 ): Promise<{ txHash: string; receipt: ethers.TransactionReceipt }> {
-  const contractAddress: string = getCurrentContractAddress();
+  const contractAddress: string = getCurrentContractAddress(network);
   const contract = new ethers.Contract(contractAddress, HOOT_QUIZ_MANAGER_ABI, signer);
 
   // Convert prize amount to wei
@@ -41,9 +42,10 @@ export async function distributePrizes(
   quizId: string,
   winners: [string, string, string, string], // [1st, 2nd, 3rd, treasury]
   amounts: [bigint, bigint, bigint, bigint], // amounts in wei
-  signer: ethers.Signer
+  signer: ethers.Signer,
+  network?: string
 ): Promise<{ txHash: string; receipt: ethers.TransactionReceipt }> {
-  const contractAddress = getCurrentContractAddress()
+  const contractAddress = getCurrentContractAddress(network)
   const contract = new ethers.Contract(contractAddress, HOOT_QUIZ_MANAGER_ABI, signer)
 
   // Call distributePrize
@@ -67,7 +69,8 @@ export async function distributePrizes(
  */
 export async function getQuizDetails(
   quizId: string,
-  provider: ethers.Provider
+  provider: ethers.Provider,
+  network?: string
 ): Promise<{
   quizId: string
   creator: string
@@ -77,7 +80,7 @@ export async function getQuizDetails(
   winners: [string, string, string]
   scores: [bigint, bigint, bigint]
 }> {
-  const contractAddress = getCurrentContractAddress()
+  const contractAddress = getCurrentContractAddress(network)
   const contract = new ethers.Contract(contractAddress, HOOT_QUIZ_MANAGER_ABI, provider)
 
   const quiz = await contract.getQuiz(quizId)
@@ -90,9 +93,10 @@ export async function getQuizDetails(
  */
 export async function quizExists(
   quizId: string,
-  provider: ethers.Provider
+  provider: ethers.Provider,
+  network?: string
 ): Promise<boolean> {
-  const contractAddress = getCurrentContractAddress()
+  const contractAddress = getCurrentContractAddress(network)
   const contract = new ethers.Contract(contractAddress, HOOT_QUIZ_MANAGER_ABI, provider)
 
   return await contract.quizExists(quizId)
@@ -103,9 +107,10 @@ export async function quizExists(
  */
 export async function setQuizActive(
   quizId: string,
-  signer: ethers.Signer
+  signer: ethers.Signer,
+  network?: string
 ): Promise<{ txHash: string; receipt: ethers.TransactionReceipt }> {
-  const contractAddress = getCurrentContractAddress()
+  const contractAddress = getCurrentContractAddress(network)
   const contract = new ethers.Contract(contractAddress, HOOT_QUIZ_MANAGER_ABI, signer)
 
   const tx = await contract.setQuizActive(quizId)
@@ -127,9 +132,10 @@ export async function setQuizActive(
  */
 export async function cancelQuiz(
   quizId: string,
-  signer: ethers.Signer
+  signer: ethers.Signer,
+  network?: string
 ): Promise<{ txHash: string; receipt: ethers.TransactionReceipt }> {
-  const contractAddress = getCurrentContractAddress()
+  const contractAddress = getCurrentContractAddress(network)
   const contract = new ethers.Contract(contractAddress, HOOT_QUIZ_MANAGER_ABI, signer)
 
   const tx = await contract.cancelQuiz(quizId)

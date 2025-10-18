@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useWallet } from "@/lib/wallet-context";
 import { useSupabase } from "@/lib/supabase-context";
+import { useNetwork } from "@/lib/network-context";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import { createQuizOnChain } from "@/lib/contract-helpers";
 import { formatAddress, getEthBalance } from "@/lib/contract-helpers";
+import NetworkSwitcher from "@/components/NetworkSwitcher";
 
 interface QuestionOption {
   text: string;
@@ -25,6 +27,7 @@ export default function AdminPage() {
   const { startGame, createQuizOnBackend, joinGame: joinGameContext } = useQuiz();
   const { account, provider, signer, connectWallet } = useWallet();
   const { supabase } = useSupabase();
+  const { currentNetwork } = useNetwork();
   const { context } = useMiniKit();
   
   const [currentQuestion, setCurrentQuestion] = useState<QuizQuestion>({
@@ -254,10 +257,10 @@ export default function AdminPage() {
       setCreationStep("Creating quiz on blockchain and depositing prize...");
       
       if (signer) {
-        const { txHash } = await createQuizOnChain(backendQuizId, prizeAmount, signer);
+        const { txHash } = await createQuizOnChain(backendQuizId, prizeAmount, signer, currentNetwork);
         console.log("Quiz created on-chain with prize deposit:", txHash);
         console.log("Prize amount deposited:", prizeAmount, "ETH");
-        console.log("Contract address:", process.env.NEXT_PUBLIC_CONTRACT_ADDRESS);
+        console.log("Network:", currentNetwork);
       }
       
       // Step 3: Start game session and join as creator
@@ -336,6 +339,11 @@ export default function AdminPage() {
       
       {/* Content container */}
       <div className="relative z-10 flex flex-col items-center min-h-screen px-4 py-8">
+        {/* Network Switcher */}
+        <div className="w-full max-w-md mb-4">
+          <NetworkSwitcher />
+        </div>
+
         {/* Wallet Connection Section */}
         <div className="w-full max-w-md mb-6 bg-gray-900/50 rounded-lg p-4">
           {!walletAddress ? (

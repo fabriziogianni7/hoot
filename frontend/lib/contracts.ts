@@ -1,7 +1,7 @@
 // Contract addresses for different networks
 export const CONTRACT_ADDRESSES = {
   local: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
-  baseSepolia: "", // Add when deployed
+  baseSepolia: "0x2dC5532610Fe67A185bC9199a2d5975a130ec7f8", 
   base: "" // Add when deployed
 }
 
@@ -10,8 +10,14 @@ export const getContractAddress = (network: string = 'local') => {
   return CONTRACT_ADDRESSES[network as keyof typeof CONTRACT_ADDRESSES] || CONTRACT_ADDRESSES.local
 }
 
-// Get current contract address from environment
-export const getCurrentContractAddress = () => {
+// Get current contract address from environment or network context
+export const getCurrentContractAddress = (network?: string) => {
+  // If network is provided, use it directly
+  if (network) {
+    return CONTRACT_ADDRESSES[network as keyof typeof CONTRACT_ADDRESSES] || CONTRACT_ADDRESSES.local
+  }
+
+  // Otherwise try environment variable first, then default to local
   return process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || CONTRACT_ADDRESSES.local
 }
 

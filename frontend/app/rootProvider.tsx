@@ -7,6 +7,7 @@ import { OnchainKitProvider } from "@coinbase/onchainkit";
 import { QuizProvider } from "@/lib/quiz-context";
 import { SupabaseProvider } from "@/lib/supabase-context";
 import { WalletProvider } from "@/lib/wallet-context";
+import { NetworkProvider } from "@/lib/network-context";
 
 export function RootProvider({ children }: { children: ReactNode }) {
   return (
@@ -28,13 +29,15 @@ export function RootProvider({ children }: { children: ReactNode }) {
         notificationProxyUrl: undefined,
       }}
     >
-      <SupabaseProvider>
-        <WalletProvider>
-          <QuizProvider>
-            {children}
-          </QuizProvider>
-        </WalletProvider>
-      </SupabaseProvider>
+      <NetworkProvider>
+        <SupabaseProvider>
+          <WalletProvider>
+            <QuizProvider>
+              {children}
+            </QuizProvider>
+          </WalletProvider>
+        </SupabaseProvider>
+      </NetworkProvider>
     </OnchainKitProvider>
   );
 }
