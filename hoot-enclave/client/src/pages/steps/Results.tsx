@@ -36,12 +36,10 @@ const Results: React.FC = () => {
           {isCorrect ? (
             <>
             <CheckCircleIcon size={48} className='text-green-500' />
-            <p className='text-green-500'>{result}</p>
             </>
           ) : (
             <>
               <XCircleIcon size={48} className='text-red-500' />
-              <p className='text-green-500'>{result}</p>
             </>
           )}
         </div>
@@ -57,7 +55,6 @@ const Results: React.FC = () => {
               <div className='space-y-2'>
                 <p className={`text-2xl font-bold ${isCorrect ? 'text-green-700' : 'text-red-700'}`}>
                   {isCorrect ? '✅ Correct!' : '❌ Incorrect'}
-                  <p className='text-green-500'>{result}</p>
                 </p>
                 {submittedInputs && (
                   <div className='text-sm text-slate-600'>
