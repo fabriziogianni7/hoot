@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+
+// Disable pre-rendering for this page
+export const dynamic = 'force-dynamic';
 import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
 
-export default function PlayQuizPage() {
+function PlayQuizContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { currentGame, getCurrentQuiz, submitAnswer, nextQuestion, setCurrentQuiz } = useQuiz();
@@ -413,5 +416,13 @@ export default function PlayQuizPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function PlayQuizPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen w-full bg-black text-white flex items-center justify-center">Loading...</div>}>
+      <PlayQuizContent />
+    </Suspense>
   );
 }

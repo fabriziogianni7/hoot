@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+
+// Disable pre-rendering for this page
+export const dynamic = 'force-dynamic';
 import { useQuiz } from "@/lib/quiz-context";
 import { useWallet } from "@/lib/wallet-context";
 import { useSupabase } from "@/lib/supabase-context";
 import Link from "next/link";
 
-export default function LobbyPage() {
+function LobbyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { currentGame, getCurrentQuiz, joinGame: joinGameContext, roomCode: contextRoomCode, gameSessionId, setCurrentQuiz } = useQuiz();
@@ -366,5 +369,13 @@ export default function LobbyPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function LobbyPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen w-full bg-black text-white flex items-center justify-center">Loading...</div>}>
+      <LobbyContent />
+    </Suspense>
   );
 }
