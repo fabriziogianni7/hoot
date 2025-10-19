@@ -34,7 +34,7 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50">
-      <div className="bg-gray-900 border border-gray-700 rounded-t-2xl p-6 w-full max-w-md transform transition-transform duration-300 ease-out animate-slide-up">
+      <div className="bg-black border border-gray-800 rounded-t-2xl p-6 w-full max-w-md transform transition-transform duration-300 ease-out animate-slide-up">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-white">Quiz Created Successfully! 🎉</h3>
           <button
@@ -50,14 +50,14 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
         <div className="space-y-4">
           <div>
             <p className="text-gray-300 mb-2">Share this link with your players:</p>
-            <div className="bg-gray-800 rounded-lg p-3 border border-gray-600">
+            <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
               <p className="text-sm text-blue-400 break-all">{quizUrl}</p>
             </div>
           </div>
           
           <div>
             <p className="text-gray-300 mb-2">Or share the PIN:</p>
-            <div className="bg-gray-800 rounded-lg p-3 border border-gray-600 text-center">
+            <div className="bg-gray-900 rounded-lg p-3 border border-gray-700 text-center">
               <p className="text-2xl font-bold text-white font-mono">{roomCode}</p>
             </div>
           </div>

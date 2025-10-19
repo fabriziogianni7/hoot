@@ -447,9 +447,7 @@ export default function AdminPage() {
             >
               <div className="w-4 h-4 rounded-full bg-green-500"></div>
               <span className="text-sm text-gray-300">
-                {currentNetwork === 'base' ? 'Base' : 
-                 currentNetwork === 'baseSepolia' ? 'Base Sepolia' : 
-                 currentNetwork === 'local' ? 'Local' : 'Unknown'}
+                Base Sepolia
               </span>
               <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -460,36 +458,14 @@ export default function AdminPage() {
               <div className="absolute top-full left-0 mt-1 w-full bg-gray-800 rounded-lg shadow-lg z-50">
                 <button
                   onClick={() => {
-                    setNetwork('base');
-                    setShowNetworkSwitcher(false);
-                  }}
-                  className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-700 rounded-t-lg ${
-                    currentNetwork === 'base' ? 'bg-gray-700 text-white' : 'text-gray-300'
-                  }`}
-                >
-                  Base
-                </button>
-                <button
-                  onClick={() => {
                     setNetwork('baseSepolia');
                     setShowNetworkSwitcher(false);
                   }}
-                  className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-700 ${
+                  className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-700 rounded-lg ${
                     currentNetwork === 'baseSepolia' ? 'bg-gray-700 text-white' : 'text-gray-300'
                   }`}
                 >
                   Base Sepolia
-                </button>
-                <button
-                  onClick={() => {
-                    setNetwork('local');
-                    setShowNetworkSwitcher(false);
-                  }}
-                  className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-700 rounded-b-lg ${
-                    currentNetwork === 'local' ? 'bg-gray-700 text-white' : 'text-gray-300'
-                  }`}
-                >
-                  Local
                 </button>
               </div>
             )}
@@ -509,7 +485,7 @@ export default function AdminPage() {
                       connect({ connector });
                     }
                   }}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium"
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded text-white font-medium"
                 >
                   Connect Wallet
                 </button>

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Source_Code_Pro, Patrick_Hand } from "next/font/google";
+import { Montserrat, Source_Code_Pro, Patrick_Hand } from "next/font/google";
 import { SafeArea } from "@coinbase/onchainkit/minikit";
 import { minikitConfig } from "../minikit.config";
 import { RootProvider } from "./rootProvider";
@@ -25,9 +25,10 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-const inter = Inter({
-  variable: "--font-inter",
+const montserrat = Montserrat({
+  variable: "--font-montserrat",
   subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 
 const sourceCodePro = Source_Code_Pro({
@@ -52,9 +53,9 @@ export default function RootLayout({
         <head>
           <link rel="preconnect" href="https://fonts.googleapis.com" />
           <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-          <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet" />
+          <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Patrick+Hand&display=swap" rel="stylesheet" />
         </head>
-        <body className={`${inter.variable} ${sourceCodePro.variable} ${patrickHand.variable}`}>
+        <body className={`${montserrat.variable} ${sourceCodePro.variable} ${patrickHand.variable}`}>
           <SafeArea>
             {children}
           </SafeArea>

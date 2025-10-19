@@ -275,7 +275,7 @@ export default function Home() {
           cursor: "pointer",
           fontSize: "1rem",
           fontWeight: "500",
-          marginBottom: "4rem",
+          marginBottom: "0",
           textAlign: "center",
           textDecoration: "none"
         }}>
@@ -289,15 +289,14 @@ export default function Home() {
           fontSize: "0.875rem",
           lineHeight: "1.5",
           position: "fixed",
-          bottom: "2rem",
+          bottom: "30px",
           left: 0,
           right: 0,
           width: "100%"
         }}>
           <p>
-            If you wanna create a quiz, grab a coffee and jump on<br />
-            <span style={{ fontWeight: "bold", color: "white" }}>telegram community</span><br />
-            — we're cooking
+          Want attention that sticks?  
+            <span style={{ fontWeight: "bold", color: "white" }}> Reward it with Hoot!</span>
           </p>
         </div>
       </div>
