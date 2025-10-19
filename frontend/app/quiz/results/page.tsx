@@ -199,8 +199,8 @@ export default function ResultsPage() {
           </div>
         </div>
         
-        {/* Prize Distribution Section - Only visible to creator */}
-        {isCreator && quizData && quizData.prize_amount > 0 && quizData.status !== 'completed' && (
+        {/* Prize Distribution Section - Visible to all, but only creator can distribute */}
+        {quizData && quizData.prize_amount > 0 && quizData.status !== 'completed' && (
           <div className="bg-green-900/20 border border-green-500 rounded-lg p-6 mb-8 w-full max-w-md">
             <h3 className="text-xl font-semibold mb-4 text-center">Prize Distribution</h3>
             
@@ -253,13 +253,19 @@ export default function ResultsPage() {
               </div>
             )}
             
-            <button
-              onClick={handleDistributePrizes}
-              disabled={isDistributing || !address}
-              className="w-full py-3 bg-green-600 hover:bg-green-700 rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isDistributing ? 'Distributing Prizes...' : 'Distribute Prizes'}
-            </button>
+            {isCreator ? (
+              <button
+                onClick={handleDistributePrizes}
+                disabled={isDistributing || !address}
+                className="w-full py-3 bg-green-600 hover:bg-green-700 rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isDistributing ? 'Distributing Prizes...' : 'Distribute Prizes'}
+              </button>
+            ) : (
+              <div className="w-full py-3 bg-gray-600 rounded text-white font-medium text-center">
+                Only the quiz creator can distribute prizes
+              </div>
+            )}
           </div>
         )}
         
