@@ -7,7 +7,7 @@ import { useSupabase } from "@/lib/supabase-context";
 import { useNetwork } from "@/lib/network-context";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import { useAccount, useWalletClient, usePublicClient, useConnect, useConnectors, useWriteContract, useSendTransaction, useBalance } from "wagmi";
-import { BrowserProvider, JsonRpcSigner } from "ethers";
+import { BrowserProvider,  } from "ethers";
 import { createQuizOnChain } from "@/lib/contract-helpers";
 import { formatAddress, getEthBalance } from "@/lib/contract-helpers";
 import { HOOT_QUIZ_MANAGER_ABI, getCurrentContractAddress, ZERO_ADDRESS } from "@/lib/contracts";
@@ -83,7 +83,7 @@ export default function AdminPage() {
 
   // Create quiz on-chain using wagmi (Farcaster compatible)
   const createQuizWithWagmi = async (quizId: string, prizeAmount: string) => {
-    const contractAddress = getCurrentContractAddress(currentNetwork);
+    const contractAddress = getCurrentContractAddress('base');
     const prizeAmountWei = parseEther(prizeAmount);
     
     console.log('Creating quiz with wagmi:', {
@@ -398,21 +398,6 @@ export default function AdminPage() {
     }
   };
 
-  const handleUseAI = () => {
-    // Simula la generazione di una domanda con AI
-    const aiGeneratedQuestion = {
-      text: "Quale di queste è una tecnologia blockchain?",
-      options: [
-        { text: "Ethereum", color: "hover:opacity-80" },
-        { text: "MySQL", color: "hover:opacity-80" },
-        { text: "MongoDB", color: "hover:opacity-80" },
-        { text: "Firebase", color: "hover:opacity-80" }
-      ],
-      correctAnswer: 0 // Ethereum è la risposta corretta
-    };
-    
-    setCurrentQuestion(aiGeneratedQuestion);
-  };
 
   // Calcola il numero della domanda corrente (per visualizzazione)
   const displayQuestionNumber = currentQuestionIndex + 1;
@@ -441,7 +426,7 @@ export default function AdminPage() {
         {/* Network Switcher */}
         <div className="w-full max-w-md mb-4 flex justify-center">
           <div className="relative">
-            <button
+            {/* <button
               onClick={() => setShowNetworkSwitcher(!showNetworkSwitcher)}
               className="flex items-center space-x-2 bg-gray-800/50 rounded-lg px-3 py-2 hover:bg-gray-700/50 transition-colors cursor-pointer"
             >
@@ -452,11 +437,11 @@ export default function AdminPage() {
               <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
-            </button>
+            </button> */}
             
             {showNetworkSwitcher && (
               <div className="absolute top-full left-0 mt-1 w-full bg-gray-800 rounded-lg shadow-lg z-50">
-                <button
+                {/* <button
                   onClick={() => {
                     setNetwork('baseSepolia');
                     setShowNetworkSwitcher(false);
@@ -466,7 +451,7 @@ export default function AdminPage() {
                   }`}
                 >
                   Base Sepolia
-                </button>
+                </button> */}
               </div>
             )}
           </div>
