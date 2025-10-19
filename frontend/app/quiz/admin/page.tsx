@@ -3,10 +3,11 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
-import { useWallet } from "@/lib/wallet-context";
 import { useSupabase } from "@/lib/supabase-context";
 import { useNetwork } from "@/lib/network-context";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
+import { useAccount, useWalletClient, usePublicClient, useConnect, useConnectors } from "wagmi";
+import { BrowserProvider, JsonRpcSigner } from "ethers";
 import { createQuizOnChain } from "@/lib/contract-helpers";
 import { formatAddress, getEthBalance } from "@/lib/contract-helpers";
 import NetworkSwitcher from "@/components/NetworkSwitcher";
@@ -26,10 +27,39 @@ interface QuizQuestion {
 export default function AdminPage() {
   const router = useRouter();
   const { startGame, createQuizOnBackend, joinGame: joinGameContext } = useQuiz();
-  const { account, provider, signer, connectWallet } = useWallet();
+  const { address } = useAccount();
+  const { data: walletClient } = useWalletClient();
+  const publicClient = usePublicClient();
+  const { connect } = useConnect();
+  const connectors = useConnectors();
   const { supabase } = useSupabase();
   const { currentNetwork, setNetwork } = useNetwork();
   const { context } = useMiniKit();
+
+  // Helper function to convert wagmi walletClient to ethers Signer
+  const getEthersSigner = async () => {
+    if (!walletClient) return null;
+    const { account, chain, transport } = walletClient;
+    const network = {
+      chainId: chain.id,
+      name: chain.name,
+      ensAddress: chain.contracts?.ensRegistry?.address,
+    };
+    const provider = new BrowserProvider(transport, network);
+    const signer = await provider.getSigner(account.address);
+    return signer;
+  };
+
+  // Helper function to get ethers Provider from publicClient
+  const getEthersProvider = () => {
+    if (!publicClient) return null;
+    const network = {
+      chainId: publicClient.chain.id,
+      name: publicClient.chain.name,
+      ensAddress: publicClient.chain.contracts?.ensRegistry?.address,
+    };
+    return new BrowserProvider(publicClient.transport, network);
+  };
 
   // CSS per forzare il colore bianco del placeholder
   const placeholderStyle = `
@@ -64,18 +94,21 @@ export default function AdminPage() {
   const [showShareBox, setShowShareBox] = useState(false);
   const [createdRoomCode, setCreatedRoomCode] = useState<string>("");
 
-  // Determine wallet info (Farcaster or MetaMask)
+  // Determine wallet info (Farcaster or wagmi)
   const farcasterUser = context?.user as { addresses?: string[] } | undefined;
-  const walletAddress = account || farcasterUser?.addresses?.[0];
+  const walletAddress = address || farcasterUser?.addresses?.[0];
   const isInFarcaster = !!context;
 
   // Load ETH balance
   useEffect(() => {
     const loadBalance = async () => {
-      if (walletAddress && provider) {
+      if (walletAddress && publicClient) {
         try {
-          const balance = await getEthBalance(walletAddress, provider);
-          setEthBalance(balance);
+          const provider = getEthersProvider();
+          if (provider) {
+            const balance = await getEthBalance(walletAddress, provider);
+            setEthBalance(balance);
+          }
         } catch (err) {
           console.error('Error loading balance:', err);
         }
@@ -83,7 +116,7 @@ export default function AdminPage() {
     };
 
     loadBalance();
-  }, [walletAddress, provider]);
+  }, [walletAddress, publicClient]);
 
   // Effetto per caricare la domanda corrente quando cambia l'indice
   useEffect(() => {
@@ -200,8 +233,8 @@ export default function AdminPage() {
         return;
       }
       console.log("wallet Address", walletAddress);
-      if (!signer && !isInFarcaster) {
-        setError("No wallet connected. Please connect MetaMask or use Farcaster.");
+      if (!walletClient && !isInFarcaster) {
+        setError("No wallet connected. Please connect wallet or use Farcaster.");
         setIsCreating(false);
         return;
       }
@@ -271,12 +304,15 @@ export default function AdminPage() {
       // Step 2: Create quiz on-chain with prize deposit using the backend quiz_id
       setCreationStep("Creating quiz on blockchain and depositing prize...");
       
-      if (signer) {
-        // MetaMask wallet - create on-chain with signer
-        const { txHash } = await createQuizOnChain(backendQuizId, prizeAmount, signer, currentNetwork);
-        console.log("Quiz created on-chain with prize deposit:", txHash);
-        console.log("Prize amount deposited:", prizeAmount, "ETH");
-        console.log("Network:", currentNetwork);
+      if (walletClient) {
+        // Wagmi wallet - create on-chain with signer
+        const ethersSigner = await getEthersSigner();
+        if (ethersSigner) {
+          const { txHash } = await createQuizOnChain(backendQuizId, prizeAmount, ethersSigner, currentNetwork);
+          console.log("Quiz created on-chain with prize deposit:", txHash);
+          console.log("Prize amount deposited:", prizeAmount, "ETH");
+          console.log("Network:", currentNetwork);
+        }
       } else if (isInFarcaster) {
         // Farcaster wallet - skip on-chain creation for now
         console.log("Farcaster wallet detected - skipping on-chain creation");
@@ -426,7 +462,12 @@ export default function AdminPage() {
               <div className="text-sm text-gray-300">Connect wallet to create quiz with prizes</div>
               {!isInFarcaster && (
                 <button
-                  onClick={connectWallet}
+                  onClick={() => {
+                    const connector = connectors[0]; // Use first available connector
+                    if (connector) {
+                      connect({ connector });
+                    }
+                  }}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium"
                 >
                   Connect Wallet

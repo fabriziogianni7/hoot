@@ -6,7 +6,7 @@ import { useMiniKit, useQuickAuth } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
 import { minikitConfig } from "../minikit.config";
 import { useQuiz } from "@/lib/quiz-context";
-import { useWallet } from "@/lib/wallet-context";
+import { useAccount } from "wagmi";
 
 interface AuthResponse {
   success: boolean;
@@ -20,7 +20,7 @@ interface AuthResponse {
 
 export default function Home() {
   const { isFrameReady, setFrameReady, context } = useMiniKit();
-  const { account } = useWallet();
+  const { address } = useAccount()
   const [gamePin, setGamePin] = useState("");
   const router = useRouter();
   const [error, setError] = useState("");
@@ -91,8 +91,8 @@ export default function Home() {
     }
     
     // Add wallet address as secondary text
-    if (account) {
-      secondary = `${account.slice(0, 6)}...${account.slice(-4)}`;
+    if (address) {
+      secondary = `${address.slice(0, 6)}...${address.slice(-4)}`;
     }else{
       secondary = "No wallet connected";
     }

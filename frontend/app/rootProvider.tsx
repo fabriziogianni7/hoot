@@ -6,7 +6,6 @@ import { OnchainKitProvider } from "@coinbase/onchainkit";
 // import "@coinbase/onchainkit/styles.css";
 import { QuizProvider } from "@/lib/quiz-context";
 import { SupabaseProvider } from "@/lib/supabase-context";
-import { WalletProvider } from "@/lib/wallet-context";
 import { NetworkProvider } from "@/lib/network-context";
 
 export function RootProvider({ children }: { children: ReactNode }) {
@@ -31,11 +30,9 @@ export function RootProvider({ children }: { children: ReactNode }) {
     >
       <NetworkProvider>
         <SupabaseProvider>
-          <WalletProvider>
-            <QuizProvider>
-              {children}
-            </QuizProvider>
-          </WalletProvider>
+          <QuizProvider>
+            {children}
+          </QuizProvider>
         </SupabaseProvider>
       </NetworkProvider>
     </OnchainKitProvider>

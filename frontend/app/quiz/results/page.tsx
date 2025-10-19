@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
-import { useWallet } from "@/lib/wallet-context";
 import { useSupabase } from "@/lib/supabase-context";
+import { useAccount } from "wagmi";
 import Link from "next/link";
 
 export default function ResultsPage() {
   const router = useRouter();
   const { currentGame, getCurrentQuiz, endGame, gameSessionId } = useQuiz();
-  const { account } = useWallet();
+  const { address } = useAccount();
   const { supabase } = useSupabase();
   
   const [isDistributing, setIsDistributing] = useState(false);
@@ -44,8 +44,8 @@ export default function ResultsPage() {
           setQuizData(data);
           
           // Check if current user is creator
-          if (account && data.creator_address) {
-            setIsCreator(account.toLowerCase() === data.creator_address.toLowerCase());
+          if (address && data.creator_address) {
+            setIsCreator(address.toLowerCase() === data.creator_address.toLowerCase());
           }
         }
       } catch (err) {
@@ -54,7 +54,7 @@ export default function ResultsPage() {
     };
     
     loadQuizData();
-  }, [currentGame, quiz, account, supabase]);
+  }, [currentGame, quiz, address, supabase]);
   
   // Redirect if no game is active
   useEffect(() => {
@@ -79,8 +79,8 @@ export default function ResultsPage() {
   const currentPlayer = currentGame.players.find(p => p.id === currentPlayerId);
   
   const handleDistributePrizes = async () => {
-    if (!account || !quizData || !gameSessionId) {
-      console.error('❌ Missing required data:', { account, quizDataId: quizData?.id, gameSessionId });
+    if (!address || !quizData || !gameSessionId) {
+      console.error('❌ Missing required data:', { address, quizDataId: quizData?.id, gameSessionId });
       return;
     }
     
@@ -91,7 +91,7 @@ export default function ResultsPage() {
     try {
       const requestBody = {
         game_session_id: gameSessionId,
-        creator_wallet_address: account
+        creator_wallet_address: address
       };
       
       console.log('📤 Sending complete-game request:', requestBody);
@@ -255,7 +255,7 @@ export default function ResultsPage() {
             
             <button
               onClick={handleDistributePrizes}
-              disabled={isDistributing || !account}
+              disabled={isDistributing || !address}
               className="w-full py-3 bg-green-600 hover:bg-green-700 rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isDistributing ? 'Distributing Prizes...' : 'Distribute Prizes'}
