@@ -65,15 +65,15 @@ async function checkExistingPlayerByName(
   supabase: ReturnType<typeof initSupabaseClient>, 
   gameSessionId: string, 
   playerName: string
-): Promise<boolean> {
+): Promise<PlayerSession | null> {
   const { data } = await supabase
     .from('player_sessions')
-    .select('id')
+    .select('id, player_name, wallet_address, total_score, joined_at')
     .eq('game_session_id', gameSessionId)
     .eq('player_name', playerName)
     .single()
 
-  return !!data
+  return data
 }
 
 async function createPlayerSession(
@@ -152,12 +152,16 @@ serve(async (req) => {
       return errorResponse(sessionError, gameSession ? 400 : 404)
     }
 
-    // Check for existing player by wallet address
+    // Check for existing player by wallet address first (if provided)
+    let existingPlayer: PlayerSession | null = null
     if (wallet_address) {
-      const existingPlayer = await checkExistingPlayerByWallet(supabase, gameSession!.id, wallet_address)
+      existingPlayer = await checkExistingPlayerByWallet(supabase, gameSession!.id, wallet_address)
       
       if (existingPlayer) {
         const playerIsCreator = isCreator(gameSession!.quizzes?.creator_address, wallet_address)
+        
+        // Fetch all players for the response
+        const allPlayers = await fetchAllPlayers(supabase, gameSession!.id)
         
         return successResponse({ 
           success: true,
@@ -165,15 +169,55 @@ serve(async (req) => {
           game_session_id: gameSession!.id,
           player_name: existingPlayer.player_name,
           is_creator: playerIsCreator,
-          message: 'Reconnected to existing player session'
+          message: 'Reconnected to existing player session',
+          game_session: {
+            id: gameSession!.id,
+            room_code,
+            status: gameSession!.status,
+            current_question_index: gameSession!.current_question_index,
+            started_at: gameSession!.started_at,
+            ended_at: gameSession!.ended_at
+          },
+          quiz: gameSession!.quizzes,
+          players: allPlayers
         })
       }
     }
 
-    // Check for existing player by name
-    const nameExists = await checkExistingPlayerByName(supabase, gameSession!.id, player_name)
-    if (nameExists) {
-      return errorResponse('Player name already taken in this game', 400)
+    // Check for existing player by name (only if no wallet match found)
+    const existingPlayerByName = await checkExistingPlayerByName(supabase, gameSession!.id, player_name)
+    if (existingPlayerByName) {
+      // If someone tries to join with the same name but different wallet
+      if (wallet_address && existingPlayerByName.wallet_address && 
+          !compareAddresses(existingPlayerByName.wallet_address, wallet_address)) {
+        return errorResponse('Player name already taken by a different wallet in this game', 400)
+      }
+      
+      // If someone tries to join with the same name but no wallet (or same wallet)
+      // Allow them to reconnect to the existing player
+      const playerIsCreator = isCreator(gameSession!.quizzes?.creator_address, wallet_address)
+      
+      // Fetch all players for the response
+      const allPlayers = await fetchAllPlayers(supabase, gameSession!.id)
+      
+      return successResponse({ 
+        success: true,
+        player_session_id: existingPlayerByName.id,
+        game_session_id: gameSession!.id,
+        player_name: existingPlayerByName.player_name,
+        is_creator: playerIsCreator,
+        message: 'Reconnected to existing player session',
+        game_session: {
+          id: gameSession!.id,
+          room_code,
+          status: gameSession!.status,
+          current_question_index: gameSession!.current_question_index,
+          started_at: gameSession!.started_at,
+          ended_at: gameSession!.ended_at
+        },
+        quiz: gameSession!.quizzes,
+        players: allPlayers
+      })
     }
 
     // Create new player session
