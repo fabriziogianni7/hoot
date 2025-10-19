@@ -6,16 +6,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 // Disable pre-rendering for this page
 export const dynamic = 'force-dynamic';
 import { useQuiz } from "@/lib/quiz-context";
-import { useWallet } from "@/lib/wallet-context";
+import { useAccount } from "wagmi";
 import { useSupabase } from "@/lib/supabase-context";
+import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import Link from "next/link";
 
 function LobbyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { currentGame, getCurrentQuiz, joinGame: joinGameContext, roomCode: contextRoomCode, gameSessionId, setCurrentQuiz } = useQuiz();
-  const { account } = useWallet();
+  const { address } = useAccount();
   const { supabase } = useSupabase();
+  const { isFrameReady, setFrameReady } = useMiniKit();
   const [countdown, setCountdown] = useState<number | null>(null);
   const [playerName, setPlayerName] = useState("");
   const [joined, setJoined] = useState(false);
@@ -218,7 +220,7 @@ function LobbyContent() {
           return;
         }
         
-        const playerId = await joinGameContext(playerName, account || undefined, roomCodeToUse);
+        const playerId = await joinGameContext(playerName, address || undefined, roomCodeToUse);
         setJoined(true);
         // Store player ID in localStorage for persistence
         localStorage.setItem("quizPlayerId", playerId);
