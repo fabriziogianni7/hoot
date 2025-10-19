@@ -2,7 +2,7 @@
 export const CONTRACT_ADDRESSES = {
   local: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
   baseSepolia: "0x2dC5532610Fe67A185bC9199a2d5975a130ec7f8", 
-  base: "" // Add when deployed
+  base: "0xe210C6Ae4a88327Aad8cd52Cb08cAAa90D8b0f27" // Deployed to Base mainnet
 }
 
 // Get contract address based on current network
