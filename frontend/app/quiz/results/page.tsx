@@ -199,10 +199,10 @@ export default function ResultsPage() {
           </div>
         </div>
         
-        {/* Prize Distribution Section - Available to all users */}
-        {quizData && quizData.prize_amount > 0 && quizData.status !== 'completed' && (
+        {/* Prize Distribution Section - Only visible to creator */}
+        {isCreator && quizData && quizData.prize_amount > 0 && quizData.status !== 'completed' && (
           <div className="bg-green-900/20 border border-green-500 rounded-lg p-6 mb-8 w-full max-w-md">
-            <h3 className="text-xl font-semibold mb-4 text-center">Distribute Prizes</h3>
+            <h3 className="text-xl font-semibold mb-4 text-center">Prize Distribution</h3>
             
             <div className="mb-4 space-y-2 text-sm">
               <div className="flex justify-between">

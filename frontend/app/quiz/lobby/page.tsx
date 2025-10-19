@@ -357,11 +357,15 @@ function LobbyContent() {
               <div className="w-full max-w-md flex flex-col gap-4">
                 <div className="bg-green-600/20 border border-green-500 rounded-lg p-4 text-center">
                   <p>You&apos;ve joined as <strong>{playerName}</strong></p>
-                  <p className="text-sm text-gray-300">Ready to start the quiz!</p>
+                  {isCreator ? (
+                    <p className="text-sm text-yellow-300 font-semibold">👑 You are the quiz creator</p>
+                  ) : (
+                    <p className="text-sm text-gray-300">Waiting for the quiz creator to start...</p>
+                  )}
                 </div>
                 
-                {/* Start Quiz button available to all users */}
-                {currentGame && currentGame.players.length > 0 && (
+                {/* Only show Start Quiz button to the creator */}
+                {isCreator && currentGame && currentGame.players.length > 0 && (
                   <button
                     onClick={handleStartQuiz}
                     className="w-full py-2 bg-green-600 hover:bg-green-700 rounded text-white font-medium"
