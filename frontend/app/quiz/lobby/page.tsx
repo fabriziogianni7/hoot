@@ -50,6 +50,10 @@ function LobbyContent() {
         return;
       }
 
+
+
+
+      console.log('roomCodeFromUrl', roomCodeFromUrl);
       try {
         console.log('Loading game session for room code:', roomCodeFromUrl);
         
