@@ -3,15 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
-import { useWallet } from "@/lib/wallet-context";
 import { useSupabase } from "@/lib/supabase-context";
+import { useAccount } from "wagmi";
 import Link from "next/link";
-import SwapBox from "@/components/SwapBox";
 
 export default function ResultsPage() {
   const router = useRouter();
   const { currentGame, getCurrentQuiz, endGame, gameSessionId } = useQuiz();
-  const { account } = useWallet();
+  const { address } = useAccount();
   const { supabase } = useSupabase();
   
   const [isDistributing, setIsDistributing] = useState(false);
@@ -26,7 +25,6 @@ export default function ResultsPage() {
     contract_tx_hash?: string;
   } | null>(null);
   const [isCreator, setIsCreator] = useState(false);
-  const [showSwapBox, setShowSwapBox] = useState(false);
   
   const quiz = getCurrentQuiz();
   
@@ -46,8 +44,8 @@ export default function ResultsPage() {
           setQuizData(data);
           
           // Check if current user is creator
-          if (account && data.creator_address) {
-            setIsCreator(account.toLowerCase() === data.creator_address.toLowerCase());
+          if (address && data.creator_address) {
+            setIsCreator(address.toLowerCase() === data.creator_address.toLowerCase());
           }
         }
       } catch (err) {
@@ -56,7 +54,7 @@ export default function ResultsPage() {
     };
     
     loadQuizData();
-  }, [currentGame, quiz, account, supabase]);
+  }, [currentGame, quiz, address, supabase]);
   
   // Redirect if no game is active
   useEffect(() => {
@@ -80,30 +78,9 @@ export default function ResultsPage() {
   const currentPlayerId = localStorage.getItem("quizPlayerId");
   const currentPlayer = currentGame.players.find(p => p.id === currentPlayerId);
   
-  // Calculate player reward based on position
-  const getPlayerReward = () => {
-    if (!currentPlayer || !quizData) return 0;
-    
-    const playerPosition = sortedPlayers.findIndex(p => p.id === currentPlayerId);
-    const totalPrize = quizData.prize_amount;
-    
-    switch (playerPosition) {
-      case 0: // 1st place
-        return totalPrize * 0.36; // 36% of total prize
-      case 1: // 2nd place
-        return totalPrize * 0.27; // 27% of total prize
-      case 2: // 3rd place
-        return totalPrize * 0.18; // 18% of total prize
-      default:
-        return 0; // No reward for other positions
-    }
-  };
-  
-  const playerReward = getPlayerReward();
-  
   const handleDistributePrizes = async () => {
-    if (!account || !quizData || !gameSessionId) {
-      console.error('❌ Missing required data:', { account, quizDataId: quizData?.id, gameSessionId });
+    if (!address || !quizData || !gameSessionId) {
+      console.error('❌ Missing required data:', { address, quizDataId: quizData?.id, gameSessionId });
       return;
     }
     
@@ -114,7 +91,7 @@ export default function ResultsPage() {
     try {
       const requestBody = {
         game_session_id: gameSessionId,
-        creator_wallet_address: account
+        creator_wallet_address: address
       };
       
       console.log('📤 Sending complete-game request:', requestBody);
@@ -191,23 +168,6 @@ export default function ResultsPage() {
             <div className="text-center mt-2">
               {currentPlayer.answers.filter(a => a.isCorrect).length} correct answers out of {quiz.questions.length}
             </div>
-            
-            {/* Player Reward Section */}
-            {playerReward > 0 && quizData?.status === 'completed' && (
-              <div className="mt-4 pt-4 border-t border-blue-400/30">
-                <div className="text-center mb-3">
-                  <div className="text-lg font-semibold text-green-400">🎉 You Won!</div>
-                  <div className="text-2xl font-bold text-green-400">{playerReward.toFixed(4)} ETH</div>
-                </div>
-                
-                <button
-                  onClick={() => setShowSwapBox(true)}
-                  className="w-full py-2 px-4 bg-purple-600 hover:bg-purple-700 rounded-lg text-white font-medium transition-colors"
-                >
-                  🔄 Swap to USDC
-                </button>
-              </div>
-            )}
           </div>
         )}
         
@@ -239,10 +199,10 @@ export default function ResultsPage() {
           </div>
         </div>
         
-        {/* Prize Distribution Section - Only visible to creator */}
-        {isCreator && quizData && quizData.prize_amount > 0 && quizData.status !== 'completed' && (
+        {/* Prize Distribution Section - Available to all users */}
+        {quizData && quizData.prize_amount > 0 && quizData.status !== 'completed' && (
           <div className="bg-green-900/20 border border-green-500 rounded-lg p-6 mb-8 w-full max-w-md">
-            <h3 className="text-xl font-semibold mb-4 text-center">Prize Distribution</h3>
+            <h3 className="text-xl font-semibold mb-4 text-center">Distribute Prizes</h3>
             
             <div className="mb-4 space-y-2 text-sm">
               <div className="flex justify-between">
@@ -295,7 +255,7 @@ export default function ResultsPage() {
             
             <button
               onClick={handleDistributePrizes}
-              disabled={isDistributing || !account}
+              disabled={isDistributing || !address}
               className="w-full py-3 bg-green-600 hover:bg-green-700 rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isDistributing ? 'Distributing Prizes...' : 'Distribute Prizes'}
@@ -328,14 +288,6 @@ export default function ResultsPage() {
           </Link>
         </div>
       </div>
-      
-      {/* Swap Box */}
-      {showSwapBox && (
-        <SwapBox 
-          onClose={() => setShowSwapBox(false)}
-          rewardAmount={playerReward}
-        />
-      )}
     </div>
   );
 }
