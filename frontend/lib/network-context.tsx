@@ -77,7 +77,7 @@ interface NetworkProviderProps {
 }
 
 export const NetworkProvider: React.FC<NetworkProviderProps> = ({ children }) => {
-  const [currentNetwork, setCurrentNetwork] = useState<string>('baseSepolia')
+  const [currentNetwork, setCurrentNetwork] = useState<string>('base')
 
   // Load saved network from localStorage on mount
   useEffect(() => {
