@@ -6,10 +6,12 @@ import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
 import { useNetwork } from "@/lib/network-context";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
-import { useAccount, useWalletClient, usePublicClient, useConnect, useConnectors } from "wagmi";
+import { useAccount, useWalletClient, usePublicClient, useConnect, useConnectors, useWriteContract, useSendTransaction, useBalance } from "wagmi";
 import { BrowserProvider, JsonRpcSigner } from "ethers";
 import { createQuizOnChain } from "@/lib/contract-helpers";
 import { formatAddress, getEthBalance } from "@/lib/contract-helpers";
+import { HOOT_QUIZ_MANAGER_ABI, getCurrentContractAddress, ZERO_ADDRESS } from "@/lib/contracts";
+import { parseEther } from "viem";
 import NetworkSwitcher from "@/components/NetworkSwitcher";
 import ShareBox from "@/components/ShareBox";
 
@@ -35,6 +37,24 @@ export default function AdminPage() {
   const { supabase } = useSupabase();
   const { currentNetwork, setNetwork } = useNetwork();
   const { context } = useMiniKit();
+  
+  // Wagmi hooks for transactions
+  const { writeContract, isPending: isWritePending, error: writeError } = useWriteContract();
+  const { sendTransaction, isPending: isSendPending, error: sendError } = useSendTransaction();
+  const { data: balance } = useBalance({ address });
+
+  // Debug wagmi state
+  useEffect(() => {
+    console.log("🔍 Wagmi Debug Info:");
+    console.log("address:", address);
+    console.log("isWritePending:", isWritePending);
+    console.log("isSendPending:", isSendPending);
+    console.log("writeError:", writeError);
+    console.log("sendError:", sendError);
+    console.log("balance:", balance);
+    console.log("walletClient:", walletClient);
+    console.log("publicClient:", publicClient);
+  }, [address, isWritePending, isSendPending, writeError, sendError, balance, walletClient, publicClient]);
 
   // Helper function to convert wagmi walletClient to ethers Signer
   const getEthersSigner = async () => {
@@ -59,6 +79,35 @@ export default function AdminPage() {
       ensAddress: publicClient.chain.contracts?.ensRegistry?.address,
     };
     return new BrowserProvider(publicClient.transport, network);
+  };
+
+  // Create quiz on-chain using wagmi (Farcaster compatible)
+  const createQuizWithWagmi = async (quizId: string, prizeAmount: string) => {
+    const contractAddress = getCurrentContractAddress(currentNetwork);
+    const prizeAmountWei = parseEther(prizeAmount);
+    
+    console.log('Creating quiz with wagmi:', {
+      contractAddress,
+      quizId,
+      prizeAmount,
+      prizeAmountWei: prizeAmountWei.toString()
+    });
+
+    try {
+      const txHash = await writeContract({
+        address: contractAddress as `0x${string}`,
+        abi: HOOT_QUIZ_MANAGER_ABI,
+        functionName: 'createQuiz',
+        args: [quizId, ZERO_ADDRESS, prizeAmountWei],
+        value: prizeAmountWei,
+      });
+      
+      console.log('Quiz created successfully:', txHash);
+      return txHash;
+    } catch (error) {
+      console.error('Error creating quiz:', error);
+      throw error;
+    }
   };
 
   // CSS per forzare il colore bianco del placeholder
@@ -99,24 +148,12 @@ export default function AdminPage() {
   const walletAddress = address || farcasterUser?.addresses?.[0];
   const isInFarcaster = !!context;
 
-  // Load ETH balance
+  // Load ETH balance using wagmi
   useEffect(() => {
-    const loadBalance = async () => {
-      if (walletAddress && publicClient) {
-        try {
-          const provider = getEthersProvider();
-          if (provider) {
-            const balance = await getEthBalance(walletAddress, provider);
-            setEthBalance(balance);
-          }
-        } catch (err) {
-          console.error('Error loading balance:', err);
-        }
-      }
-    };
-
-    loadBalance();
-  }, [walletAddress, publicClient]);
+    if (balance) {
+      setEthBalance(balance.formatted);
+    }
+  }, [balance]);
 
   // Effetto per caricare la domanda corrente quando cambia l'indice
   useEffect(() => {
@@ -304,18 +341,22 @@ export default function AdminPage() {
       // Step 2: Create quiz on-chain with prize deposit using the backend quiz_id
       setCreationStep("Creating quiz on blockchain and depositing prize...");
       
-      if (walletClient) {
-        // Wagmi wallet - create on-chain with signer
-        const ethersSigner = await getEthersSigner();
-        if (ethersSigner) {
-          const { txHash } = await createQuizOnChain(backendQuizId, prizeAmount, ethersSigner, currentNetwork);
+      if (address) {
+        // Use wagmi for transaction (works with both regular wallets and Farcaster)
+        try {
+          const txHash = await createQuizWithWagmi(backendQuizId, prizeAmount);
           console.log("Quiz created on-chain with prize deposit:", txHash);
           console.log("Prize amount deposited:", prizeAmount, "ETH");
           console.log("Network:", currentNetwork);
+        } catch (error) {
+          console.error("Error creating quiz on-chain:", error);
+          setError("Failed to create quiz on blockchain. Please try again.");
+          setIsCreating(false);
+          return;
         }
-      } else if (isInFarcaster) {
-        // Farcaster wallet - skip on-chain creation for now
-        console.log("Farcaster wallet detected - skipping on-chain creation");
+      } else {
+        // No wallet connected
+        console.log("No wallet connected - skipping on-chain creation");
         console.log("Prize amount will be handled by backend:", prizeAmount, "ETH");
       }
       
@@ -511,6 +552,16 @@ export default function AdminPage() {
             {error}
           </div>
         )}
+        {writeError && (
+          <div className="w-full max-w-md mb-1 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+            Transaction Error: {writeError.message}
+          </div>
+        )}
+        {sendError && (
+          <div className="w-full max-w-md mb-1 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+            Send Error: {sendError.message}
+          </div>
+        )}
         {creationStep && (
           <div className="w-full max-w-md mb-1 bg-blue-500/20 border border-blue-500 rounded-lg p-3 text-center text-blue-200">
             {creationStep}
@@ -536,14 +587,14 @@ export default function AdminPage() {
             />
             <button
               onClick={handleSaveQuiz}
-              disabled={isCreating || !walletAddress}
+              disabled={isCreating || !walletAddress || isWritePending || isSendPending}
               className="px-3 py-1 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
-                backgroundColor: isCreating || !walletAddress ? "#666" : "#8A63D2",
+                backgroundColor: isCreating || !walletAddress || isWritePending || isSendPending ? "#666" : "#8A63D2",
                 color: "white"
               }}
             >
-              {isCreating ? 'Creating...' : 'Create'}
+              {isCreating ? 'Creating...' : isWritePending || isSendPending ? 'Transaction Pending...' : 'Create'}
             </button>
           </div>
         </div>
