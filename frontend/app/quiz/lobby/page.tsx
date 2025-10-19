@@ -2,6 +2,7 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useMiniKit } from "@coinbase/onchainkit/minikit";
 
 // Disable pre-rendering for this page
 export const dynamic = 'force-dynamic';
@@ -13,6 +14,7 @@ import Link from "next/link";
 function LobbyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { isFrameReady, setFrameReady } = useMiniKit();
   const { currentGame, getCurrentQuiz, joinGame: joinGameContext, roomCode: contextRoomCode, gameSessionId, setCurrentQuiz } = useQuiz();
   const { account } = useWallet();
   const { supabase } = useSupabase();
@@ -29,6 +31,16 @@ function LobbyContent() {
   const [isCreator, setIsCreator] = useState(false);
   
   const quiz = getCurrentQuiz() || quizData;
+
+  // Initialize the miniapp
+  useEffect(() => {
+    console.log('isFrameReady', isFrameReady);
+    if (!isFrameReady) {
+      console.log('setting frame ready');
+      setFrameReady();
+    }
+  }, [setFrameReady, isFrameReady]);
+  console.log('isFrameReady', isFrameReady);
   
   // Load game session if room code is provided
   useEffect(() => {
