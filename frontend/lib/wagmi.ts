@@ -8,8 +8,8 @@ const chains = [basePreconf, baseSepolia] as const;
 export const wagmiConfig = createConfig({
   chains,
   transports: {
-    [basePreconf.id]: http(),
     [baseSepolia.id]: http(),
+    [basePreconf.id]: http(),
   },
   connectors: [
     miniAppConnector(),
