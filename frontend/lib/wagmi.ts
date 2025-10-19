@@ -3,7 +3,7 @@ import { basePreconf, baseSepolia } from "viem/chains";
 import { createConfig, http } from "wagmi";
 import { coinbaseWallet } from "wagmi/connectors";
 
-const chains = [basePreconf, baseSepolia] as const;
+const chains = [ baseSepolia, basePreconf] as const;
 
 export const wagmiConfig = createConfig({
   chains,
