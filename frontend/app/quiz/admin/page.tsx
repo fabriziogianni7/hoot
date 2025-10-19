@@ -10,6 +10,7 @@ import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import { createQuizOnChain } from "@/lib/contract-helpers";
 import { formatAddress, getEthBalance } from "@/lib/contract-helpers";
 import NetworkSwitcher from "@/components/NetworkSwitcher";
+import ShareBox from "@/components/ShareBox";
 
 interface QuestionOption {
   text: string;
@@ -60,6 +61,8 @@ export default function AdminPage() {
   const [showNetworkSwitcher, setShowNetworkSwitcher] = useState(false);
   const [ethBalance, setEthBalance] = useState<string>("");
   const [creationStep, setCreationStep] = useState<string>("");
+  const [showShareBox, setShowShareBox] = useState(false);
+  const [createdRoomCode, setCreatedRoomCode] = useState<string>("");
 
   // Determine wallet info (Farcaster or MetaMask)
   const farcasterUser = context?.user as { addresses?: string[] } | undefined;
@@ -305,8 +308,9 @@ export default function AdminPage() {
       // Store creator ID in localStorage
       localStorage.setItem("quizPlayerId", creatorPlayerId);
       
-      // Navigate to lobby with room code
-      router.push(`/quiz/lobby?room=${generatedRoomCode}`);
+      // Show share box instead of immediate redirect
+      setCreatedRoomCode(generatedRoomCode);
+      setShowShareBox(true);
       
     } catch (err) {
       console.error("Error creating quiz:", err);
@@ -604,6 +608,22 @@ export default function AdminPage() {
           
         </div>
       </div>
+      
+      {/* Share Box */}
+      {showShareBox && (
+        <ShareBox 
+          roomCode={createdRoomCode}
+          onClose={() => {
+            setShowShareBox(false);
+            // Navigate to lobby after closing share box
+            router.push(`/quiz/lobby?room=${createdRoomCode}`);
+          }}
+          onGoToLobby={() => {
+            setShowShareBox(false);
+            router.push(`/quiz/lobby?room=${createdRoomCode}`);
+          }}
+        />
+      )}
     </div>
   );
 }

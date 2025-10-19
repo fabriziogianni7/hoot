@@ -271,14 +271,6 @@ function LobbyContent() {
         }}
       />
       
-      {/* Logo */}
-      <div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-10">
-        <img 
-          src="/Logo.png" 
-          alt="Hoot Logo" 
-          className="h-16 w-auto"
-        />
-      </div>
       
       <div className="relative z-10 container mx-auto py-8 px-4 flex flex-col items-center">
         <h1 className="text-3xl font-bold mb-8">{quiz?.title || 'Quiz Lobby'}</h1>
