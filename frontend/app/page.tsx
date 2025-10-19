@@ -6,6 +6,7 @@ import { useMiniKit, useQuickAuth } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
 import { minikitConfig } from "../minikit.config";
 import { useQuiz } from "@/lib/quiz-context";
+import { useWallet } from "@/lib/wallet-context";
 
 interface AuthResponse {
   success: boolean;
@@ -19,6 +20,7 @@ interface AuthResponse {
 
 export default function Home() {
   const { isFrameReady, setFrameReady, context } = useMiniKit();
+  const { account } = useWallet();
   const [gamePin, setGamePin] = useState("");
   const router = useRouter();
   const [error, setError] = useState("");
@@ -76,15 +78,26 @@ export default function Home() {
 
   // Determina il testo da mostrare nel badge dell'utente
   const getUserBadgeText = () => {
-    if (isAuthLoading) return "Connecting...";
-    if (authError) return "Not Connected";
+    if (isAuthLoading) return { primary: "Connecting...", secondary: null };
+    if (authError) return { primary: "Not Connected", secondary: null };
+    
+    let primary = "Connected";
+    let secondary = null;
+    
     if (authData?.success && context?.user?.displayName) {
-      return context.user.displayName;
+      primary = context.user.displayName;
+    } else if (authData?.success && authData?.user?.fid) {
+      primary = `FID: ${authData.user.fid}`;
     }
-    if (authData?.success && authData?.user?.fid) {
-      return `FID: ${authData.user.fid}`;
+    
+    // Add wallet address as secondary text
+    if (account) {
+      secondary = `${account.slice(0, 6)}...${account.slice(-4)}`;
+    }else{
+      secondary = "No wallet connected";
     }
-    return "Connected";
+    
+    return { primary, secondary };
   };
 
   return (
@@ -138,7 +151,14 @@ export default function Home() {
             borderRadius: "50%",
             backgroundColor: authData?.success ? "#4ade80" : "#ef4444"
           }}></div>
-          {getUserBadgeText()}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.125rem" }}>
+            <div>{getUserBadgeText().primary}</div>
+            {getUserBadgeText().secondary && (
+              <div style={{ fontSize: "0.75rem", opacity: 0.8 }}>
+                {getUserBadgeText().secondary}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       
