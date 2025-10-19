@@ -4,9 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useMiniKit, useQuickAuth } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
-import { minikitConfig } from "../minikit.config";
 import { useQuiz } from "@/lib/quiz-context";
-import { useAccount } from "wagmi";
+import { useAccount, useConnections } from "wagmi";
 
 interface AuthResponse {
   success: boolean;
@@ -20,7 +19,8 @@ interface AuthResponse {
 
 export default function Home() {
   const { isFrameReady, setFrameReady, context } = useMiniKit();
-  const { address } = useAccount()
+  const { address, isConnected, connector } = useAccount();
+  const connections = useConnections();
   const [gamePin, setGamePin] = useState("");
   const router = useRouter();
   const [error, setError] = useState("");
@@ -46,6 +46,20 @@ export default function Home() {
     "/api/auth",
     { method: "GET" }
   );
+
+  // Debug logging for address detection
+  useEffect(() => {
+    console.log("🔍 Debugging address detection:");
+    console.log("address from useAccount():", address);
+    console.log("isConnected:", isConnected);
+    console.log("connector:", connector);
+    console.log("connections:", connections);
+    console.log("context:", context);
+    console.log("context?.user:", context?.user);
+    console.log("authData:", authData);
+    console.log("isAuthLoading:", isAuthLoading);
+    console.log("authError:", authError);
+  }, [address, isConnected, connector, connections, context, authData, isAuthLoading, authError]);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();

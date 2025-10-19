@@ -3,7 +3,6 @@ import { Inter, Source_Code_Pro, Patrick_Hand } from "next/font/google";
 import { SafeArea } from "@coinbase/onchainkit/minikit";
 import { minikitConfig } from "../minikit.config";
 import { RootProvider } from "./rootProvider";
-import Providers from "@/components/providers";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -15,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
         version: minikitConfig.miniapp.version,
         imageUrl: minikitConfig.miniapp.heroImageUrl,
         button: {
-          title: `Join the ${minikitConfig.miniapp.name} Waitlist`,
+          title: `Open ${minikitConfig.miniapp.name}`,
           action: {
             name: `Launch ${minikitConfig.miniapp.name}`,
             type: "launch_frame",
@@ -57,7 +56,7 @@ export default function RootLayout({
         </head>
         <body className={`${inter.variable} ${sourceCodePro.variable} ${patrickHand.variable}`}>
           <SafeArea>
-            <Providers>{children}</Providers>
+            {children}
           </SafeArea>
         </body>
       </html>
