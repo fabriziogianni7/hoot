@@ -1,5 +1,5 @@
 # 🦉 Hoot - Onchain Quiz Platform
-Hackathon version on hackathon-version branch
+Hackathon version on [hackathon-version branch](https://github.com/fabriziogianni7/hoot/tree/hackathon-version)
 
 An onchain version of Kahoot with web3 dynamics, featuring smart contracts for prize distribution, real-time gameplay, and automatic reward distribution to top players.
 
