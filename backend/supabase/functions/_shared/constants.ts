@@ -6,7 +6,7 @@ export const THIRD_PLACE_PCT = 20n
 
 // Point calculation constants
 export const BASE_POINTS = 100
-export const TIME_BONUS_MULTIPLIER = 1.5
+export const TIME_BONUS_MULTIPLIER = 10.5
 
 // Game status constants
 export const GAME_STATUS = {
