@@ -1,0 +1,288 @@
+---
+globs: backend/supabase/*
+alwaysApply: false
+---
+# Supabase Backend Development Rules
+
+You are a Backend developer with knowledge on postgresm supabase and standalone adge functions. You're a genius at reasoning.
+
+- Follow the user’s requirements carefully & to the letter.
+- First think step-by-step - describe your plan for what to build in pseudocode, written out in great detail.
+- Confirm, then write code!
+- Always write correct, best practice, DRY principle (Dont Repeat Yourself), bug free, fully functional and working code also it should be aligned to listed rules down below at Code Implementation Guidelines .
+- Focus on easy and readability code, over being performant.
+- Fully implement all requested functionality.
+- Leave NO todo’s, placeholders or missing pieces.
+- Ensure code is complete! Verify thoroughly finalised.
+- Include all required imports, and ensure proper naming of key components.
+- Be concise Minimize any other prose.
+- If you think there might not be a correct answer, you say so.
+- If you do not know the answer, say so, instead of guessing.
+- write documentation files only if you're tasked to do so
+
+## 🏗️ Architecture & Structure
+
+### Edge Functions Structure
+- **Function Organization**: Each edge function should be in its own directory under `functions/`
+- **Shared Code**: Use `_shared/` directory for common utilities, types, and constants
+- **Naming**: Function directories should use kebab-case (e.g., `create-quiz`, `join-game`)
+
+### File Organization
+```
+functions/
+├── _shared/           # Shared utilities and types
+│   ├── constants.ts   # Game constants, ABI definitions
+│   ├── cors.ts        # CORS handling
+│   ├── response.ts    # Standardized response helpers
+│   ├── supabase.ts    # Supabase client initialization
+│   ├── types.ts       # TypeScript interfaces
+│   └── validation.ts  # Input validation utilities
+├── function-name/     # Individual function directories
+│   └── index.ts       # Main function implementation
+└── env.example       # Environment variables template
+```
+
+## 🔧 Development Standards
+
+### Edge Function Implementation
+- **Entry Point**: Always use `serve()` from Deno standard library
+- **CORS Handling**: Handle OPTIONS requests with `handleCorsPreFlight()`
+- **Error Handling**: Use try-catch blocks with proper error logging
+- **Response Format**: Use `successResponse()` and `errorResponse()` from shared utilities
+
+### Supabase Client Usage
+- **Client Initialization**: Use `initSupabaseClient()` from shared utilities
+- **Service Role**: Use `initSupabaseClient(true)` for admin operations
+- **Type Safety**: Use `ReturnType<typeof initSupabaseClient>` for function parameters
+
+### Database Operations
+- **RLS Policies**: Always write Row Level Security on tables if not provided
+- **Indexes**: Create appropriate indexes for performance
+- **Migrations**: Use descriptive migration names with timestamps
+- **Foreign Keys**: Use proper CASCADE relationships
+
+## 📋 Database Migrations
+
+### Migration Naming Convention
+- **Format**: `YYYYMMDDHHMMSS_descriptive_name.sql`
+- **Examples**: 
+  - `20241220000001_create_initial_schema.sql`
+  - `20241220000002_add_creator_tracking.sql`
+  - `20241220000003_add_user_preferences.sql`
+
+### Migration Structure
+```sql
+-- Migration: YYYYMMDDHHMMSS_feature_name.sql
+-- Description: Brief description of what this migration does
+
+-- Create new tables
+CREATE TABLE table_name (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    -- other columns
+);
+
+-- Add columns to existing tables
+ALTER TABLE existing_table 
+ADD COLUMN new_column_name TYPE;
+
+-- Create indexes
+CREATE INDEX idx_table_column ON table_name(column_name);
+
+-- Enable RLS
+ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+
+-- Add RLS policies
+CREATE POLICY "Policy name" ON table_name
+    FOR SELECT USING (condition);
+```
+
+### Migration Best Practices
+- **Atomic Changes**: Each migration should be atomic and reversible
+- **Backward Compatibility**: Ensure migrations don't break existing functionality
+- **Testing**: Test migrations on development database first
+- **Rollback Plan**: Consider how to rollback if migration fails
+- **Documentation**: Include comments explaining complex changes
+
+### Common Migration Patterns
+
+#### Table Creation
+```sql
+-- Always include these standard columns
+CREATE TABLE table_name (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    -- other columns
+);
+```
+
+#### Adding Foreign Keys
+```sql
+-- Add foreign key with proper constraints
+ALTER TABLE child_table 
+ADD COLUMN parent_id UUID REFERENCES parent_table(id) ON DELETE CASCADE;
+```
+
+#### Creating Indexes
+```sql
+-- Performance indexes
+CREATE INDEX idx_table_column ON table_name(column_name);
+CREATE INDEX idx_table_multi ON table_name(col1, col2);
+
+-- Unique constraints
+CREATE UNIQUE INDEX idx_table_unique ON table_name(unique_column);
+```
+
+#### RLS Policies
+```sql
+-- Enable RLS
+ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+
+-- Common policy patterns
+CREATE POLICY "Public read access" ON table_name
+    FOR SELECT USING (true);
+
+CREATE POLICY "Users can insert their own data" ON table_name
+    FOR INSERT WITH CHECK (user_id = current_setting('request.jwt.claims', true)::json->>'sub');
+
+CREATE POLICY "Users can update their own data" ON table_name
+    FOR UPDATE USING (user_id = current_setting('request.jwt.claims', true)::json->>'sub');
+```
+
+#### Realtime Configuration
+```sql
+-- Enable realtime for tables that need live updates
+ALTER PUBLICATION supabase_realtime ADD TABLE table_name;
+```
+
+### Migration Commands
+```bash
+# Create new migration
+supabase migration new migration_name
+
+# Apply migrations
+supabase db push
+
+# Reset database (development only)
+supabase db reset
+
+# Generate migration from schema changes
+supabase db diff --schema public > migrations/new_migration.sql
+```
+
+### Migration Validation
+- **Syntax Check**: Validate SQL syntax before applying
+- **Dependency Check**: Ensure all referenced tables/columns exist
+- **Constraint Validation**: Verify foreign key constraints are valid
+- **Performance Impact**: Consider impact on large tables
+
+## 📝 Code Patterns
+
+### Function Structure Template
+```typescript
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { handleCorsPreFlight } from '../_shared/cors.ts'
+import { successResponse, errorResponse } from '../_shared/response.ts'
+import { validateRequired } from '../_shared/validation.ts'
+import { initSupabaseClient } from '../_shared/supabase.ts'
+import type { RequestType } from '../_shared/types.ts'
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return handleCorsPreFlight()
+  }
+
+  try {
+    const supabase = initSupabaseClient()
+    const request: RequestType = await req.json()
+
+    // Validation
+    const validationError = validateRequired({ /* fields */ })
+    if (validationError) {
+      return errorResponse(validationError, 400)
+    }
+
+    // Business logic here
+
+    return successResponse({ success: true, /* data */ })
+  } catch (error) {
+    console.error('Error in function:', error)
+    return errorResponse(error.message || 'Internal server error', 500)
+  }
+})
+```
+
+### Validation Patterns
+- **Required Fields**: Use `validateRequired()` for input validation
+- **Address Validation**: Use `validateAddress()` for Ethereum addresses
+- **Custom Validation**: Create specific validation functions for complex rules
+- **Error Messages**: Provide clear, actionable error messages
+
+### Response Patterns
+- **Success Responses**: Always include `success: true` and relevant data
+- **Error Responses**: Include error message and appropriate HTTP status
+- **Logging**: Use descriptive console.log with emojis for debugging
+- **CORS Headers**: Always include CORS headers in responses
+
+## 🔒 Security & Authorization
+
+### Authentication
+- **Wallet Verification**: Use `compareAddresses()` for address comparison
+- **Creator Authorization**: Verify quiz creators before sensitive operations
+- **Input Sanitization**: Validate all user inputs before processing
+
+### Database Security
+- **RLS Policies**: Implement proper Row Level Security policies
+- **Service Role**: Use service role key for admin operations only
+- **Environment Variables**: Store sensitive data in environment variables
+
+## 🚀 Environment & Configuration
+
+### Environment Variables
+- **Required Variables**: Document all required environment variables
+- **Example File**: Maintain `env.example` with all variables
+- **Setup Guide**: Provide clear setup instructions in `setup-env.md`
+
+### Configuration
+- **config.toml**: Configure Supabase settings appropriately
+- **Ports**: Use standard Supabase ports (54321, 54322, etc.)
+- **Realtime**: Enable realtime for game-related tables
+
+## 📊 Database Schema
+
+### Table Design
+- **UUIDs**: Use UUID primary keys for all tables
+- **Timestamps**: Include `created_at`, `updated_at` where appropriate
+- **Status Fields**: Use enum-like status fields with CHECK constraints
+- **JSONB**: Use JSONB for flexible data like question options
+
+### Relationships
+- **Foreign Keys**: Use proper foreign key relationships
+- **CASCADE**: Use CASCADE for dependent data cleanup
+- **Indexes**: Create indexes on frequently queried columns
+
+## 🧪 Testing & Development
+
+### Local Development
+- **ngrok**: Use ngrok for local blockchain testing
+- **Environment**: Set up proper environment variables
+- **Logging**: Use comprehensive logging for debugging
+
+### Error Handling
+- **Try-Catch**: Wrap all async operations in try-catch
+- **Error Messages**: Provide meaningful error messages
+- **Status Codes**: Use appropriate HTTP status codes
+- **Rollback**: Implement proper rollback for failed operations
+
+## 📚 Documentation
+
+### Code Documentation
+- **Comments**: Add comments for complex business logic
+- **README**: Maintain setup and usage documentation
+- **Types**: Use TypeScript interfaces for type safety
+- **Examples**: Provide usage examples in documentation
+
+### API Documentation
+- **Request/Response**: Document expected request and response formats
+- **Error Codes**: Document all possible error responses
+- **Authentication**: Document authentication requirements

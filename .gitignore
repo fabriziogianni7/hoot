@@ -43,7 +43,6 @@ lerna-debug.log*
 !.vscode/launch.json
 
 # IDE - Cursor
-.cursor/
 .aider*
 
 # OS
