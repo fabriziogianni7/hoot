@@ -90,8 +90,8 @@ const ENVIRONMENT_CONFIGS: Record<Environment, EnvConfig> = {
       contractAddress: '0xe210C6Ae4a88327Aad8cd52Cb08cAAa90D8b0f27'
     },
     supabase: {
-      url: '',
-      anonKey: ''
+      url: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     },
     app: {
       url: 'https://hoot-five.vercel.app'
@@ -202,22 +202,36 @@ export const getRpcUrl = (): string => ENV_CONFIG.chain.rpcUrl
 
 // Validation function
 export const validateEnvironment = (): void => {
-  const { supabase, chain } = ENV_CONFIG
+  const { supabase, chain, environment } = ENV_CONFIG
+
+  // For production, check if we're in a build environment (Vercel)
+  const isVercelBuild = process.env.VERCEL === '1'
+  const isProductionBuild = process.env.NODE_ENV === 'production'
 
   if (!supabase.url) {
-    throw new Error(`Missing NEXT_PUBLIC_SUPABASE_URL for ${ENV_CONFIG.environment} environment`)
+    const errorMsg = `Missing NEXT_PUBLIC_SUPABASE_URL for ${environment} environment`
+    if (isVercelBuild || isProductionBuild) {
+      console.error('🚨 Production deployment error:', errorMsg)
+      console.error('Please set NEXT_PUBLIC_SUPABASE_URL in Vercel environment variables')
+    }
+    throw new Error(errorMsg)
   }
 
   if (!supabase.anonKey) {
-    throw new Error(`Missing NEXT_PUBLIC_SUPABASE_ANON_KEY for ${ENV_CONFIG.environment} environment`)
+    const errorMsg = `Missing NEXT_PUBLIC_SUPABASE_ANON_KEY for ${environment} environment`
+    if (isVercelBuild || isProductionBuild) {
+      console.error('🚨 Production deployment error:', errorMsg)
+      console.error('Please set NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel environment variables')
+    }
+    throw new Error(errorMsg)
   }
 
   if (!chain.contractAddress) {
-    throw new Error(`Missing NEXT_PUBLIC_CONTRACT_ADDRESS for ${ENV_CONFIG.environment} environment`)
+    throw new Error(`Missing NEXT_PUBLIC_CONTRACT_ADDRESS for ${environment} environment`)
   }
 
   if (!chain.rpcUrl) {
-    throw new Error(`Missing NEXT_PUBLIC_RPC_URL for ${ENV_CONFIG.environment} environment`)
+    throw new Error(`Missing NEXT_PUBLIC_RPC_URL for ${environment} environment`)
   }
 }
 
@@ -226,4 +240,10 @@ try {
   validateEnvironment()
 } catch (error) {
   console.warn('Environment validation failed:', error)
+  
+  // In production builds, this is a critical error
+  if (process.env.NODE_ENV === 'production' && process.env.VERCEL === '1') {
+    console.error('🚨 Critical: Missing required environment variables for production deployment')
+    console.error('Please check your Vercel environment variables configuration')
+  }
 }
