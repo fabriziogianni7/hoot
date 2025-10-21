@@ -2,7 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useSupabase } from './supabase-context'
-import type { User, Session } from '@supabase/supabase-js'
+import { useAccount, useConnections } from 'wagmi'
+import type { User, Session, EthereumWallet } from '@supabase/supabase-js'
+import {sdk} from '@farcaster/miniapp-sdk'
+
+
 
 interface SIWEData {
   user: User
@@ -15,6 +19,8 @@ const SIWE_STORAGE_KEY = 'hoot-siwe-attempted'
 
 export function useSIWE() {
   const { supabase } = useSupabase()
+  const { connector } = useAccount()
+  const connections = useConnections()
   
   // Individual state variables
   const [isSessionChecked, setIsSessionChecked] = useState(false)
@@ -25,11 +31,28 @@ export function useSIWE() {
   const [hasAttempted, setHasAttempted] = useState(false)
   const [_, setShouldSignIn] = useState(false)
 
+  // Get the appropriate wallet provider based on context
+  const getWalletProvider = () => {
+    // Check if we're in a Farcaster miniapp context
+    const isFarcasterMiniapp = connector?.id === 'farcasterMiniApp' || 
+                              connections.some(conn => conn.connector.id === 'farcasterMiniApp')
+    
+    if (isFarcasterMiniapp) {
+      // In Farcaster miniapp, use the connector's provider
+      const farcasterConnection = connections.find(conn => conn.connector.id === 'farcasterMiniApp')
+      return farcasterConnection?.connector.getProvider()
+    }
+
+    console.log('🔐 No wallet provider available')
+    
+    // Fallback to window.ethereum for regular browser wallets
+    return window.ethereum
+  }
+
   // Check current session on mount
   useEffect(() => {    
     const checkSession = async () => {
       try {
-
         const { data: { session }, error } = await supabase.auth.getSession()
         if (error) {
           console.error('Error getting session:', error)
@@ -58,57 +81,63 @@ export function useSIWE() {
   // Sign in with Ethereum effect
   useEffect(() => {
     if (isSessionChecked && !data?.session) {
+      const signInWithEthereum = async () => {
+        setIsLoading(true)
+        setError(null)
 
-    const signInWithEthereum = async () => {
-     
+        try {
+          const walletProvider = getWalletProvider()
+          
+          if (!walletProvider) {
+            throw new Error('No wallet provider available')
+          }
 
-      setIsLoading(true)
-      setError(null)
-
-      try {
-        const { data, error } = await supabase.auth.signInWithWeb3({
+          console.log('🔐 Using wallet provider:', connector?.id || 'unknown')
+          const wallet = await sdk.wallet.getEthereumProvider()
+          
+          const { data, error } = await supabase.auth.signInWithWeb3({
             chain: 'ethereum',
             statement: 'I accept the Terms of Service at https://example.com/tos',
-            wallet: window.ethereum,
-        })
-    
-        console.log('🔐 SIWE Response Data:', data)
-        console.log('🔐 SIWE Response Error:', error)
-    
-        if (error) {
-            console.error('❌ SIWE Error:', error)
-            setError(error.message || 'Failed to sign in with Ethereum')
+            wallet: wallet as unknown as EthereumWallet,
+          })
+      
+          console.log('🔐 SIWE Response Data:', data)
+          console.log('🔐 SIWE Response Error:', error)
+      
+          if (error) {
+              console.error('❌ SIWE Error:', error)
+              setError(error.message || 'Failed to sign in with Ethereum')
+              setIsLoading(false)
+              return
+          }        
+
+          if (data) {
+            console.log('✅ SIWE Success:', data)
+            setData(data)
+            setIsAuthenticated(true)
+            setError(null)
             setIsLoading(false)
-            return
-        }        
+          }
 
-        if (data) {
-          console.log('✅ SIWE Success:', data)
-          setData(data)
-          setIsAuthenticated(true)
-          setError(null)
+          // Mark as attempted regardless of success/failure
+          localStorage.setItem(SIWE_STORAGE_KEY, 'true')
+          setHasAttempted(true)
+
+        } catch (error: unknown) {
+          setError(error instanceof Error ? error.message : 'Unexpected error during sign in')
           setIsLoading(false)
+          
+          // Still mark as attempted even on exception
+          localStorage.setItem(SIWE_STORAGE_KEY, 'true')
+          setHasAttempted(true)
+        } finally {
+          setShouldSignIn(false)
         }
-
-        // Mark as attempted regardless of success/failure
-        localStorage.setItem(SIWE_STORAGE_KEY, 'true')
-        setHasAttempted(true)
-
-      } catch (error: unknown) {
-        setError(error instanceof Error ? error.message : 'Unexpected error during sign in')
-        setIsLoading(false)
-        
-        // Still mark as attempted even on exception
-        localStorage.setItem(SIWE_STORAGE_KEY, 'true')
-        setHasAttempted(true)
-      } finally {
-        setShouldSignIn(false)
       }
-    }
 
-    signInWithEthereum()
+      signInWithEthereum()
     }
-  } ,[isSessionChecked, data?.session, supabase])
+  }, [isSessionChecked, data?.session, supabase, connector, connections])
 
   const resetAttempt = () => {
     localStorage.removeItem(SIWE_STORAGE_KEY)
@@ -150,3 +179,4 @@ export function useSIWE() {
     isSessionValid
   }
 }
+
