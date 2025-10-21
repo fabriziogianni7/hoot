@@ -69,6 +69,7 @@ export function useSIWE() {
         const { data, error } = await supabase.auth.signInWithWeb3({
             chain: 'ethereum',
             statement: 'I accept the Terms of Service at https://example.com/tos',
+            wallet: window.ethereum,
         })
     
         console.log('🔐 SIWE Response Data:', data)

@@ -2,10 +2,13 @@
 
 > There is a cursor command to do it. just do /start-locally in your cursor chat.
 
+- CHECK @ENVIRONMENT_SETUP.md for the environment, but start the project locally
+- open terminals
+
 ## Backend
 We have a supabase backend that host a DB, edge functions and realtime.
 
-First you need to install [supabase cli](https://supabase.com/docs/guides/local-development/cli/getting-started?queryGroups=platform&platform=macos&queryGroups=access-method&access-method=studio)
+If Supabase cli is not installed, you need to install [supabase cli](https://supabase.com/docs/guides/local-development/cli/getting-started?queryGroups=platform&platform=macos&queryGroups=access-method&access-method=studio)
 then run:
 ```
 supabase start
