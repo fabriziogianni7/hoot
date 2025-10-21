@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react'
 import { useSupabase } from './supabase-context'
 import { useAccount, useConnections } from 'wagmi'
-import type { User, Session } from '@supabase/supabase-js'
+import type { User, Session, EthereumWallet } from '@supabase/supabase-js'
+import {sdk} from '@farcaster/miniapp-sdk'
+
+
 
 interface SIWEData {
   user: User
@@ -90,11 +93,12 @@ export function useSIWE() {
           }
 
           console.log('🔐 Using wallet provider:', connector?.id || 'unknown')
-
+          const wallet = await sdk.wallet.getEthereumProvider()
+          
           const { data, error } = await supabase.auth.signInWithWeb3({
             chain: 'ethereum',
             statement: 'I accept the Terms of Service at https://example.com/tos',
-            wallet: walletProvider,
+            wallet: wallet as unknown as EthereumWallet,
           })
       
           console.log('🔐 SIWE Response Data:', data)
