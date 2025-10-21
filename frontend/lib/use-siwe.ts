@@ -22,7 +22,7 @@ export function useSIWE() {
   const { supabase } = useSupabase()
 
   const connections = useConnections()
-  const { connect, connectors } = useConnect()
+  const {  connectors } = useConnect()
   
   // Individual state variables
   const [isSessionChecked, setIsSessionChecked] = useState(false)
@@ -136,7 +136,7 @@ export function useSIWE() {
 
       signInWithEthereum()
     }
-  }, [isSessionChecked, data?.session, supabase, connector, connections])
+  }, [isSessionChecked, data?.session, supabase, connections, connectors])
 
   const resetAttempt = () => {
     localStorage.removeItem(SIWE_STORAGE_KEY)
