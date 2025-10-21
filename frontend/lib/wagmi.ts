@@ -1,8 +1,8 @@
 import { farcasterMiniApp as miniAppConnector } from "@farcaster/miniapp-wagmi-connector";
-import { base, baseSepolia } from "viem/chains";
 import { createConfig, http } from "wagmi";
-import { coinbaseWallet } from "wagmi/connectors";
-import { getCurrentChain, getRpcUrl, ENV_CONFIG } from "./env-config";
+import { coinbaseWallet, injected } from "wagmi/connectors";
+import { getCurrentChain, getRpcUrl } from "./env-config";
+
 
 // Get the current chain configuration
 const currentChain = getCurrentChain();
@@ -24,5 +24,6 @@ export const wagmiConfig = createConfig({
     coinbaseWallet({
       appName: "Hoot!",
     }),
+    injected()    
   ],
 });
