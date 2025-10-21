@@ -93,12 +93,12 @@ export function useSIWE() {
           }
 
           console.log('🔐 Using wallet provider:', connector?.id || 'unknown')
-          const wallet = await sdk.wallet.getEthereumProvider()
+          const wallet = await (await sdk.wallet.getEthereumProvider()) as EthereumWallet
           
           const { data, error } = await supabase.auth.signInWithWeb3({
             chain: 'ethereum',
             statement: 'I accept the Terms of Service at https://example.com/tos',
-            wallet: wallet as unknown as EthereumWallet,
+            wallet
           })
       
           console.log('🔐 SIWE Response Data:', data)
