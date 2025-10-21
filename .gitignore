@@ -65,6 +65,10 @@ temp/
 **/supabase/.temp/
 frontend/supabase/.temp/
 
+# Supabase signing keys (security sensitive)
+backend/supabase/signing_keys.json
+**/signing_keys.json
+
 # Package manager lock files (optional - comment out if you want to keep them)
 # package-lock.json
 # yarn.lock

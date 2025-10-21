@@ -6,6 +6,7 @@ import { useMiniKit, useQuickAuth } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useAccount, useConnections } from "wagmi";
+import { useSIWE } from "@/lib/use-siwe";
 
 interface AuthResponse {
   success: boolean;
@@ -26,6 +27,19 @@ export default function Home() {
   const [error, setError] = useState("");
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
+  
+  // SIWE (Sign in with Ethereum) functionality
+  const { 
+    data: siweData, 
+    error: siweError, 
+    isLoading: siweLoading,
+    isAuthenticated: siweAuthenticated,
+    hasAttempted: siweAttempted,
+    signInWithEthereum,
+    getAccessToken,
+    getCurrentUser,
+    isSessionValid
+  } = useSIWE();
 
   // Initialize the miniapp
   useEffect(() => {
@@ -47,19 +61,13 @@ export default function Home() {
     { method: "GET" }
   );
 
-  // Debug logging for address detection
+  // Trigger SIWE when wallet is connected and user hasn't attempted yet
   useEffect(() => {
-    console.log("🔍 Debugging address detection:");
-    console.log("address from useAccount():", address);
-    console.log("isConnected:", isConnected);
-    console.log("connector:", connector);
-    console.log("connections:", connections);
-    console.log("context:", context);
-    console.log("context?.user:", context?.user);
-    console.log("authData:", authData);
-    console.log("isAuthLoading:", isAuthLoading);
-    console.log("authError:", authError);
-  }, [address, isConnected, connector, connections, context, authData, isAuthLoading, authError]);
+    if (isConnected && address && !siweAttempted && !siweLoading && !siweAuthenticated) {
+      console.log("🔐 Triggering SIWE - wallet connected and no previous attempt");
+      signInWithEthereum();
+    }
+  }, [isConnected, address, siweAttempted, siweLoading, siweAuthenticated, signInWithEthereum]);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,22 +100,33 @@ export default function Home() {
 
   // Determina il testo da mostrare nel badge dell'utente
   const getUserBadgeText = () => {
-    if (isAuthLoading) return { primary: "Connecting...", secondary: null };
-    if (authError) return { primary: "Not Connected", secondary: null };
+    if (isAuthLoading || siweLoading) return { primary: "Connecting...", secondary: null };
+    if (authError || siweError) return { primary: "Not Connected", secondary: null };
     
     let primary = "Connected";
     let secondary = null;
     
-    if (authData?.success && context?.user?.displayName) {
+    // Check SIWE authentication first
+    if (siweAuthenticated && siweData?.user) {
+      // Always use FID if available, fallback to email or user ID
+      if (siweData.user.user_metadata?.fid) {
+        primary = `FID: ${siweData.user.user_metadata.fid}`;
+      } else if (siweData.user.email) {
+        primary = siweData.user.email;
+      } else {
+        primary = `User: ${siweData.user.id?.slice(0, 8)}...`;
+      }
+      secondary = "SIWE Authenticated";
+    } else if (authData?.success && context?.user?.displayName) {
       primary = context.user.displayName;
     } else if (authData?.success && authData?.user?.fid) {
       primary = `FID: ${authData.user.fid}`;
     }
     
-    // Add wallet address as secondary text
-    if (address) {
+    // Add wallet address as secondary text if not SIWE authenticated
+    if (address && !siweAuthenticated) {
       secondary = `${address.slice(0, 6)}...${address.slice(-4)}`;
-    }else{
+    } else if (!address) {
       secondary = "No wallet connected";
     }
     
@@ -149,7 +168,7 @@ export default function Home() {
         zIndex: 10
       }}>
         <div style={{
-          backgroundColor: authData?.success ? "#1e40af" : "#222",
+          backgroundColor: (authData?.success || siweAuthenticated) ? "#1e40af" : "#222",
           color: "white",
           padding: "0.5rem 1rem",
           borderRadius: "0.5rem",
@@ -163,7 +182,7 @@ export default function Home() {
             width: "8px",
             height: "8px",
             borderRadius: "50%",
-            backgroundColor: authData?.success ? "#4ade80" : "#ef4444"
+            backgroundColor: (authData?.success || siweAuthenticated) ? "#4ade80" : "#ef4444"
           }}></div>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.125rem" }}>
             <div>{getUserBadgeText().primary}</div>
@@ -263,7 +282,7 @@ export default function Home() {
             {error}
           </div>
         )}
-        
+
         {/* Create quiz button */}
         <Link href="/quiz/admin" style={{
           width: "100%",
