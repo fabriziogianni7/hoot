@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useAccount, useConnections } from "wagmi";
 import { useSIWE } from "@/lib/use-siwe";
+import { isLocal, isTestnet } from "@/lib/env-config";
 
 interface AuthResponse {
   success: boolean;
@@ -36,9 +37,6 @@ export default function Home() {
     isAuthenticated: siweAuthenticated,
     hasAttempted: siweAttempted,
     signInWithEthereum,
-    getAccessToken,
-    getCurrentUser,
-    isSessionValid
   } = useSIWE();
 
   // Initialize the miniapp
@@ -62,8 +60,15 @@ export default function Home() {
   );
 
   // Trigger SIWE when wallet is connected and user hasn't attempted yet
+  // Skip SIWE for local and testnet environments
   useEffect(() => {
     if (isConnected && address && !siweAttempted && !siweLoading && !siweAuthenticated) {
+      // Skip SIWE for local and testnet environments
+      if (isLocal() || isTestnet()) {
+        console.log("🔐 Skipping SIWE for local/testnet environment");
+        return;
+      }
+      
       console.log("🔐 Triggering SIWE - wallet connected and no previous attempt");
       signInWithEthereum();
     }

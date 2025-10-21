@@ -76,3 +76,7 @@ backend/supabase/signing_keys.json
 
 
 .vercel
+backend/supabase/functions/.env.prod
+backend/supabase/functions/.env.testnet
+contracts/.env.prod
+contracts/.env.testnet
