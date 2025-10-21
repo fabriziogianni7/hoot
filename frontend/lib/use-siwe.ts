@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import { useSupabase } from './supabase-context'
-import { useAccount, useConnections } from 'wagmi'
-import type { User, Session, EthereumWallet } from '@supabase/supabase-js'
-import {sdk} from '@farcaster/miniapp-sdk'
+import {  useConnect, useConnections } from 'wagmi'
+import type { User, Session,  Web3Credentials } from '@supabase/supabase-js'
+import { EIP1193Provider } from 'viem'
+
 
 
 
@@ -19,8 +20,9 @@ const SIWE_STORAGE_KEY = 'hoot-siwe-attempted'
 
 export function useSIWE() {
   const { supabase } = useSupabase()
-  const { connector } = useAccount()
+
   const connections = useConnections()
+  const { connect, connectors } = useConnect()
   
   // Individual state variables
   const [isSessionChecked, setIsSessionChecked] = useState(false)
@@ -32,22 +34,22 @@ export function useSIWE() {
   const [_, setShouldSignIn] = useState(false)
 
   // Get the appropriate wallet provider based on context
-  const getWalletProvider = () => {
-    // Check if we're in a Farcaster miniapp context
-    const isFarcasterMiniapp = connector?.id === 'farcasterMiniApp' || 
-                              connections.some(conn => conn.connector.id === 'farcasterMiniApp')
+//   const getWalletProvider = () => {
+//     // Check if we're in a Farcaster miniapp context
+//     const isFarcasterMiniapp = connector?.id === 'farcasterMiniApp' || 
+//                               connections.some(conn => conn.connector.id === 'farcasterMiniApp')
     
-    if (isFarcasterMiniapp) {
-      // In Farcaster miniapp, use the connector's provider
-      const farcasterConnection = connections.find(conn => conn.connector.id === 'farcasterMiniApp')
-      return farcasterConnection?.connector.getProvider()
-    }
+//     if (isFarcasterMiniapp) {
+//       // In Farcaster miniapp, use the connector's provider
+//       const farcasterConnection = connections.find(conn => conn.connector.id === 'farcasterMiniApp')
+//       return farcasterConnection?.connector.getProvider()
+//     }
 
-    console.log('🔐 No wallet provider available')
+//     console.log('🔐 No wallet provider available')
     
-    // Fallback to window.ethereum for regular browser wallets
-    return window.ethereum
-  }
+//     // Fallback to window.ethereum for regular browser wallets
+//     return window.ethereum
+//   }
 
   // Check current session on mount
   useEffect(() => {    
@@ -86,20 +88,17 @@ export function useSIWE() {
         setError(null)
 
         try {
-          const walletProvider = getWalletProvider()
+         
           
-          if (!walletProvider) {
-            throw new Error('No wallet provider available')
-          }
+         
 
-          console.log('🔐 Using wallet provider:', connector?.id || 'unknown')
-          const wallet = await (await sdk.wallet.getEthereumProvider()) as EthereumWallet
+          const wallet = connectors[0]
           
           const { data, error } = await supabase.auth.signInWithWeb3({
             chain: 'ethereum',
             statement: 'I accept the Terms of Service at https://example.com/tos',
-            wallet
-          })
+            wallet: wallet as unknown as EIP1193Provider    
+          } as Web3Credentials)
       
           console.log('🔐 SIWE Response Data:', data)
           console.log('🔐 SIWE Response Error:', error)
