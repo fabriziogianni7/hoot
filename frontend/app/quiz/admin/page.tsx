@@ -110,10 +110,10 @@ export default function AdminPage() {
     }
   };
 
-  // CSS per forzare il colore bianco del placeholder
+  // CSS per forzare i colori degli input
   const placeholderStyle = `
     .quiz-input::placeholder {
-      color: white !important;
+      color: #D1D5DB !important;
       opacity: 1 !important;
     }
     .quiz-input {
@@ -142,6 +142,9 @@ export default function AdminPage() {
   const [creationStep, setCreationStep] = useState<string>("");
   const [showShareBox, setShowShareBox] = useState(false);
   const [createdRoomCode, setCreatedRoomCode] = useState<string>("");
+  const [addQuestionError, setAddQuestionError] = useState<string>("");
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
 
   // Determine wallet info (Farcaster or wagmi)
   const farcasterUser = context?.user as { addresses?: string[] } | undefined;
@@ -179,10 +182,20 @@ export default function AdminPage() {
     const newOptions = [...currentQuestion.options];
     newOptions[index] = { ...newOptions[index], text: value };
     setCurrentQuestion({ ...currentQuestion, options: newOptions });
+    // Pulisci l'errore quando l'utente modifica le opzioni
+    setAddQuestionError("");
+    // Nascondi il tooltip se la domanda è ora completa
+    const filledOptions = newOptions.filter(opt => opt.text.trim() !== "");
+    if (currentQuestion.text.trim() !== "" && filledOptions.length >= 2) {
+      setShowTooltip(false);
+    }
   };
 
   const handleCorrectAnswerChange = (index: number) => {
     setCurrentQuestion({ ...currentQuestion, correctAnswer: index });
+    // Pulisci l'errore quando l'utente seleziona una risposta corretta
+    setAddQuestionError("");
+    // Non nascondere il tooltip qui, solo quando la domanda è completa
   };
 
   const handleSaveQuestion = () => {
@@ -236,7 +249,21 @@ export default function AdminPage() {
   };
 
   const handleAddQuestion = () => {
-    // Salva la domanda corrente se ha contenuto
+    // Pulisci errori precedenti
+    setAddQuestionError("");
+    
+    // Controlla se la domanda è completa (testo + almeno 2 risposte)
+    const hasQuestionText = currentQuestion.text.trim() !== "";
+    const filledOptions = currentQuestion.options.filter(opt => opt.text.trim() !== "");
+    const hasEnoughAnswers = filledOptions.length >= 2;
+    
+    // Se la domanda non è completa, mostra il tooltip e non procedere
+    if (!hasQuestionText || !hasEnoughAnswers) {
+      setShowTooltip(true);
+      return;
+    }
+
+    // Salva automaticamente la domanda corrente se ha contenuto
     if (currentQuestion.text.trim() !== "") {
       const newQuestions = [...questions];
       
@@ -253,6 +280,33 @@ export default function AdminPage() {
     
     // Passa a una nuova domanda
     setCurrentQuestionIndex(questions.length + (currentQuestion.text.trim() !== "" ? 1 : 0));
+  };
+
+  const handleDeleteQuestion = (index: number) => {
+    const newQuestions = questions.filter((_, i) => i !== index);
+    setQuestions(newQuestions);
+    
+    // Se stiamo eliminando la domanda corrente, vai alla prima domanda disponibile
+    if (currentQuestionIndex === index) {
+      if (newQuestions.length > 0) {
+        setCurrentQuestionIndex(0);
+      } else {
+        setCurrentQuestionIndex(0);
+        setCurrentQuestion({
+          text: "",
+          options: [
+            { text: "", color: "hover:opacity-80" },
+            { text: "", color: "hover:opacity-80" },
+            { text: "", color: "hover:opacity-80" },
+            { text: "", color: "hover:opacity-80" }
+          ],
+          correctAnswer: 0
+        });
+      }
+    } else if (currentQuestionIndex > index) {
+      // Se la domanda eliminata era prima di quella corrente, decrementa l'indice
+      setCurrentQuestionIndex(currentQuestionIndex - 1);
+    }
   };
 
   const handleSaveQuiz = async () => {
@@ -421,8 +475,18 @@ export default function AdminPage() {
         }}
       />
       
+      {/* Logo in top left */}
+      <div className="absolute top-4 left-4 z-20">
+        <img 
+          src="/Logo.png" 
+          alt="Hoot Logo" 
+          className="h-20 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={() => router.push('/')}
+        />
+      </div>
+
       {/* Content container */}
-      <div className="relative z-10 flex flex-col items-center min-h-screen px-4 py-8">
+      <div className="relative z-10 flex flex-col items-center min-h-screen px-4 pt-20">
         {/* Network Switcher */}
         <div className="w-full max-w-md mb-4 flex justify-center">
           <div className="relative">
@@ -457,55 +521,6 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Wallet Connection Section */}
-        <div className="w-full max-w-md mb-1 bg-gray-900/50 rounded-lg p-4">
-          {!walletAddress ? (
-            <div className="flex flex-col items-center space-y-3">
-              <div className="text-sm text-gray-300">Connect wallet to create quiz with prizes</div>
-              {!isInFarcaster && (
-                <button
-                  onClick={() => {
-                    const connector = connectors[0]; // Use first available connector
-                    if (connector) {
-                      connect({ connector });
-                    }
-                  }}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded text-white font-medium"
-                >
-                  Connect Wallet
-                </button>
-              )}
-              {isInFarcaster && (
-                <div className="text-sm text-green-400">Using Farcaster Wallet</div>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-300">Connected:</span>
-                <span className="font-mono text-sm">{formatAddress(walletAddress)}</span>
-              </div>
-              {ethBalance && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-300">Balance:</span>
-                  <span className="text-sm">{parseFloat(ethBalance).toFixed(4)} ETH</span>
-                </div>
-              )}
-              <div className="flex flex-col space-y-1">
-                <label className="text-sm text-gray-300">Prize Amount (ETH):</label>
-                <input
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  value={prizeAmount}
-                  onChange={(e) => setPrizeAmount(e.target.value)}
-                  className="px-3 py-2 rounded bg-black text-white"
-                  placeholder="0.001"
-                />
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* Error/Status Messages */}
         {error && (
@@ -530,44 +545,33 @@ export default function AdminPage() {
         )}
 
         {/* Top navigation */}
-        <div className="w-full max-w-md flex justify-between items-center mb-1">
-          <div className="flex items-center -ml-1">
-            <img 
-              src="/Logo.png" 
-              alt="Hoot Logo" 
-              className="h-20 w-auto"
-            />
-          </div>
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              value={quizTitle}
-              onChange={(e) => setQuizTitle(e.target.value)}
-              placeholder="Quiz Title"
-                className="px-4 py-2 text-sm rounded bg-white text-black w-56"
-            />
-            <button
-              onClick={handleSaveQuiz}
-              disabled={isCreating || !walletAddress || isWritePending || isSendPending}
-              className="px-3 py-1 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                backgroundColor: isCreating || !walletAddress || isWritePending || isSendPending ? "#666" : "#8A63D2",
-                color: "white"
-              }}
-            >
-              {isCreating ? 'Creating...' : isWritePending || isSendPending ? 'Transaction Pending...' : 'Create'}
-            </button>
-          </div>
+        <div className="w-full max-w-md flex justify-center items-center mb-1">
+          <input
+            type="text"
+            value={quizTitle}
+            onChange={(e) => setQuizTitle(e.target.value)}
+            placeholder="Quiz Title"
+            className="px-4 py-2 mb-3 text-sm rounded bg-black text-white border border-white w-full"
+          />
         </div>
         
         {/* Question input */}
         <div className="w-full max-w-md mb-6">
-          <div className="border border-white rounded p-4 h-32 relative">
+          <div className="bg-white rounded p-4 h-32 relative">
             <textarea
               value={currentQuestion.text}
-              onChange={(e) => setCurrentQuestion({ ...currentQuestion, text: e.target.value })}
+              onChange={(e) => {
+                setCurrentQuestion({ ...currentQuestion, text: e.target.value });
+                // Pulisci l'errore quando l'utente modifica il testo della domanda
+                setAddQuestionError("");
+                // Nascondi il tooltip se la domanda è ora completa
+                const filledOptions = currentQuestion.options.filter(opt => opt.text.trim() !== "");
+                if (e.target.value.trim() !== "" && filledOptions.length >= 2) {
+                  setShowTooltip(false);
+                }
+              }}
               placeholder="Enter your question here"
-              className="quiz-input w-full h-full bg-transparent text-center resize-none focus:outline-none absolute inset-0 flex items-center justify-center"
+              className="quiz-input w-full h-full bg-transparent text-center resize-none focus:outline-none absolute inset-0 flex items-center justify-center text-black"
               style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
@@ -580,14 +584,18 @@ export default function AdminPage() {
         </div>
         
         {/* Answer options */}
-        <div className="w-full max-w-md grid grid-cols-2 gap-4 mb-8">
+        <div className="w-full max-w-md flex flex-col gap-4 mb-8">
           {currentQuestion.options.map((option, index) => {
             const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
             return (
             <div 
               key={index}
-              className={`${option.color} rounded p-4 text-white relative`}
-              style={{ backgroundColor: colors[index] }}
+              className={`${option.color} rounded p-4 text-white relative border-2`}
+              style={{ 
+                backgroundColor: `${colors[index]}40`, // Aggiunge opacità al colore di sfondo
+                borderColor: colors[index],
+                borderWidth: '2px'
+              }}
               onClick={() => handleCorrectAnswerChange(index)}
             >
               {/* Indicatore di risposta corretta */}
@@ -595,10 +603,13 @@ export default function AdminPage() {
                    style={{ 
                      backgroundColor: currentQuestion.correctAnswer === index ? 'white' : 'rgba(255, 255, 255, 0.3)'
                    }}>
-                <div className="w-2 h-2 rounded-full"
-                     style={{ 
-                       backgroundColor: currentQuestion.correctAnswer === index ? '#10B981' : 'white'
-                     }}></div>
+                {currentQuestion.correctAnswer === index ? (
+                  <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <div className="w-2 h-2 rounded-full bg-white"></div>
+                )}
               </div>
               <input
                 type="text"
@@ -614,15 +625,28 @@ export default function AdminPage() {
         </div>
         
         {/* Question navigation */}
-        <div className="w-full max-w-md flex items-center justify-center space-x-4 overflow-x-auto pb-2">
+        <div className="w-full max-w-md flex items-center justify-center space-x-4 pb-2">
           {questions.map((question, index) => (
             <div 
               key={index}
-              className={`bg-black border ${currentQuestionIndex === index ? 'border-white' : 'border-white/30'} rounded px-4 py-2 text-sm cursor-pointer hover:border-white transition-colors flex-shrink-0`}
+              className={`bg-black border ${currentQuestionIndex === index ? 'border-white' : 'border-white/30'} rounded px-4 py-2 text-sm cursor-pointer hover:border-white transition-colors flex-shrink-0 relative`}
               onClick={() => handleQuestionClick(index)}
             >
-              Question {index + 1}<br/>
-              {getQuestionSummary(question)}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteQuestion(index);
+                }}
+                className="absolute top-0 right-0 text-white hover:text-gray-300 p-1"
+                title="Delete question"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <div>
+                Question {index + 1}
+              </div>
             </div>
           ))}
           
@@ -637,24 +661,38 @@ export default function AdminPage() {
           )}
           
           {/* Add question button */}
-          <button 
-            className="bg-black border border-white/30 rounded px-4 py-2 text-2xl flex-shrink-0 hover:border-white transition-colors"
-            onClick={handleAddQuestion}
-          >
-            +
-          </button>
+          <div className="flex flex-col items-center relative">
+            <button 
+              className="bg-black border border-white/30 rounded px-4 py-2 text-2xl flex-shrink-0 hover:border-white transition-colors"
+              onClick={handleAddQuestion}
+            >
+              +
+            </button>
+            {addQuestionError && (
+              <div className="mt-2 text-xs text-red-400 text-center max-w-48">
+                {addQuestionError}
+              </div>
+            )}
+            {showTooltip && (
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-gray-300 text-black text-xs px-2 py-1 rounded shadow-lg z-50 whitespace-nowrap">
+                Complete the current question
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-300"></div>
+              </div>
+            )}
+          </div>
         </div>
         
         {/* Action buttons */}
         <div className="mt-6 flex flex-col gap-4 w-full max-w-md">
           <button
-            onClick={handleSaveQuestion}
-            className="px-4 py-2 rounded text-white"
+            onClick={handleSaveQuiz}
+            disabled={isCreating || !walletAddress || isWritePending || isSendPending}
+            className="px-4 py-2 rounded text-white disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
-              backgroundColor: "#8A63D2"
+              backgroundColor: isCreating || !walletAddress || isWritePending || isSendPending ? "#666" : "#8A63D2"
             }}
           >
-            Save Question
+            {isCreating ? 'Creating...' : isWritePending || isSendPending ? 'Transaction Pending...' : 'Create Quiz'}
           </button>
           
           {/* AI Agent button */}
@@ -677,6 +715,7 @@ export default function AdminPage() {
           }}
         />
       )}
+
     </div>
   );
 }

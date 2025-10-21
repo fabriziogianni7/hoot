@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@coinbase/onchainkit": "latest",
+    "@farcaster/auth-kit": "^0.8.1",
     "@farcaster/miniapp-sdk": "^0.2.1",
     "@farcaster/miniapp-wagmi-connector": "^1.1.0",
     "@radix-ui/react-slot": "^1.2.3",
