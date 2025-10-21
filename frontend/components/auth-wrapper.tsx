@@ -15,15 +15,15 @@ interface AuthResponse {
 }
 
 export function AuthWrapper({ children }: { children: ReactNode }) {
-  const { context } = useMiniKit();
+  // const { context } = useMiniKit();
   const { data: authData, isLoading, error } = useQuickAuth<AuthResponse>("/api/auth", { method: "GET" });
 
   // DEVELOPMENT MODE: Skip authentication for testing
   // Remove this line in production
-  return <>{children}</>;
+  // return <>{children}</>;
 
   // PRODUCTION MODE: Uncomment the code below for real authentication
-  /*
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
@@ -38,7 +38,7 @@ export function AuthWrapper({ children }: { children: ReactNode }) {
       <div className="flex flex-col items-center justify-center min-h-screen text-center p-4">
         <h1 className="text-3xl font-bold mb-4">Authentication Required</h1>
         <p className="text-xl mb-8">
-          Please authenticate with your Farcaster account to use the Quiz App.
+          Please authenticate with your Farcaster account to use the Hoot!.
         </p>
         <div className="max-w-md mb-8">
           <p className="text-muted-foreground">
@@ -54,5 +54,5 @@ export function AuthWrapper({ children }: { children: ReactNode }) {
 
   // User is authenticated
   return <>{children}</>;
-  */
+  
 }
