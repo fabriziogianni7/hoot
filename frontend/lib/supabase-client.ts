@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
+import { getSupabaseConfig } from './env-config'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'http://127.0.0.1:54321'
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+const { url: supabaseUrl, anonKey: supabaseAnonKey } = getSupabaseConfig()
 
 if (!supabaseAnonKey) {
   console.warn('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable')
