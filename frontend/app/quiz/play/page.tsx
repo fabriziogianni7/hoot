@@ -303,16 +303,17 @@ function PlayQuizContent() {
         }}
       />
       
-      {/* Logo */}
-      <div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-10">
+      {/* Logo in top left */}
+      <div className="absolute top-4 left-4 z-20">
         <img 
           src="/Logo.png" 
           alt="Hoot Logo" 
-          className="h-16 w-auto"
+          className="h-20 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={() => router.push('/')}
         />
       </div>
       
-      <div className="relative z-10 container mx-auto py-8 px-4 flex flex-col items-center">
+      <div className="relative z-10 container mx-auto py-8 px-4 pt-20 flex flex-col items-center">
         {/* Timer display (static, without animation) */}
         <div className="mb-4">
           <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center text-2xl font-bold">
@@ -327,7 +328,7 @@ function PlayQuizContent() {
           </div>
           <div className="w-full bg-gray-800 rounded-full h-2">
             <div 
-              className="bg-blue-600 h-2 rounded-full" 
+              className="bg-purple-600 h-2 rounded-full" 
               style={{ width: `${((currentQuestionIndex + 1) / quiz.questions.length) * 100}%` }}
             ></div>
           </div>
@@ -339,48 +340,58 @@ function PlayQuizContent() {
         </div>
         
         {/* Answer options */}
-        <div className="grid grid-cols-1 gap-4 w-full max-w-md">
+        <div className="flex flex-col gap-4 w-full max-w-md">
           {currentQuestion.options.map((option, index) => {
-            const colors = [
-              "#0DCEFB", // BLUE
-              "#53DB1E", // GREEN
-              "#FDCC0E", // YELLOW
-              "#F70000"  // RED
-            ];
-            
+            const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
             const baseColor = colors[index % colors.length];
             
-            let finalColor = baseColor;
+            let backgroundColor = `${baseColor}40`; // Sfondo trasparente come admin
+            let borderColor = baseColor; // Bordo colorato
+            
             if (showingResults) {
               if (index === correctAnswerIndex) {
-                finalColor = "#22c55e"; // green-500
+                backgroundColor = "#22c55e40"; // green-500 con trasparenza
+                borderColor = "#22c55e";
               } else if (index === selectedAnswer && index !== correctAnswerIndex) {
-                finalColor = "#dc2626"; // red-600
+                backgroundColor = "#dc262640"; // red-600 con trasparenza
+                borderColor = "#dc2626";
               } else {
-                finalColor = "#374151"; // gray-700
+                backgroundColor = "#37415140"; // gray-700 con trasparenza
+                borderColor = "#374151";
               }
             }
             
             return (
-              <button
+              <div 
                 key={index}
-                onClick={() => handleAnswerSelect(index)}
-                disabled={isAnswered || showingResults}
-                style={{
-                  padding: "1rem",
-                  borderRadius: "0.5rem",
-                  backgroundColor: finalColor,
-                  color: "white",
-                  fontWeight: "500",
-                  textAlign: "center",
-                  width: "100%",
-                  cursor: isAnswered || showingResults ? "default" : "pointer",
+                className="rounded p-4 text-white relative border-2 cursor-pointer hover:opacity-80 transition-opacity"
+                style={{ 
+                  backgroundColor: backgroundColor, // Sfondo colorato pieno
+                  borderColor: borderColor, // Bordo dello stesso colore
+                  borderWidth: '2px',
                   opacity: isAnswered || showingResults ? (index === selectedAnswer || index === correctAnswerIndex ? 1 : 0.7) : 1,
-                  fontSize: "1.25rem", // Dimensione del testo più grande per il font Patrick Hand
                 }}
+                onClick={() => handleAnswerSelect(index)}
               >
-                {option}
-              </button>
+                {/* Indicatore di risposta corretta */}
+                {showingResults && index === correctAnswerIndex && (
+                  <div className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center bg-white">
+                    <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                )}
+                <div 
+                  className="w-full bg-transparent focus:outline-none text-center"
+                  style={{
+                    fontSize: "1.25rem",
+                    fontWeight: "500",
+                    cursor: isAnswered || showingResults ? "default" : "pointer",
+                  }}
+                >
+                  {option}
+                </div>
+              </div>
             );
           })}
         </div>
@@ -403,7 +414,7 @@ function PlayQuizContent() {
         <div className="w-full max-w-md mt-8">
           <div className="w-full bg-gray-800 rounded-full h-2">
             <div 
-              className="bg-blue-600 h-2 rounded-full" 
+              className="bg-purple-600 h-2 rounded-full" 
               style={{ 
                 width: `${timePercentageRef.current}%`,
                 transition: "width 1s linear"

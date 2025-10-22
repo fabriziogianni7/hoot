@@ -162,24 +162,24 @@ export default function ResultsPage() {
         <h2 className="text-xl mb-8">{quiz.title}</h2>
         
         {currentPlayer && (
-          <div className="bg-blue-900/30 border border-blue-500 rounded-lg p-4 mb-8 w-full max-w-md">
-            <h3 className="text-center mb-2">Your Score</h3>
-            <div className="text-4xl font-bold text-center">{currentPlayer.score}</div>
-            <div className="text-center mt-2">
+          <div className="bg-purple-900/30 border border-purple-500 rounded-lg p-4 mb-8 w-full max-w-md">
+            <h3 className="text-center mb-2 text-purple-200">Your Score</h3>
+            <div className="text-4xl font-bold text-center text-purple-100">{currentPlayer.score}</div>
+            <div className="text-center mt-2 text-purple-300">
               {currentPlayer.answers.filter(a => a.isCorrect).length} correct answers out of {quiz.questions.length}
             </div>
           </div>
         )}
         
-        <div className="bg-gray-900/50 rounded-lg p-6 mb-8 w-full max-w-md">
-          <h3 className="text-xl font-semibold mb-4 text-center">Leaderboard</h3>
+        <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
+          <h3 className="text-xl font-semibold mb-4 text-center text-purple-200">Leaderboard</h3>
           
           <div className="space-y-3">
             {sortedPlayers.map((player, index) => (
               <div 
                 key={player.id}
                 className={`flex items-center justify-between p-3 rounded ${
-                  player.id === currentPlayerId ? "bg-blue-900/30 border border-blue-500" : "bg-gray-800"
+                  player.id === currentPlayerId ? "bg-purple-700/30 border border-purple-500" : "bg-purple-600/20 border border-purple-400/30"
                 } ${index < 3 ? 'border-2 border-yellow-500/50' : ''}`}
               >
                 <div className="flex items-center">
@@ -201,8 +201,8 @@ export default function ResultsPage() {
         
         {/* Prize Distribution Section - Visible to all, but only creator can distribute */}
         {quizData && quizData.prize_amount > 0 && quizData.status !== 'completed' && (
-          <div className="bg-green-900/20 border border-green-500 rounded-lg p-6 mb-8 w-full max-w-md">
-            <h3 className="text-xl font-semibold mb-4 text-center">Prize Distribution</h3>
+          <div className="bg-purple-600/20 border border-purple-500 rounded-lg p-6 mb-8 w-full max-w-md">
+            <h3 className="text-xl font-semibold mb-4 text-center text-purple-200">Prize Distribution</h3>
             
             <div className="mb-4 space-y-2 text-sm">
               <div className="flex justify-between">
@@ -257,7 +257,20 @@ export default function ResultsPage() {
               <button
                 onClick={handleDistributePrizes}
                 disabled={isDistributing || !address}
-                className="w-full py-3 bg-green-600 hover:bg-green-700 rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-3 rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                style={{
+                  backgroundColor: isDistributing ? "#16a34a" : "#22c55e", // green-600 when loading, green-500 when ready
+                }}
+                onMouseEnter={(e) => {
+                  if (!isDistributing) {
+                    e.currentTarget.style.backgroundColor = "#16a34a"; // green-600 on hover
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isDistributing) {
+                    e.currentTarget.style.backgroundColor = "#22c55e"; // green-500 normal state
+                  }
+                }}
               >
                 {isDistributing ? 'Distributing Prizes...' : 'Distribute Prizes'}
               </button>
@@ -270,8 +283,8 @@ export default function ResultsPage() {
         )}
         
         {quizData && quizData.status === 'completed' && (
-          <div className="bg-gray-900/50 rounded-lg p-4 mb-8 w-full max-w-md text-center">
-            <p className="text-green-400">✓ Prizes have been distributed!</p>
+          <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-4 mb-8 w-full max-w-md text-center">
+            <p className="text-purple-200">✓ Prizes have been distributed!</p>
           </div>
         )}
         
@@ -288,7 +301,7 @@ export default function ResultsPage() {
           
           <Link 
             href="/quiz/admin"
-            className="py-2 px-4 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium flex-1 text-center"
+            className="py-2 px-4 bg-purple-600 hover:bg-purple-700 rounded text-white font-medium flex-1 text-center transition-colors"
           >
             Create New Quiz
           </Link>

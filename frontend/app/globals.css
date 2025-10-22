@@ -64,6 +64,16 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /* Ensure Montserrat is used throughout the app */
+  * {
+    font-family: var(--font-montserrat), sans-serif !important;
+  }
+
+  /* Exceptions for monospace fonts */
+  .font-mono, code, pre {
+    font-family: var(--font-source-code-pro), monospace !important;
+  }
+
   code {
     background-color: rgba(0, 0, 0, 0.05);
     border-radius: 6px;
@@ -123,5 +133,15 @@
   
   .animate-slide-up {
     animation: slide-up 0.3s ease-out;
+  }
+  
+  /* Hide scrollbar for all browsers */
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari, Opera */
   }
 }

@@ -34,7 +34,7 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50">
-      <div className="bg-black border border-gray-800 rounded-t-2xl p-6 w-full max-w-md transform transition-transform duration-300 ease-out animate-slide-up">
+      <div className="bg-black border border-white rounded-t-lg p-6 w-full max-w-md mx-4 mb-0 transform transition-transform duration-300 ease-out animate-slide-up">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-bold text-white">Quiz Created Successfully! 🎉</h3>
           <button
@@ -50,54 +50,82 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
         <div className="space-y-4">
           <div>
             <p className="text-gray-300 mb-2">Share this link with your players:</p>
-            <div className="bg-gray-900 rounded-lg p-3 border border-gray-700">
-              <p className="text-sm text-blue-400 break-all">{quizUrl}</p>
+            <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3 flex items-center justify-between">
+              <p className="text-sm text-blue-400 break-all flex-1 mr-2">{quizUrl}</p>
+              <button
+                onClick={handleCopyLink}
+                className={`p-2 rounded-lg transition-colors ${
+                  copied 
+                    ? 'bg-green-600 text-white' 
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                }`}
+                title={copied ? 'Copied!' : 'Copy link'}
+              >
+                {copied ? (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </button>
             </div>
           </div>
           
           <div>
             <p className="text-gray-300 mb-2">Or share the PIN:</p>
-            <div className="bg-gray-900 rounded-lg p-3 border border-gray-700 text-center">
+            <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3 text-center">
               <p className="text-2xl font-bold text-white font-mono">{roomCode}</p>
             </div>
           </div>
           
-          <div className="flex gap-3">
-            <button
-              onClick={handleCopyLink}
-              className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
-                copied 
-                  ? 'bg-green-600 text-white' 
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              }`}
-            >
-              {copied ? '✓ Copied!' : 'Copy Link'}
-            </button>
-            
-            <button
-              onClick={() => {
-                const shareText = `Join my quiz! PIN: ${roomCode}\nLink: ${quizUrl}`;
-                if (navigator.share) {
-                  navigator.share({
-                    title: 'Join Quiz',
-                    text: shareText,
-                    url: quizUrl
-                  });
-                } else {
-                  // Fallback: copy to clipboard
-                  handleCopyLink();
-                }
-              }}
-              className="flex-1 py-3 px-4 rounded-lg font-medium bg-purple-600 hover:bg-purple-700 text-white transition-colors"
-            >
-              Share
-            </button>
-          </div>
+          <button
+            onClick={() => {
+              const castText = `🎯 Join my quiz! PIN: ${roomCode}\n\n${quizUrl}`;
+              
+              // Try to open Farcaster app or web
+              const farcasterUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(castText)}`;
+              
+              // Try to open in Farcaster app first, fallback to web
+              const appUrl = `farcaster://compose?text=${encodeURIComponent(castText)}`;
+              
+              // Create a temporary link to try app first
+              const link = document.createElement('a');
+              link.href = appUrl;
+              link.style.display = 'none';
+              document.body.appendChild(link);
+              
+              // Try to open app, fallback to web after short delay
+              link.click();
+              setTimeout(() => {
+                window.open(farcasterUrl, '_blank');
+              }, 1000);
+              
+              document.body.removeChild(link);
+            }}
+            className="w-full py-3 px-4 rounded-lg font-medium bg-purple-600 hover:bg-purple-700 text-white transition-colors flex items-center justify-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            Cast your Quiz
+          </button>
           
           {onGoToLobby && (
             <button
               onClick={onGoToLobby}
-              className="w-full py-3 px-4 rounded-lg font-medium bg-green-600 hover:bg-green-700 text-white transition-colors"
+              className="w-full py-3 px-4 rounded-lg font-medium text-white transition-colors"
+              style={{
+                backgroundColor: "#22c55e", // Verde delle risposte corrette
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "#16a34a"; // Verde più scuro per hover
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "#22c55e"; // Verde normale
+              }}
             >
               Go to Lobby
             </button>
