@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     // If the token was valid, `payload.sub` will be the user's Farcaster ID.
     const userFid = payload.sub;
 
-    // Return user information for your waitlist application
+    // Return the authenticated user data
     return NextResponse.json({
       success: true,
       user: {
