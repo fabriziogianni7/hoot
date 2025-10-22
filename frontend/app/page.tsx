@@ -42,9 +42,13 @@ export default function Home() {
         setIsAuthLoading(true);
         setAuthError(null);
         
-        const isMiniApp = await sdk.isInMiniApp();
+        // const isMiniApp = await sdk.isInMiniApp();
+
+        // Qui c'è anche l'url dell immagine profilo utente!
+        const context = await sdk.context;
+        console.log("😂 context", context);
         
-        if (isMiniApp) {
+        if (context.client.clientFid === 9152) {
           const res = await sdk.quickAuth.fetch(`${window.location.origin}/api/auth`);
           if (res.ok) {
             const data = await res.json();
