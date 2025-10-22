@@ -42,12 +42,14 @@ export default function Home() {
         setIsAuthLoading(true);
         setAuthError(null);
         
-        // const isMiniApp = await sdk.isInMiniApp();
+        const isMiniApp = await sdk.isInMiniApp();
 
         // Qui c'è anche l'url dell immagine profilo utente!
         const context = await sdk.context;
         console.log("😂 context", context);
         
+
+
         if (context.client.clientFid === 9152) {
           const res = await sdk.quickAuth.fetch(`${window.location.origin}/api/auth`);
           if (res.ok) {
@@ -63,7 +65,28 @@ export default function Home() {
             const errorData = await res.json();
             setAuthError(errorData.message || 'Mini-app authentication failed');
           }
-        } else {
+        } 
+
+        if(context.client.clientFid === 309857){
+          const res = await sdk.quickAuth.fetch(`${window.location.origin}/api/auth`);
+          if (res.ok) {
+            const data = await res.json();
+            setAuthData(data);
+            
+            // Attempt Supabase authentication
+            const { error: supabaseError } = await signInWithEthereumWeb();
+            if (supabaseError) {
+              setAuthError(`Supabase authentication failed: ${supabaseError.message}`);
+            }
+          } else {
+            const errorData = await res.json();
+            setAuthError(errorData.message || 'Mini-app authentication failed');
+          }
+        }
+
+        
+        
+        else {
           // Web authentication
           const { error: supabaseErrorWeb } = await signInWithEthereumWeb();
           if (supabaseErrorWeb) {
