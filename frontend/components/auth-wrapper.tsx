@@ -20,37 +20,37 @@ export function AuthWrapper({ children }: { children: ReactNode }) {
 
   // DEVELOPMENT MODE: Skip authentication for testing
   // Remove this line in production
-  // return <>{children}</>;
+  return <>{children}</>;
 
   // PRODUCTION MODE: Uncomment the code below for real authentication
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen">
-        <div className="animate-pulse text-2xl font-bold mb-4">Verifying your identity...</div>
-        <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
+  // if (isLoading) {
+  //   return (
+  //     <div className="flex flex-col items-center justify-center min-h-screen">
+  //       <div className="animate-pulse text-2xl font-bold mb-4">Verifying your identity...</div>
+  //       <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+  //     </div>
+  //   );
+  // }
 
-  if (error || !authData?.success) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen text-center p-4">
-        <h1 className="text-3xl font-bold mb-4">Authentication Required</h1>
-        <p className="text-xl mb-8">
-          Please authenticate with your Farcaster account to use the Hoot!.
-        </p>
-        <div className="max-w-md mb-8">
-          <p className="text-muted-foreground">
-            The Quiz App requires authentication to track your quiz participation and scores.
-          </p>
-        </div>
-        <Button onClick={() => window.location.reload()} size="lg">
-          Try Again
-        </Button>
-      </div>
-    );
-  }
+  // if (error || !authData?.success) {
+  //   return (
+  //     <div className="flex flex-col items-center justify-center min-h-screen text-center p-4">
+  //       <h1 className="text-3xl font-bold mb-4">Authentication Required</h1>
+  //       <p className="text-xl mb-8">
+  //         Please authenticate with your Farcaster account to use the Hoot!.
+  //       </p>
+  //       <div className="max-w-md mb-8">
+  //         <p className="text-muted-foreground">
+  //           The Quiz App requires authentication to track your quiz participation and scores.
+  //         </p>
+  //       </div>
+  //       <Button onClick={() => window.location.reload()} size="lg">
+  //         Try Again
+  //       </Button>
+  //     </div>
+  //   );
+  // }
 
   // User is authenticated
   return <>{children}</>;
