@@ -88,16 +88,33 @@ export function useSIWE() {
         setError(null)
 
         try {
-         
+          // Get the appropriate wallet provider
+          let walletProvider: EIP1193Provider | undefined;
           
-         
-
-          const wallet = connectors[0]
+          // Try to get the first available connector
+          if (connectors.length > 0) {
+            const connector = connectors[0];
+            try {
+              const provider = await connector.getProvider();
+              walletProvider = provider as EIP1193Provider;
+            } catch (error) {
+              console.warn('Failed to get provider from connector:', error);
+            }
+          }
+          
+          // Fallback to window.ethereum if no connector provider available
+          if (!walletProvider && typeof window !== 'undefined' && window.ethereum) {
+            walletProvider = window.ethereum as EIP1193Provider;
+          }
+          
+          if (!walletProvider) {
+            throw new Error('No wallet provider available');
+          }
           
           const { data, error } = await supabase.auth.signInWithWeb3({
             chain: 'ethereum',
             statement: 'I accept the Terms of Service at https://example.com/tos',
-            wallet: wallet as unknown as EIP1193Provider    
+            wallet: walletProvider    
           } as Web3Credentials)
       
           console.log('🔐 SIWE Response Data:', data)

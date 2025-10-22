@@ -6,6 +6,7 @@ import { useMiniKit, useQuickAuth } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useAccount } from "wagmi";
+import { useSIWE } from "@/lib/use-siwe";
 
 interface AuthResponse {
   success: boolean;
@@ -25,6 +26,14 @@ export default function Home() {
   const [error, setError] = useState("");
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
+  
+  // Supabase wallet authentication
+  const { 
+    data: siweData, 
+    error: siweError, 
+    isLoading: isSiweLoading, 
+    isAuthenticated: isSiweAuthenticated 
+  } = useSIWE();
   
 
   // Initialize the miniapp
@@ -79,26 +88,44 @@ export default function Home() {
 
   // Determina il testo da mostrare nel badge dell'utente
   const getUserBadgeText = () => {
-    if (isAuthLoading) return { primary: "Connecting...", secondary: null };
-    if (authError) return { primary: "Not Connected", secondary: null };
+    // Check loading states
+    if (isAuthLoading || isSiweLoading) return { primary: "Connecting...", secondary: null };
+    
+    // Check for errors
+    if (authError && siweError) return { primary: "Not Connected", secondary: null };
     
     let primary = "Connected";
     let secondary = null;
+    let statusColor = "#4ade80"; // Green for connected
     
+    // Priority: Farcaster auth first, then Supabase auth
+    debugger
     if (authData?.success && context?.user?.displayName) {
+      console.log('🔐 Farcaster auth data:', authData);
       primary = context.user.displayName;
+      secondary = "Farcaster";
     } else if (authData?.success && authData?.user?.fid) {
       primary = `FID: ${authData.user.fid}`;
+      secondary = "Farcaster";
+    } else if (isSiweAuthenticated && siweData?.user) {
+      primary = siweData.user.email || "Wallet User";
+      secondary = "Supabase";
     }
     
-    // Add wallet address as secondary text
+    // Add wallet address as tertiary info
     if (address) {
-      secondary = `${address.slice(0, 6)}...${address.slice(-4)}`;
-    } else {
+      const walletInfo = `${address.slice(0, 6)}...${address.slice(-4)}`;
+      if (secondary) {
+        secondary = `${secondary} • ${walletInfo}`;
+      } else {
+        secondary = walletInfo;
+      }
+    } else if (!secondary) {
       secondary = "No wallet connected";
+      statusColor = "#ef4444"; // Red for not connected
     }
     
-    return { primary, secondary };
+    return { primary, secondary, statusColor };
   };
 
   return (
@@ -136,7 +163,7 @@ export default function Home() {
         zIndex: 10
       }}>
         <div style={{
-          backgroundColor: authData?.success ? "#1e40af" : "#222",
+          backgroundColor: (authData?.success || isSiweAuthenticated) ? "#1e40af" : "#222",
           color: "white",
           padding: "0.5rem 1rem",
           borderRadius: "0.5rem",
@@ -150,7 +177,7 @@ export default function Home() {
             width: "8px",
             height: "8px",
             borderRadius: "50%",
-            backgroundColor: authData?.success ? "#4ade80" : "#ef4444"
+            backgroundColor: getUserBadgeText().statusColor || ((authData?.success || isSiweAuthenticated) ? "#4ade80" : "#ef4444")
           }}></div>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.125rem" }}>
             <div>{getUserBadgeText().primary}</div>
