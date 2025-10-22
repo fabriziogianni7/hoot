@@ -5,6 +5,7 @@ import { useSupabase } from './supabase-context'
 import {  useConnect, useConnections } from 'wagmi'
 import type { User, Session,  Web3Credentials } from '@supabase/supabase-js'
 import { EIP1193Provider } from 'viem'
+import {sdk} from '@farcaster/miniapp-sdk'
 
 
 
@@ -33,23 +34,6 @@ export function useSIWE() {
   const [hasAttempted, setHasAttempted] = useState(false)
   const [_, setShouldSignIn] = useState(false)
 
-  // Get the appropriate wallet provider based on context
-//   const getWalletProvider = () => {
-//     // Check if we're in a Farcaster miniapp context
-//     const isFarcasterMiniapp = connector?.id === 'farcasterMiniApp' || 
-//                               connections.some(conn => conn.connector.id === 'farcasterMiniApp')
-    
-//     if (isFarcasterMiniapp) {
-//       // In Farcaster miniapp, use the connector's provider
-//       const farcasterConnection = connections.find(conn => conn.connector.id === 'farcasterMiniApp')
-//       return farcasterConnection?.connector.getProvider()
-//     }
-
-//     console.log('🔐 No wallet provider available')
-    
-//     // Fallback to window.ethereum for regular browser wallets
-//     return window.ethereum
-//   }
 
   // Check current session on mount
   useEffect(() => {    
@@ -65,10 +49,6 @@ export function useSIWE() {
           setData({ user: session.user, session })
           setIsAuthenticated(true)
           setError(null)
-          console.log('🔐 SIWE Session found:', session)
-          console.log('🔐 Access Token:', session.access_token)
-          console.log('🔐 Refresh Token:', session.refresh_token)
-          console.log('🔐 Token expires at:', new Date(session.expires_at! * 1000))
         }
         setIsSessionChecked(true)
       } catch (error) {
@@ -82,58 +62,66 @@ export function useSIWE() {
 
   // Sign in with Ethereum effect
   useEffect(() => {
+
     if (isSessionChecked && !data?.session) {
       const signInWithEthereum = async () => {
         setIsLoading(true)
         setError(null)
 
         try {
-          // Get the appropriate wallet provider
-          let walletProvider: EIP1193Provider | undefined;
-          
-          // Try to get the first available connector
-          if (connectors.length > 0) {
-            const connector = connectors[0];
-            try {
-              const provider = await connector.getProvider();
-              walletProvider = provider as EIP1193Provider;
-            } catch (error) {
-              console.warn('Failed to get provider from connector:', error);
-            }
-          }
-          
-          // Fallback to window.ethereum if no connector provider available
-          if (!walletProvider && typeof window !== 'undefined' && window.ethereum) {
-            walletProvider = window.ethereum as EIP1193Provider;
-          }
-          
-          if (!walletProvider) {
-            throw new Error('No wallet provider available');
-          }
-          
-          const { data, error } = await supabase.auth.signInWithWeb3({
-            chain: 'ethereum',
-            statement: 'I accept the Terms of Service at https://example.com/tos',
-            wallet: walletProvider    
-          } as Web3Credentials)
-      
-          console.log('🔐 SIWE Response Data:', data)
-          console.log('🔐 SIWE Response Error:', error)
-      
-          if (error) {
-              console.error('❌ SIWE Error:', error)
-              setError(error.message || 'Failed to sign in with Ethereum')
-              setIsLoading(false)
-              return
-          }        
 
-          if (data) {
-            console.log('✅ SIWE Success:', data)
-            setData(data)
-            setIsAuthenticated(true)
-            setError(null)
-            setIsLoading(false)
+          const isMiniApp = await sdk.isInMiniApp()
+          let data, error = null;
+
+          if (isMiniApp) {
+            let walletProvider: EIP1193Provider | undefined;
+            if (connectors.length > 0) {
+              const connector = connectors.find(connector => connector.type === 'farcasterFrame');
+              try {
+                const provider = await connector?.getProvider();
+                walletProvider = provider as EIP1193Provider;
+              } catch (error) {
+                console.warn('Failed to get provider from connector:', error);
+              }
+            }
+           const response = await supabase.auth.signInWithWeb3({
+              chain: 'ethereum',
+              statement: 'I accept the Terms of Service at https://example.com/tos',
+              wallet: walletProvider 
+            } as Web3Credentials)
+            data = response.data;
+            error = response.error;
+           
+            // Mini App-specific code
+          } else { 
+            const response = await supabase.auth.signInWithWeb3({
+            chain: 'ethereum',
+            statement: 'I accept the Terms of Service at https://example.com/tos'
+          } )
+          data = response.data;
+          error = response.error;
+            // Regular web app code
           }
+
+          if (error) {
+            console.error('❌ SIWE Error:', error)
+            setError(error.message || 'Failed to sign in with Ethereum')
+            setIsLoading(false)
+            return
+        }        
+
+        if (data) {
+          console.log('✅ SIWE Success:', data)
+          setData(data)
+          setIsAuthenticated(true)
+          setError(null)
+          setIsLoading(false)
+        }
+ 
+          
+      
+
+         
 
           // Mark as attempted regardless of success/failure
           localStorage.setItem(SIWE_STORAGE_KEY, 'true')

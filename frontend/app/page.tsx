@@ -27,6 +27,12 @@ export default function Home() {
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
   
+  const { data: authData, isLoading: isAuthLoading, error: authError } = useQuickAuth<AuthResponse>(
+    "/api/auth",
+    { method: "GET" }
+  );
+
+  
   // Supabase wallet authentication
   const { 
     data: siweData, 
@@ -50,11 +56,6 @@ export default function Home() {
       document.body.style.backgroundColor = "";
     };
   }, [setFrameReady, isFrameReady]);
-
-  const { data: authData, isLoading: isAuthLoading, error: authError } = useQuickAuth<AuthResponse>(
-    "/api/auth",
-    { method: "GET" }
-  );
 
 
   const handleJoin = async (e: React.FormEvent) => {
@@ -99,7 +100,6 @@ export default function Home() {
     let statusColor = "#4ade80"; // Green for connected
     
     // Priority: Farcaster auth first, then Supabase auth
-    debugger
     if (authData?.success && context?.user?.displayName) {
       console.log('🔐 Farcaster auth data:', authData);
       primary = context.user.displayName;
