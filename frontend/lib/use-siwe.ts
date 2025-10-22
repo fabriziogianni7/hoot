@@ -71,14 +71,15 @@ export function useSIWE() {
         try {
 
           const isMiniApp = await sdk.isInMiniApp()
+        
           let data, error = null;
 
           if (isMiniApp) {
             let walletProvider: EIP1193Provider | undefined;
             if (connectors.length > 0) {
-              const connector = connectors.find(connector => connector.type === 'farcasterFrame');
+              // const connector = connectors.find(connector => connector.type === 'farcasterFrame');
               try {
-                const provider = await connector?.getProvider();
+                const provider =  sdk.wallet.ethProvider;
                 walletProvider = provider as EIP1193Provider;
               } catch (error) {
                 console.warn('Failed to get provider from connector:', error);
