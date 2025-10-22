@@ -75,32 +75,27 @@ export function useSIWE() {
           let data, error = null;
 
           if (isMiniApp) {
-            let walletProvider: EIP1193Provider | undefined;
+            // let walletProvider: EIP1193Provider | undefined;
             if (connectors.length > 0) {
-              // const connector = connectors.find(connector => connector.type === 'farcasterFrame');
-              try {
-                const provider =  sdk.wallet.ethProvider;
-                walletProvider = provider as EIP1193Provider;
-              } catch (error) {
-                console.warn('Failed to get provider from connector:', error);
-              }
+              const connector = connectors.find(connector => connector.type === 'injected');
+              
+              const response = await supabase.auth.signInWithWeb3({
+                chain: 'ethereum',
+                statement: 'I accept the Terms of Service at https://example.com/tos',
+                wallet: await connector?.getProvider() 
+              } as Web3Credentials)
+              data = response.data;
+              error = response.error;
+              
             }
-           const response = await supabase.auth.signInWithWeb3({
-              chain: 'ethereum',
-              statement: 'I accept the Terms of Service at https://example.com/tos',
-              wallet: walletProvider 
-            } as Web3Credentials)
-            data = response.data;
-            error = response.error;
-           
             // Mini App-specific code
           } else { 
             const response = await supabase.auth.signInWithWeb3({
             chain: 'ethereum',
             statement: 'I accept the Terms of Service at https://example.com/tos'
-          } )
-          data = response.data;
-          error = response.error;
+            } )
+            data = response.data;
+            error = response.error;
             // Regular web app code
           }
 
