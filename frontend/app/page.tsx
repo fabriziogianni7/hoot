@@ -8,6 +8,7 @@ import { useQuiz } from "@/lib/quiz-context";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { useAccount } from "wagmi";
 import { useAuth } from "@/lib/use-auth";
+import { OpenInFarcaster } from "@/components/OpenInFarcaster";
 
 export default function Home() {
   const { isFrameReady, setFrameReady, context } = useMiniKit();
@@ -19,7 +20,7 @@ export default function Home() {
   const [isJoining, setIsJoining] = useState(false);
   
   // Use the shared authentication hook
-  const { authData, isAuthLoading, authError } = useAuth();
+  const { authData, isAuthLoading, authError, isOutsideFarcaster } = useAuth();
 
   
   
@@ -96,7 +97,6 @@ export default function Home() {
     
     // Farcaster auth
     if (authData?.success && context?.user?.displayName) {
-      console.log('🔐 Farcaster auth data:', authData);
       primary = context.user.displayName;
       secondary = "Farcaster";
     } else if (authData?.success && authData?.user?.fid) {
@@ -119,6 +119,11 @@ export default function Home() {
     
     return { primary, secondary, statusColor };
   };
+
+  // Show "Open in Farcaster" screen if accessed outside Farcaster/Base
+  if (isOutsideFarcaster) {
+    return <OpenInFarcaster />;
+  }
 
   return (
     <div style={{ 
@@ -232,16 +237,16 @@ export default function Home() {
         {/* Section 1 - Game pin input form */}
         <div style={{
           width: "100%",
-          background: "linear-gradient(135deg, rgba(138, 99, 210, 0.1) 0%, rgba(138, 99, 210, 0.05) 100%)",
+          background: "linear-gradient(135deg, rgba(121, 90, 255, 0.1) 0%, rgba(121, 90, 255, 0.05) 100%)",
           borderRadius: "0.75rem",
           padding: "1.5rem",
           marginBottom: "1.5rem",
-          border: "3px solid rgba(138, 99, 210, 0.2)",
-          boxShadow: "0 8px 32px rgba(138, 99, 210, 0.1)"
+          border: "3px solid rgba(121, 90, 255, 0.2)",
+          boxShadow: "0 8px 32px rgba(121, 90, 255, 0.1)"
         }}>
           {/* Section label */}
           <div style={{
-            color: "#8A63D2",
+            color: "#795AFF",
             fontSize: "0.75rem",
             fontWeight: "500",
             marginBottom: "1rem",
@@ -264,9 +269,9 @@ export default function Home() {
               style={{
                 width: "100%",
                 padding: "0.75rem",
-                background: "linear-gradient(135deg, rgba(138, 99, 210, 0.3) 0%, rgba(138, 99, 210, 0.2) 100%)",
+                background: "linear-gradient(135deg, rgba(121, 90, 255, 0.3) 0%, rgba(121, 90, 255, 0.2) 100%)",
                 color: "white",
-                border: `1px solid ${gamePin.length === 6 ? 'rgba(34, 197, 94, 0.5)' : 'rgba(138, 99, 210, 0.3)'}`,
+                border: `1px solid ${gamePin.length === 6 ? 'rgba(34, 197, 94, 0.5)' : 'rgba(121, 90, 255, 0.3)'}`,
                 borderRadius: "0.5rem",
                 marginBottom: "0.75rem",
                 textAlign: "center",
@@ -281,17 +286,16 @@ export default function Home() {
               style={{
                 width: "100%",
                 padding: "0.75rem",
-                background: (isJoining || gamePin.trim().length !== 6)
-                  ? "linear-gradient(135deg, rgba(138, 99, 210, 0.3) 0%, rgba(138, 99, 210, 0.2) 100%)"
-                  : "linear-gradient(135deg, rgba(138, 99, 210, 0.4) 0%, rgba(138, 99, 210, 0.3) 100%)",
+                backgroundColor: (isJoining || gamePin.trim().length !== 6)
+                  ? "rgba(121, 90, 255, 0.3)"
+                  : "#795AFF",
                 color: "white",
-                border: "1px solid rgba(138, 99, 210, 0.3)",
+                border: "none",
                 borderRadius: "0.5rem",
                 cursor: (isJoining || gamePin.trim().length !== 6) ? "not-allowed" : "pointer",
                 fontSize: "1rem",
                 fontWeight: "500",
-                opacity: (isJoining || gamePin.trim().length !== 6) ? 0.7 : 1,
-                backdropFilter: "blur(5px)"
+                opacity: (isJoining || gamePin.trim().length !== 6) ? 0.7 : 1
               }}
             >
               {isJoining ? "Joining..." : "Join"}
@@ -319,7 +323,7 @@ export default function Home() {
         <Link href="/quiz/admin" style={{
           width: "100%",
           padding: "0.75rem",
-          backgroundColor: "#8A63D2",
+          backgroundColor: gamePin.trim().length === 6 ? "rgba(121, 90, 255, 0.3)" : "#795AFF",
           color: "white",
           border: "none",
           borderRadius: "0.5rem",
@@ -328,7 +332,8 @@ export default function Home() {
           fontWeight: "500",
           marginBottom: "0",
           textAlign: "center",
-          textDecoration: "none"
+          textDecoration: "none",
+          opacity: gamePin.trim().length === 6 ? 0.7 : 1
         }}>
           Create Quiz
         </Link>

@@ -1,19 +1,16 @@
 import { farcasterMiniApp as miniAppConnector } from "@farcaster/miniapp-wagmi-connector";
 import { createConfig, http } from "wagmi";
 import { coinbaseWallet, injected } from "wagmi/connectors";
-import { getCurrentChain, getRpcUrl } from "./env-config";
+import { base, basePreconf, baseSepolia } from "viem/chains";
 
 
-// Get the current chain configuration
-const currentChain = getCurrentChain();
-const rpcUrl = getRpcUrl();
+// Configure all available chains
+const chains = [basePreconf, baseSepolia] as const;
 
-// Configure chains based on environment
-const chains = [currentChain] as const;
-
-// Create transport configuration
+// Create transport configuration for all chains
 const transports = {
-  [currentChain.id]: http(rpcUrl),
+  [base.id]: http('https://mainnet.base.org'),
+  [baseSepolia.id]: http('https://sepolia.base.org'),
 };
 
 export const wagmiConfig = createConfig({

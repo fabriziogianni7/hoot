@@ -11,17 +11,12 @@ import { NetworkProvider } from "@/lib/network-context";
 import { WagmiProvider } from "wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { wagmiConfig } from "@/lib/wagmi";
-import { AuthKitProvider } from '@farcaster/auth-kit';
 
 const queryClient = new QueryClient();
 
 // Farcaster Auth Kit configuration for miniapp
 // For miniapps, we can use minimal configuration as Farcaster handles most of the auth
-const authKitConfig = {
-  // Use defaults for miniapp - Farcaster will handle the domain and URI
-  rpcUrl: 'https://mainnet.optimism.io',
-  relay: 'https://relay.farcaster.xyz',
-};
+
 
 export function RootProvider({ children }: { children: ReactNode }) {
   return (
