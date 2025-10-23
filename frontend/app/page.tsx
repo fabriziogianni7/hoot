@@ -9,6 +9,8 @@ import { sdk } from "@farcaster/miniapp-sdk";
 import { signInWithEthereumMiniApp, signInWithEthereumWeb } from "@/lib/siwe-auth";
 import { useAccount, useConnections } from "wagmi";
 import { FarcasterAuth } from "@/components/FarcasterAuth";
+import { supabase } from "@/lib/supabase-client";
+
 
 interface AuthResponse {
   success: boolean;
@@ -36,8 +38,6 @@ export default function Home() {
   
   useEffect(() => {
     const fetchAuthData = async () => {
-      if (authData) return;
-
       try {
         setIsAuthLoading(true);
         setAuthError(null);
@@ -45,48 +45,30 @@ export default function Home() {
         const isMiniApp = await sdk.isInMiniApp();
 
         // Qui c'è anche l'url dell immagine profilo utente!
-        const context = await sdk.context;
-        console.log("😂 context", context);
         
 
-
-        if (context.client.clientFid === 9152) {
+        if (isMiniApp) {
           const res = await sdk.quickAuth.fetch(`${window.location.origin}/api/auth`);
           if (res.ok) {
             const data = await res.json();
             setAuthData(data);
             
-            // Attempt Supabase authentication
-            const { error: supabaseError } = await signInWithEthereumMiniApp();
+            const { data: supabaseData, error: supabaseError } = await supabase.auth.signInAnonymously({
+              options: {
+                data: {
+                  fid: data.user.fid,
+                },
+              },
+            })
+            console.log('🔐 Supabase authentication data:', supabaseData);
             if (supabaseError) {
-              setAuthError(`Supabase authentication failed: ${supabaseError.message}`);
+              setAuthError(`Supabase authentication failed: ${supabaseError?.message}`);
             }
           } else {
             const errorData = await res.json();
             setAuthError(errorData.message || 'Mini-app authentication failed');
           }
-        } 
-
-        if(context.client.clientFid === 309857){
-          const res = await sdk.quickAuth.fetch(`${window.location.origin}/api/auth`);
-          if (res.ok) {
-            const data = await res.json();
-            setAuthData(data);
-            
-            // Attempt Supabase authentication
-            const { error: supabaseError } = await signInWithEthereumWeb();
-            if (supabaseError) {
-              setAuthError(`Supabase authentication failed: ${supabaseError.message}`);
-            }
-          } else {
-            const errorData = await res.json();
-            setAuthError(errorData.message || 'Mini-app authentication failed');
-          }
-        }
-
-        
-        
-        else {
+        } else {
           // Web authentication
           const { error: supabaseErrorWeb } = await signInWithEthereumWeb();
           if (supabaseErrorWeb) {
@@ -99,9 +81,9 @@ export default function Home() {
         setIsAuthLoading(false);
       }
     };
-
+    
     fetchAuthData();
-  }, [authData]);
+  }, []); // Empty dependency array - run only once on mount
 
   
   

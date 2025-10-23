@@ -32,6 +32,7 @@ export interface EnvConfig {
 
 // Environment detection
 function getCurrentEnvironment(): Environment {
+  console.log('CURRENT ENVIRONMENT:', process.env.NEXT_PUBLIC_ENV)
   // Check for explicit environment variable first
   const explicitEnv = process.env.NEXT_PUBLIC_ENV as Environment
   if (explicitEnv && ['local', 'testnet', 'production'].includes(explicitEnv)) {
@@ -58,9 +59,9 @@ const ENVIRONMENT_CONFIGS: Record<Environment, EnvConfig> = {
       contractAddress: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0'
     },
     supabase: {
-      url: 'http://127.0.0.1:54321',
-      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0      '
-    },
+      url: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+     },
     app: {
       url: 'http://localhost:3000'
     }
@@ -74,9 +75,9 @@ const ENVIRONMENT_CONFIGS: Record<Environment, EnvConfig> = {
       contractAddress: '0x2dC5532610Fe67A185bC9199a2d5975a130ec7f8'
     },
     supabase: {
-      url: 'http://127.0.0.1:54321',
-      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'
-    },
+      url: process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+     },
     app: {
       url: 'http://localhost:3000'
     }
