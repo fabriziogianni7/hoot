@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useMiniKit, useQuickAuth } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
-import { useAccount, useConnections } from "wagmi";
-import { useSIWE } from "@/lib/use-siwe";
+import { useAccount } from "wagmi";
 import { FarcasterAuth } from "@/components/FarcasterAuth";
 import { sdk } from '@farcaster/miniapp-sdk';
 
@@ -21,27 +20,16 @@ interface AuthResponse {
 }
 
 export default function Home() {
-  const { isFrameReady, setFrameReady, context } = useMiniKit();
-  const { address, isConnected, connector } = useAccount();
-  const connections = useConnections();
+  const { isFrameReady, setFrameReady } = useMiniKit();
+  const { address, isConnected } = useAccount();
+
   const [gamePin, setGamePin] = useState("");
   const router = useRouter();
   const [error, setError] = useState("");
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
   
-  // SIWE (Sign in with Ethereum) functionality
-  const { 
-    data: siweData, 
-    error: siweError, 
-    isLoading: siweLoading,
-    isAuthenticated: siweAuthenticated,
-    hasAttempted: siweAttempted,
-    signInWithEthereum,
-    getAccessToken,
-    getCurrentUser,
-    isSessionValid
-  } = useSIWE();
+
 
   // Initialize the miniapp
   useEffect(() => {
@@ -78,11 +66,10 @@ export default function Home() {
 
   // Trigger SIWE when wallet is connected and user hasn't attempted yet
   useEffect(() => {
-    if (isConnected && address && !siweAttempted && !siweLoading && !siweAuthenticated) {
+    if (isConnected && address ) {
       console.log("🔐 Triggering SIWE - wallet connected and no previous attempt");
-      signInWithEthereum();
     }
-  }, [isConnected, address, siweAttempted, siweLoading, siweAuthenticated, signInWithEthereum]);
+  }, [isConnected, address]);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,41 +98,6 @@ export default function Home() {
         setIsJoining(false);
       }
     }
-  };
-
-  // Determina il testo da mostrare nel badge dell'utente
-  const getUserBadgeText = () => {
-    if (isAuthLoading || siweLoading) return { primary: "Connecting...", secondary: null };
-    if (authError || siweError) return { primary: "Not Connected", secondary: null };
-    
-    let primary = "Connected";
-    let secondary = null;
-    
-    // Check SIWE authentication first
-    if (siweAuthenticated && siweData?.user) {
-      // Always use FID if available, fallback to email or user ID
-      if (siweData.user.user_metadata?.fid) {
-        primary = `FID: ${siweData.user.user_metadata.fid}`;
-      } else if (siweData.user.email) {
-        primary = siweData.user.email;
-      } else {
-        primary = `User: ${siweData.user.id?.slice(0, 8)}...`;
-      }
-      secondary = "SIWE Authenticated";
-    } else if (authData?.success && context?.user?.displayName) {
-      primary = context.user.displayName;
-    } else if (authData?.success && authData?.user?.fid) {
-      primary = `FID: ${authData.user.fid}`;
-    }
-    
-    // Add wallet address as secondary text if not SIWE authenticated
-    if (address && !siweAuthenticated) {
-      secondary = `${address.slice(0, 6)}...${address.slice(-4)}`;
-    } else if (!address) {
-      secondary = "No wallet connected";
-    }
-    
-    return { primary, secondary };
   };
 
   return (
