@@ -15,6 +15,8 @@ import { parseEther } from "viem";
 import NetworkSwitcher from "@/components/NetworkSwitcher";
 import ShareBox from "@/components/ShareBox";
 
+//custom erc20:0xfF5986B1AbeE9ae2AF04242D207d35BcB6d28b75
+
 interface QuestionOption {
   text: string;
   color: string;
@@ -110,14 +112,20 @@ export default function AdminPage() {
     }
   };
 
-  // CSS per forzare il colore bianco del placeholder
+  // CSS per forzare i colori degli input
   const placeholderStyle = `
     .quiz-input::placeholder {
-      color: white !important;
+      color: #D1D5DB !important;
       opacity: 1 !important;
     }
     .quiz-input {
       color: white !important;
+    }
+    .quiz-input.question-text {
+      color: black !important;
+    }
+    .quiz-input.question-text::placeholder {
+      color: #6B7280 !important;
     }
   `;
   
@@ -142,6 +150,13 @@ export default function AdminPage() {
   const [creationStep, setCreationStep] = useState<string>("");
   const [showShareBox, setShowShareBox] = useState(false);
   const [createdRoomCode, setCreatedRoomCode] = useState<string>("");
+  const [addQuestionError, setAddQuestionError] = useState<string>("");
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [showQuizOptions, setShowQuizOptions] = useState(false);
+  const [rewardAmount, setRewardAmount] = useState("0.001");
+  const [selectedCurrency, setSelectedCurrency] = useState<'usdc' | 'eth' | 'custom'>('usdc');
+  const [customTokenAddress, setCustomTokenAddress] = useState("");
 
   // Determine wallet info (Farcaster or wagmi)
   const farcasterUser = context?.user as { addresses?: string[] } | undefined;
@@ -179,10 +194,20 @@ export default function AdminPage() {
     const newOptions = [...currentQuestion.options];
     newOptions[index] = { ...newOptions[index], text: value };
     setCurrentQuestion({ ...currentQuestion, options: newOptions });
+    // Pulisci l'errore quando l'utente modifica le opzioni
+    setAddQuestionError("");
+    // Nascondi il tooltip se la domanda è ora completa
+    const filledOptions = newOptions.filter(opt => opt.text.trim() !== "");
+    if (currentQuestion.text.trim() !== "" && filledOptions.length >= 2) {
+      setShowTooltip(false);
+    }
   };
 
   const handleCorrectAnswerChange = (index: number) => {
     setCurrentQuestion({ ...currentQuestion, correctAnswer: index });
+    // Pulisci l'errore quando l'utente seleziona una risposta corretta
+    setAddQuestionError("");
+    // Non nascondere il tooltip qui, solo quando la domanda è completa
   };
 
   const handleSaveQuestion = () => {
@@ -236,7 +261,21 @@ export default function AdminPage() {
   };
 
   const handleAddQuestion = () => {
-    // Salva la domanda corrente se ha contenuto
+    // Pulisci errori precedenti
+    setAddQuestionError("");
+    
+    // Controlla se la domanda è completa (testo + almeno 2 risposte)
+    const hasQuestionText = currentQuestion.text.trim() !== "";
+    const filledOptions = currentQuestion.options.filter(opt => opt.text.trim() !== "");
+    const hasEnoughAnswers = filledOptions.length >= 2;
+    
+    // Se la domanda non è completa, mostra il tooltip e non procedere
+    if (!hasQuestionText || !hasEnoughAnswers) {
+      setShowTooltip(true);
+      return;
+    }
+
+    // Salva automaticamente la domanda corrente se ha contenuto
     if (currentQuestion.text.trim() !== "") {
       const newQuestions = [...questions];
       
@@ -253,6 +292,81 @@ export default function AdminPage() {
     
     // Passa a una nuova domanda
     setCurrentQuestionIndex(questions.length + (currentQuestion.text.trim() !== "" ? 1 : 0));
+  };
+
+  const handleDeleteQuestion = (index: number) => {
+    const newQuestions = questions.filter((_, i) => i !== index);
+    setQuestions(newQuestions);
+    
+    // Se stiamo eliminando la domanda corrente, vai alla prima domanda disponibile
+    if (currentQuestionIndex === index) {
+      if (newQuestions.length > 0) {
+        setCurrentQuestionIndex(0);
+      } else {
+        setCurrentQuestionIndex(0);
+        setCurrentQuestion({
+          text: "",
+          options: [
+            { text: "", color: "hover:opacity-80" },
+            { text: "", color: "hover:opacity-80" },
+            { text: "", color: "hover:opacity-80" },
+            { text: "", color: "hover:opacity-80" }
+          ],
+          correctAnswer: 0
+        });
+      }
+    } else if (currentQuestionIndex > index) {
+      // Se la domanda eliminata era prima di quella corrente, decrementa l'indice
+      setCurrentQuestionIndex(currentQuestionIndex - 1);
+    }
+  };
+
+  const handleFreeQuiz = () => {
+    setShowQuizOptions(false);
+    setShowShareBox(true);
+  };
+
+  const handleRewardQuiz = async () => {
+    if (!walletAddress) {
+      setError("Please connect your wallet to create a quiz with rewards");
+      return;
+    }
+
+    try {
+      setCreationStep("Creating quiz with reward on chain...");
+      
+      // Validate reward amount
+      const rewardAmountNum = parseFloat(rewardAmount);
+      if (isNaN(rewardAmountNum) || rewardAmountNum <= 0) {
+        setError("Invalid reward amount");
+        return;
+      }
+      
+      // Check balance
+      if (ethBalance && parseFloat(ethBalance) < rewardAmountNum) {
+        setError(`Insufficient balance. You have ${ethBalance} ETH but need ${rewardAmount} ETH`);
+        return;
+      }
+      
+      // Create quiz on-chain with reward deposit
+      if (address) {
+        try {
+          const txHash = await createQuizWithWagmi(createdRoomCode, rewardAmount);
+          console.log("Quiz created on-chain with reward deposit:", txHash);
+          console.log("Reward amount deposited:", rewardAmount, "ETH");
+        } catch (error) {
+          console.error("Error creating quiz on-chain:", error);
+          setError("Failed to create quiz on blockchain. Please try again.");
+          return;
+        }
+      }
+      
+      setShowQuizOptions(false);
+      setShowShareBox(true);
+    } catch (error) {
+      console.error("Error creating quiz with reward:", error);
+      setError("Failed to create quiz with reward. Please try again.");
+    }
   };
 
   const handleSaveQuiz = async () => {
@@ -300,12 +414,8 @@ export default function AdminPage() {
         return;
       }
       
-      // Check balance
-      if (ethBalance && parseFloat(ethBalance) < prizeAmountNum) {
-        setError(`Insufficient balance. You have ${ethBalance} ETH but need ${prizeAmount} ETH`);
-        setIsCreating(false);
-        return;
-      }
+      // Skip balance check for initial quiz creation - will be handled in quiz options
+      console.log("Skipping balance check for initial quiz creation");
       
       // Step 1: Create quiz in backend first (to get quiz_id)
       setCreationStep("Saving quiz to database...");
@@ -338,30 +448,11 @@ export default function AdminPage() {
       
       console.log("Quiz saved to backend with ID:", backendQuizId);
       
-      // Step 2: Create quiz on-chain with prize deposit using the backend quiz_id
-      setCreationStep("Creating quiz on blockchain and depositing prize...");
-      
-      if (address) {
-        // Use wagmi for transaction (works with both regular wallets and Farcaster)
-        try {
-          const txHash = await createQuizWithWagmi(backendQuizId, prizeAmount);
-          console.log("Quiz created on-chain with prize deposit:", txHash);
-          console.log("Prize amount deposited:", prizeAmount, "ETH");
-          console.log("Network:", currentNetwork);
-        } catch (error) {
-          console.error("Error creating quiz on-chain:", error);
-          setError("Failed to create quiz on blockchain. Please try again.");
-          setIsCreating(false);
-          return;
-        }
-      } else {
-        // No wallet connected
-        console.log("No wallet connected - skipping on-chain creation");
-        console.log("Prize amount will be handled by backend:", prizeAmount, "ETH");
-      }
+      // Step 2: Skip on-chain creation for now - will be handled in quiz options
+      console.log("Quiz prepared for creation. On-chain creation will be handled in quiz options.");
       
       // Step 3: Start game session and join as creator
-      setCreationStep("Creating game session...");
+      setCreationStep("Preparing quiz...");
       
       const generatedRoomCode = await startGame(backendQuizId);
       
@@ -385,9 +476,9 @@ export default function AdminPage() {
       // Store creator ID in localStorage
       localStorage.setItem("quizPlayerId", creatorPlayerId);
       
-      // Show share box instead of immediate redirect
+      // Show quiz options modal instead of immediate redirect
       setCreatedRoomCode(generatedRoomCode);
-      setShowShareBox(true);
+      setShowQuizOptions(true);
       
     } catch (err) {
       console.error("Error creating quiz:", err);
@@ -421,8 +512,18 @@ export default function AdminPage() {
         }}
       />
       
+      {/* Logo in top left */}
+      <div className="absolute top-4 left-4 z-20">
+        <img 
+          src="/Logo.png" 
+          alt="Hoot Logo" 
+          className="h-20 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={() => router.push('/')}
+        />
+      </div>
+
       {/* Content container */}
-      <div className="relative z-10 flex flex-col items-center min-h-screen px-4 py-8">
+      <div className="relative z-10 flex flex-col items-center min-h-screen px-4 pt-20">
         {/* Network Switcher */}
         <div className="w-full max-w-md mb-4 flex justify-center">
           <div className="relative">
@@ -457,55 +558,6 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Wallet Connection Section */}
-        <div className="w-full max-w-md mb-1 bg-gray-900/50 rounded-lg p-4">
-          {!walletAddress ? (
-            <div className="flex flex-col items-center space-y-3">
-              <div className="text-sm text-gray-300">Connect wallet to create quiz with prizes</div>
-              {!isInFarcaster && (
-                <button
-                  onClick={() => {
-                    const connector = connectors[0]; // Use first available connector
-                    if (connector) {
-                      connect({ connector });
-                    }
-                  }}
-                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded text-white font-medium"
-                >
-                  Connect Wallet
-                </button>
-              )}
-              {isInFarcaster && (
-                <div className="text-sm text-green-400">Using Farcaster Wallet</div>
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-300">Connected:</span>
-                <span className="font-mono text-sm">{formatAddress(walletAddress)}</span>
-              </div>
-              {ethBalance && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-300">Balance:</span>
-                  <span className="text-sm">{parseFloat(ethBalance).toFixed(4)} ETH</span>
-                </div>
-              )}
-              <div className="flex flex-col space-y-1">
-                <label className="text-sm text-gray-300">Prize Amount (ETH):</label>
-                <input
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  value={prizeAmount}
-                  onChange={(e) => setPrizeAmount(e.target.value)}
-                  className="px-3 py-2 rounded bg-black text-white"
-                  placeholder="0.001"
-                />
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* Error/Status Messages */}
         {error && (
@@ -524,54 +576,43 @@ export default function AdminPage() {
           </div>
         )}
         {creationStep && (
-          <div className="w-full max-w-md mb-1 bg-blue-500/20 border border-blue-500 rounded-lg p-3 text-center text-blue-200">
+          <div className="w-full max-w-md mb-3 bg-purple-500/20 border border-purple-500 rounded-lg p-3 text-center text-purple-200">
             {creationStep}
           </div>
         )}
 
         {/* Top navigation */}
-        <div className="w-full max-w-md flex justify-between items-center mb-1">
-          <div className="flex items-center -ml-1">
-            <img 
-              src="/Logo.png" 
-              alt="Hoot Logo" 
-              className="h-20 w-auto"
-            />
-          </div>
-          <div className="flex space-x-2">
-            <input
-              type="text"
-              value={quizTitle}
-              onChange={(e) => setQuizTitle(e.target.value)}
-              placeholder="Quiz Title"
-                className="px-4 py-2 text-sm rounded bg-white text-black w-56"
-            />
-            <button
-              onClick={handleSaveQuiz}
-              disabled={isCreating || !walletAddress || isWritePending || isSendPending}
-              className="px-3 py-1 text-sm rounded disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                backgroundColor: isCreating || !walletAddress || isWritePending || isSendPending ? "#666" : "#8A63D2",
-                color: "white"
-              }}
-            >
-              {isCreating ? 'Creating...' : isWritePending || isSendPending ? 'Transaction Pending...' : 'Create'}
-            </button>
-          </div>
+        <div className="w-full max-w-md flex justify-center items-center mb-1">
+          <input
+            type="text"
+            value={quizTitle}
+            onChange={(e) => setQuizTitle(e.target.value)}
+            placeholder="Quiz Title"
+            className="px-4 py-2 mb-3 text-sm rounded bg-black text-white border border-white w-full"
+          />
         </div>
         
         {/* Question input */}
         <div className="w-full max-w-md mb-6">
-          <div className="border border-white rounded p-4 h-32 relative">
+          <div className="bg-white rounded p-3 h-24 relative">
             <textarea
               value={currentQuestion.text}
-              onChange={(e) => setCurrentQuestion({ ...currentQuestion, text: e.target.value })}
+              onChange={(e) => {
+                setCurrentQuestion({ ...currentQuestion, text: e.target.value });
+                // Pulisci l'errore quando l'utente modifica il testo della domanda
+                setAddQuestionError("");
+                // Nascondi il tooltip se la domanda è ora completa
+                const filledOptions = currentQuestion.options.filter(opt => opt.text.trim() !== "");
+                if (e.target.value.trim() !== "" && filledOptions.length >= 2) {
+                  setShowTooltip(false);
+                }
+              }}
               placeholder="Enter your question here"
-              className="quiz-input w-full h-full bg-transparent text-center resize-none focus:outline-none absolute inset-0 flex items-center justify-center"
+              className="quiz-input question-text w-full h-full bg-transparent text-center resize-none focus:outline-none absolute inset-0 flex items-center justify-center text-sm"
               style={{ 
                 display: 'flex', 
+                marginTop: '16px',
                 alignItems: 'center', 
-                marginTop: '32px',
                 justifyContent: 'center',
                 padding: '1rem'
               }}
@@ -580,14 +621,18 @@ export default function AdminPage() {
         </div>
         
         {/* Answer options */}
-        <div className="w-full max-w-md grid grid-cols-2 gap-4 mb-8">
+        <div className="w-full max-w-md flex flex-col gap-4 mb-8">
           {currentQuestion.options.map((option, index) => {
             const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
             return (
             <div 
               key={index}
-              className={`${option.color} rounded p-4 text-white relative`}
-              style={{ backgroundColor: colors[index] }}
+              className={`${option.color} rounded p-4 text-white relative border-2`}
+              style={{ 
+                backgroundColor: `${colors[index]}40`, // Aggiunge opacità al colore di sfondo
+                borderColor: colors[index],
+                borderWidth: '2px'
+              }}
               onClick={() => handleCorrectAnswerChange(index)}
             >
               {/* Indicatore di risposta corretta */}
@@ -595,10 +640,13 @@ export default function AdminPage() {
                    style={{ 
                      backgroundColor: currentQuestion.correctAnswer === index ? 'white' : 'rgba(255, 255, 255, 0.3)'
                    }}>
-                <div className="w-2 h-2 rounded-full"
-                     style={{ 
-                       backgroundColor: currentQuestion.correctAnswer === index ? '#10B981' : 'white'
-                     }}></div>
+                {currentQuestion.correctAnswer === index ? (
+                  <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <div className="w-2 h-2 rounded-full bg-white"></div>
+                )}
               </div>
               <input
                 type="text"
@@ -614,15 +662,28 @@ export default function AdminPage() {
         </div>
         
         {/* Question navigation */}
-        <div className="w-full max-w-md flex items-center justify-center space-x-4 overflow-x-auto pb-2">
+        <div className="w-full max-w-md flex items-center space-x-4 pb-2 overflow-x-auto px-2 scrollbar-hide">
           {questions.map((question, index) => (
             <div 
               key={index}
-              className={`bg-black border ${currentQuestionIndex === index ? 'border-white' : 'border-white/30'} rounded px-4 py-2 text-sm cursor-pointer hover:border-white transition-colors flex-shrink-0`}
+              className={`bg-black border ${currentQuestionIndex === index ? 'border-white' : 'border-white/30'} rounded px-4 py-2 text-sm cursor-pointer hover:border-white transition-colors flex-shrink-0 relative`}
               onClick={() => handleQuestionClick(index)}
             >
-              Question {index + 1}<br/>
-              {getQuestionSummary(question)}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteQuestion(index);
+                }}
+                className="absolute top-0 right-0 text-white hover:text-gray-300 p-1"
+                title="Delete question"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <div>
+                Question {index + 1}
+              </div>
             </div>
           ))}
           
@@ -637,31 +698,196 @@ export default function AdminPage() {
           )}
           
           {/* Add question button */}
-          <button 
-            className="bg-black border border-white/30 rounded px-4 py-2 text-2xl flex-shrink-0 hover:border-white transition-colors"
-            onClick={handleAddQuestion}
-          >
-            +
-          </button>
+          <div className="flex flex-col items-center relative">
+            <button 
+              className="bg-black border border-white/30 rounded px-4 py-2 text-2xl flex-shrink-0 hover:border-white transition-colors"
+              onClick={handleAddQuestion}
+            >
+              +
+            </button>
+            {addQuestionError && (
+              <div className="mt-2 text-xs text-red-400 text-center max-w-48">
+                {addQuestionError}
+              </div>
+            )}
+            {showTooltip && (
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-gray-300 text-black text-xs px-2 py-1 rounded shadow-lg z-50 whitespace-nowrap">
+                Complete the current question
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-300"></div>
+              </div>
+            )}
+          </div>
         </div>
         
         {/* Action buttons */}
         <div className="mt-6 flex flex-col gap-4 w-full max-w-md">
-          <button
-            onClick={handleSaveQuestion}
-            className="px-4 py-2 rounded text-white"
-            style={{
-              backgroundColor: "#8A63D2"
-            }}
-          >
-            Save Question
-          </button>
+            <button
+              onClick={handleSaveQuiz}
+              disabled={isCreating}
+              className="px-8 py-4 rounded text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{
+                backgroundColor: isCreating ? "#666" : "#8A63D2"
+              }}
+            >
+              {isCreating ? 'Creating...' : 'Create Quiz'}
+            </button>
           
           {/* AI Agent button */}
           
         </div>
       </div>
       
+      {/* Quiz Options Modal */}
+      {showQuizOptions && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50">
+          <div className="bg-black border border-white rounded-t-lg p-6 w-full max-w-md mx-4 mb-0 relative">
+            {/* X button to close modal */}
+            <button
+              onClick={() => setShowQuizOptions(false)}
+              className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors z-10"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            <div className="text-center mb-6">
+              <h3 className="text-white text-lg font-semibold mb-2">
+                Choose Quiz Type
+              </h3>
+              <p className="text-gray-300 text-sm">
+                How would you like to create your quiz?
+              </p>
+            </div>
+            
+            <div className="space-y-4">
+              {/* Free Quiz Option */}
+              <button
+                onClick={handleFreeQuiz}
+                className="w-full p-4 bg-purple-600/20 border border-gray-600 rounded-lg text-white hover:bg-purple-700 transition-colors"
+              >
+                <div className="text-left">
+                  <div className="font-semibold text-lg">Free Quiz</div>
+                  <div className="text-sm text-gray-300">Create quiz without rewards</div>
+                </div>
+              </button>
+              
+              {/* Reward Quiz Option with Input */}
+              <div className="bg-purple-600/20 rounded-lg p-4">
+                <button
+                  onClick={handleRewardQuiz}
+                  className="w-full p-3 bg-purple-600/40 border border-purple-500 rounded-lg text-white hover:bg-purple-700 transition-colors mb-3"
+                >
+                  <div className="text-left">
+                    <div className="font-semibold">Quiz with Rewards</div>
+                    <div className="text-sm text-purple-200">Add rewards from your wallet</div>
+                  </div>
+                </button>
+                
+                {/* Network Switcher */}
+                <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
+                  <button
+                    onClick={() => {
+                      const newNetwork = currentNetwork === 'baseSepolia' ? 'base' : 'baseSepolia';
+                      setNetwork(newNetwork);
+                    }}
+                    className="w-full flex items-center justify-between p-2 bg-gray-600 hover:bg-gray-500 rounded text-white transition-colors"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span className="text-sm font-medium">
+                        {currentNetwork === 'baseSepolia' ? 'Base Sepolia' : 
+                         currentNetwork === 'base' ? 'Base Mainnet' : 
+                         'Base Sepolia'}
+                      </span>
+                    </div>
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                    </svg>
+                  </button>
+                </div>
+                
+                {/* Currency Selector */}
+                <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
+                  <label className="block text-white text-sm font-medium mb-2">
+                    Reward Currency
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedCurrency('usdc')}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        selectedCurrency === 'usdc'
+                          ? 'bg-purple-600/40 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      USDC
+                    </button>
+                    <button
+                      onClick={() => setSelectedCurrency('eth')}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        selectedCurrency === 'eth'
+                          ? 'bg-purple-600/40 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      ETH
+                    </button>
+                    <button
+                      onClick={() => setSelectedCurrency('custom')}
+                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        selectedCurrency === 'custom'
+                          ? 'bg-purple-600/40 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                    >
+                      Custom
+                    </button>
+                  </div>
+                </div>
+
+                {/* Custom Token Address Input */}  
+                {selectedCurrency === 'custom' && (
+                  <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
+                    <label className="block text-white text-sm font-medium mb-2">
+                      Token Contract Address
+                    </label>
+                    <input
+                      type="text"
+                      value={customTokenAddress}
+                      onChange={(e) => setCustomTokenAddress(e.target.value)}
+                      placeholder="0x..."
+                      className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded text-white focus:outline-none focus:border-purple-500"
+                    />
+                    <div className="text-xs text-gray-400 mt-1">
+                      Enter the ERC20 token contract address
+                    </div>
+                  </div>
+                )}
+
+                {/* Reward Amount Input */}
+                <div className="p-3 bg-purple-600/20 rounded-lg">
+                  <label className="block text-white text-sm font-medium mb-2">
+                    Reward Amount ({selectedCurrency === 'usdc' ? 'USDC' : selectedCurrency === 'eth' ? 'ETH' : 'Tokens'})
+                  </label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    value={rewardAmount}
+                    onChange={(e) => setRewardAmount(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded text-white focus:outline-none focus:border-purple-500"
+                    placeholder={selectedCurrency === 'usdc' ? '10' : selectedCurrency === 'eth' ? '0.001' : '100'}
+                  />
+                  <div className="text-xs text-gray-400 mt-1">
+                    Current balance: {ethBalance ? parseFloat(ethBalance).toFixed(selectedCurrency === 'eth' ? 4 : 2) : (selectedCurrency === 'eth' ? '0.0000' : '0.00')} {selectedCurrency === 'usdc' ? 'USDC' : selectedCurrency === 'eth' ? 'ETH' : 'Tokens'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Share Box */}
       {showShareBox && (
         <ShareBox 
@@ -677,6 +903,7 @@ export default function AdminPage() {
           }}
         />
       )}
+
     </div>
   );
 }

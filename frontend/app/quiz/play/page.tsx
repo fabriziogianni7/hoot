@@ -13,8 +13,8 @@ function PlayQuizContent() {
   const searchParams = useSearchParams();
   const { currentGame, getCurrentQuiz, submitAnswer, nextQuestion, setCurrentQuiz } = useQuiz();
   const { supabase } = useSupabase();
-  const [timeLeft, setTimeLeft] = useState<number>(15);
-  const [initialTime] = useState<number>(15); // Tempo iniziale fisso per calcolare la percentuale
+  const [timeLeft, setTimeLeft] = useState<number>(10);
+  const [initialTime] = useState<number>(10); // Tempo iniziale fisso per calcolare la percentuale
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
   const [startTime, setStartTime] = useState<number | null>(null);
@@ -131,7 +131,7 @@ function PlayQuizContent() {
     
     // Initialize timer
     setStartTime(Date.now());
-    setTimeLeft(15);
+    setTimeLeft(10);
     setSelectedAnswer(null);
     setIsAnswered(false);
     setShowingResults(false);
@@ -180,7 +180,7 @@ function PlayQuizContent() {
       if (playerId && quiz && currentGame) {
         const question = quiz.questions[currentQuestionIndex];
         if (question) {
-          submitAnswer(playerId, question.id, -1, 15000); // Max time
+          submitAnswer(playerId, question.id, -1, 10000); // Max time
         }
       }
       
@@ -204,7 +204,7 @@ function PlayQuizContent() {
     
     // Calculate time taken
     const endTime = Date.now();
-    const timeTaken = startTime ? endTime - startTime : 15000;
+    const timeTaken = startTime ? endTime - startTime : 10000;
     
     // Submit answer
     const playerId = localStorage.getItem("quizPlayerId");
@@ -303,84 +303,139 @@ function PlayQuizContent() {
         }}
       />
       
-      {/* Logo */}
-      <div className="absolute top-8 left-1/2 transform -translate-x-1/2 z-10">
+      {/* Logo in top left */}
+      <div className="absolute top-4 left-4 z-20">
         <img 
           src="/Logo.png" 
           alt="Hoot Logo" 
-          className="h-16 w-auto"
+          className="h-20 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={() => router.push('/')}
         />
       </div>
-      
-      <div className="relative z-10 container mx-auto py-8 px-4 flex flex-col items-center">
-        {/* Timer display (static, without animation) */}
-        <div className="mb-4">
-          <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center text-2xl font-bold">
-            {timeLeft}
+
+              {/* Timer circle */}
+              <div className="mb-6 flex justify-center">
+          <div className="relative">
+            <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 36 36">
+              {/* Background circle */}
+              <path
+                d="M18 2.0845
+                  a 15.9155 15.9155 0 0 1 0 31.831
+                  a 15.9155 15.9155 0 0 1 0 -31.831"
+                fill="none"
+                stroke="#374151"
+                strokeWidth="3"
+              />
+              {/* Progress circle */}
+              <path
+                d="M18 2.0845
+                  a 15.9155 15.9155 0 0 1 0 31.831
+                  a 15.9155 15.9155 0 0 1 0 -31.831"
+                fill="none"
+                stroke="#8b5cf6"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeDasharray={`${(timeLeft / initialTime) * 100}, 100`}
+                style={{
+                  transition: 'stroke-dasharray 1s linear'
+                }}
+              />
+            </svg>
+            {/* Timer number in center */}
+            <div className="absolute inset-0 flex items-center justify-center mt-3">
+              <span className="text-xl font-bold text-white">{timeLeft}</span>
+            </div>
           </div>
         </div>
+      
+      <div className="relative z-10 container mx-auto py-8 px-4 pt-20 flex flex-col items-center">
         
         {/* Question progress */}
-        <div className="w-full max-w-md mb-8">
+        <div className="w-full max-w-md mb-2">
           <div className="flex justify-between items-center mb-2">
-            <span>Question {currentQuestionIndex + 1}/{quiz.questions.length}</span>
-          </div>
-          <div className="w-full bg-gray-800 rounded-full h-2">
-            <div 
-              className="bg-blue-600 h-2 rounded-full" 
-              style={{ width: `${((currentQuestionIndex + 1) / quiz.questions.length) * 100}%` }}
-            ></div>
+            <span className="text-lg font-semibold">Question {currentQuestionIndex + 1}</span>
           </div>
         </div>
         
+        
         {/* Question */}
-        <div className="bg-gray-900/50 rounded-lg p-6 mb-8 w-full max-w-md">
-          <h2 className="text-xl font-bold mb-2 text-center">{currentQuestion.text}</h2>
+        <div className="bg-white rounded-xl p-8 mb-8 w-full max-w-2xl shadow-2xl border-2 border-gray-200" style={{ width: '600px', maxWidth: '90vw' }}>
+          <div 
+            className="text-2xl font-bold text-center text-gray-800 leading-relaxed"
+            style={{
+              maxHeight: '120px',
+              overflow: 'hidden',
+              wordWrap: 'break-word',
+              wordBreak: 'break-word'
+            }}
+          >
+            {currentQuestion.text.length > 150 ? 
+              `${currentQuestion.text.substring(0, 150)}...` : 
+              currentQuestion.text
+            }
+          </div>
         </div>
         
         {/* Answer options */}
-        <div className="grid grid-cols-1 gap-4 w-full max-w-md">
+        <div className="flex flex-col gap-4 w-full max-w-md">
           {currentQuestion.options.map((option, index) => {
-            const colors = [
-              "#0DCEFB", // BLUE
-              "#53DB1E", // GREEN
-              "#FDCC0E", // YELLOW
-              "#F70000"  // RED
-            ];
-            
+            const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
             const baseColor = colors[index % colors.length];
             
-            let finalColor = baseColor;
+            let backgroundColor = `${baseColor}40`; // Sfondo trasparente come admin
+            let borderColor = baseColor; // Bordo colorato
+            
             if (showingResults) {
               if (index === correctAnswerIndex) {
-                finalColor = "#22c55e"; // green-500
+                backgroundColor = "#22c55e40"; // green-500 con trasparenza
+                borderColor = "#22c55e";
               } else if (index === selectedAnswer && index !== correctAnswerIndex) {
-                finalColor = "#dc2626"; // red-600
+                backgroundColor = "#dc262640"; // red-600 con trasparenza
+                borderColor = "#dc2626";
               } else {
-                finalColor = "#374151"; // gray-700
+                backgroundColor = "#37415140"; // gray-700 con trasparenza
+                borderColor = "#374151";
               }
             }
             
             return (
-              <button
+              <div 
                 key={index}
-                onClick={() => handleAnswerSelect(index)}
-                disabled={isAnswered || showingResults}
-                style={{
-                  padding: "1rem",
-                  borderRadius: "0.5rem",
-                  backgroundColor: finalColor,
-                  color: "white",
-                  fontWeight: "500",
-                  textAlign: "center",
-                  width: "100%",
-                  cursor: isAnswered || showingResults ? "default" : "pointer",
+                className="rounded p-4 text-white relative border-2 cursor-pointer hover:opacity-80 transition-opacity"
+                style={{ 
+                  backgroundColor: backgroundColor, // Sfondo colorato pieno
+                  borderColor: borderColor, // Bordo dello stesso colore
+                  borderWidth: '2px',
                   opacity: isAnswered || showingResults ? (index === selectedAnswer || index === correctAnswerIndex ? 1 : 0.7) : 1,
-                  fontSize: "1.25rem", // Dimensione del testo più grande per il font Patrick Hand
                 }}
+                onClick={() => handleAnswerSelect(index)}
               >
-                {option}
-              </button>
+                {/* Indicatore di risposta corretta */}
+                {showingResults && index === correctAnswerIndex && (
+                  <div className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center bg-white">
+                    <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                )}
+                <div 
+                  className="w-full bg-transparent focus:outline-none text-center"
+                  style={{
+                    fontSize: "1.25rem",
+                    fontWeight: "500",
+                    cursor: isAnswered || showingResults ? "default" : "pointer",
+                    maxHeight: '60px',
+                    overflow: 'hidden',
+                    wordWrap: 'break-word',
+                    wordBreak: 'break-word'
+                  }}
+                >
+                  {option.length > 50 ? 
+                    `${option.substring(0, 50)}...` : 
+                    option
+                  }
+                </div>
+              </div>
             );
           })}
         </div>
@@ -399,18 +454,6 @@ function PlayQuizContent() {
           </div>
         )}
         
-        {/* Time progress bar */}
-        <div className="w-full max-w-md mt-8">
-          <div className="w-full bg-gray-800 rounded-full h-2">
-            <div 
-              className="bg-blue-600 h-2 rounded-full" 
-              style={{ 
-                width: `${timePercentageRef.current}%`,
-                transition: "width 1s linear"
-              }}
-            ></div>
-          </div>
-        </div>
         
         {/* Debug info */}
         {process.env.NODE_ENV !== "production" && (

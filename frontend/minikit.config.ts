@@ -1,4 +1,5 @@
 const ROOT_URL =
+  process.env.NEXT_PUBLIC_NGROK_URL ||
   process.env.NEXT_PUBLIC_URL ||
   (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : 'http://localhost:3000');
 
@@ -9,9 +10,9 @@ const ROOT_URL =
  */
 export const minikitConfig = {
   "accountAssociation": {
-    "header": "eyJmaWQiOjM3MjYyNiwidHlwZSI6ImF1dGgiLCJrZXkiOiIweDM0ZUJGMGY5MTA0YTIxYWMwOUJmMDI1NDI5MzBGMzdGZTRjZkI0OTAifQ",
-    "payload": "eyJkb21haW4iOiJuZXctbWluaS1hcHAtcXVpY2tzdGFydC1yaG8tZ3JlZW4udmVyY2VsLmFwcCJ9",
-    "signature": "GW6DryYylW1vAjeXW7f3+aJaaNzzmuXNGCnSzb511lwqX7jaMEg3zsxjdutwwdH+2HatQMSasDzsKsKxdO9uNxw="
+    "header": "eyJmaWQiOjEzODk3MjcsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHgyZjcyNjllQzBjRjJiRjhCNWQxNjJDN2M3NmY2Yzk0NzEwNDAyMUNkIn0",
+    "payload": "eyJkb21haW4iOiI4NDYwNTIzMDE4ODAubmdyb2stZnJlZS5hcHAifQ",
+    "signature": "3GmZxY02ZXpt9I57SmIfL21lh+JYmpfphzRSh59SN3kf+oe6VwFtpEPKFUmlFB2JkjoTBLmH6SI7n2jUbSMKxRw="
   },
   miniapp: {
     version: "1",

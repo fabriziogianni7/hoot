@@ -300,8 +300,8 @@ function LobbyContent() {
         
         {countdown === null && (
           <>
-            <div className="bg-gray-900/50 rounded-lg p-6 mb-8 w-full max-w-md">
-              <h2 className="text-xl font-semibold mb-4">Quiz Details</h2>
+            <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6 mb-8 w-full max-w-md">
+              <h2 className="text-xl font-semibold mb-4 text-purple-200">Quiz Details</h2>
               <ul className="space-y-2">
                 <li>Number of questions: {quiz?.questions?.length || 0}</li>
                 <li>Game PIN: <span className="font-mono font-bold text-2xl">{contextRoomCode || roomCodeFromUrl || 'N/A'}</span></li>
@@ -309,8 +309,8 @@ function LobbyContent() {
               </ul>
             </div>
             
-            <div className="bg-gray-900/50 rounded-lg p-6 mb-8 w-full max-w-md">
-              <h2 className="text-xl font-semibold mb-4">
+            <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
+              <h2 className="text-xl font-semibold mb-4 text-purple-200">
                 Players ({currentGame?.players?.length || 0})
               </h2>
               
@@ -319,7 +319,7 @@ function LobbyContent() {
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {currentGame.players.map((player) => (
-                    <div key={player.id} className="bg-gray-800 p-2 rounded text-center">
+                    <div key={player.id} className="bg-purple-700/30 border border-purple-500/30 p-2 rounded text-center text-purple-100">
                       {player.name}
                     </div>
                   ))}
@@ -355,7 +355,7 @@ function LobbyContent() {
               </form>
             ) : (
               <div className="w-full max-w-md flex flex-col gap-4">
-                <div className="bg-green-600/20 border border-green-500 rounded-lg p-4 text-center">
+                <div className="bg-purple-600/20 border border-purple-500 rounded-lg p-4 text-center">
                   <p>You&apos;ve joined as <strong>{playerName}</strong></p>
                   {isCreator ? (
                     <p className="text-sm text-yellow-300 font-semibold">👑 You are the quiz creator</p>
@@ -368,17 +368,26 @@ function LobbyContent() {
                 {isCreator && currentGame && currentGame.players.length > 0 && (
                   <button
                     onClick={handleStartQuiz}
-                    className="w-full py-2 bg-green-600 hover:bg-green-700 rounded text-white font-medium"
+                    className="w-full py-2 rounded text-white font-medium transition-colors"
+                    style={{
+                      backgroundColor: "#22c55e", // green-500 - same as correct answers
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = "#16a34a"; // green-600 on hover
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = "#22c55e"; // green-500 normal state
+                    }}
                   >
                     Start Quiz
                   </button>
                 )}
                 
                 <Link 
-                  href="/quiz"
-                  className="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded text-white font-medium text-center"
+                  href="/"
+                  className="w-full py-2 bg-purple-800/50 border border-purple-600/50 hover:bg-purple-700/50 rounded text-purple-100 font-medium text-center transition-colors"
                 >
-                  Exit Quiz
+                  Leave Lobby
                 </Link>
               </div>
             )}
