@@ -26,11 +26,10 @@ interface QuizQuestion {
 export default function AdminPage() {
   const router = useRouter();
   const { startGame, createQuizOnBackend, joinGame: joinGameContext } = useQuiz();
-  const { address, isConnected, chain,status,connector} = useAccount();
-  const { chains, switchChain } = useSwitchChain()
+  const { address, isConnected: _isConnected, chain, status: _status, connector: _connector} = useAccount();
+  const { chains: _chains, switchChain } = useSwitchChain()
   const publicClient = usePublicClient();
   const { supabase } = useSupabase();
-  const { context } = useMiniKit();
   const { data: ethBalance } = useBalance({address});
 
 
@@ -48,10 +47,13 @@ export default function AdminPage() {
   const [bountyAmount, setBountyAmount] = useState("0.001");
   const [selectedCurrency, setSelectedCurrency] = useState<'usdc' | 'eth' | 'custom'>('usdc');
   const [customTokenAddress, _setCustomTokenAddress] = useState("");
+  const [quizTransaction, setQuizTransaction] = useState<string>("");
+  const [approvalTransaction, setApprovalTransaction] = useState<string>("");
 
   
   // Wagmi hooks for transactions
-  const { writeContract, isPending: _isWritePending, error: writeError } = useWriteContract();
+  const { writeContractAsync, isPending: _isWritePending, error: writeError } = useWriteContract();
+
   const { isPending: _isSendPending, error: sendError } = useSendTransaction();
 
   // Determine ERC20 token address based on selected currency
@@ -87,59 +89,47 @@ export default function AdminPage() {
     }
   });
 
-
-  // Debug wagmi state
-  useEffect(() => {
-   console.log("isConnected", isConnected);
-   console.log("address", address);
-   console.log("chain", chain);
-   console.log("status", status);
-   console.log("connector", connector);
-   console.log("chains", chains);
-  }, [isConnected, address, chain, status, connector, chains]);
+useEffect(() => {
+  console.log('chai', chain);
+}, [chain]);
 
 
 
-  // Create quiz on-chain using wagmi (Farcaster compatible)
-  const createQuizWithWagmi = async (
-    quizId: string, 
-    prizeAmount: string, 
-    prizeTokenAddress: string,
-    tokenDecimals: number = 18
+  // Create quiz on-chain using wagmi
+  const createQuizOnChain = async (
+    quizId: string,
+    tokenAddress: string,
+    amount: string,
+    decimals: number = 18
   ) => {
-    const contractAddress = getCurrentContractAddress();
-    const isETH = prizeTokenAddress === ZERO_ADDRESS;
+    const contractAddress = chain?.id === 8453 ? `0x013e9b64f97e6943dcd1e167ec5c96754a6e9636` as `0x${string}` : `0x573496a44ace1d713723f5d91fcde63bf3d82d3a` as `0x${string}`;
+    const isETH = tokenAddress === ZERO_ADDRESS;
     
-    // For ETH, use parseEther; for tokens, use parseUnits with specified decimals
-    const prizeAmountWei = isETH 
-      ? parseEther(prizeAmount)
-      : parseUnits(prizeAmount, tokenDecimals);
+    // Parse amount based on token type
+    const amountWei = isETH 
+      ? parseEther(amount)
+      : parseUnits(amount, decimals);
     
-    console.log('Creating quiz with wagmi:', {
+    console.log('Creating quiz on-chain:', {
       contractAddress,
       quizId,
-      prizeAmount,
-      prizeTokenAddress,
-      tokenDecimals,
-      prizeAmountWei: prizeAmountWei.toString(),
+      tokenAddress,
+      amount,
+      decimals,
+      amountWei: amountWei.toString(),
       isETH
     });
-
-    try {
-      const txHash = await writeContract({
-        address: contractAddress as `0x${string}`,
-        abi: HOOT_QUIZ_MANAGER_ABI,
-        functionName: 'createQuiz',
-        args: [quizId, prizeTokenAddress as `0x${string}`, prizeAmountWei],
-        value: isETH ? prizeAmountWei : BigInt(0), // Only send value for ETH
-      });
-      
-      console.log('Quiz created successfully:', txHash);
-      return txHash;
-    } catch (error) {
-      console.error('Error creating quiz:', error);
-      throw error;
-    }
+    
+    const txHash = await  writeContractAsync({
+      address: contractAddress as `0x${string}`,
+      abi: HOOT_QUIZ_MANAGER_ABI,
+      functionName: 'createQuiz',
+      args: [quizId, tokenAddress as `0x${string}`, amountWei],
+      value: isETH ? amountWei : BigInt(0),
+    });
+    setQuizTransaction(txHash);
+    console.log('Quiz created on-chain, tx hash:', txHash);
+    return txHash;
   };
 
   // CSS per forzare i colori degli input
@@ -170,9 +160,6 @@ export default function AdminPage() {
     correctAnswer: 0
   });
   
-  // Determine wallet info (Farcaster or wagmi)
-  const farcasterUser = context?.user as { addresses?: string[] } | undefined;
-  const walletAddress = address || farcasterUser?.addresses?.[0];
 
   // Compute display balance based on selected currency
   const displayBalance: string = (() => {
@@ -316,22 +303,37 @@ export default function AdminPage() {
     }
   };
 
-  const handleFreeQuiz = () => {
-    setShowQuizOptions(false);
-    setShowShareBox(true);
-    handleSaveQuiz(true);
+  const handleFreeQuiz = async () => {
+    // Create quiz without bounty
+    const result = await handleSaveQuiz();
+    
+    if (result) {
+      // After quiz is created, show share box
+      setShowQuizOptions(false);
+      setShowShareBox(true);
+    }
   };
 
+  // Step 2: Create quiz and add bounty on-chain
   const handleBountyQuiz = async () => {
-    // TEMPORARILY DISABLED FOR TESTING
-    // if (!walletAddress) {
-    //   setError("Please connect your wallet to create a quiz with bounty");
-    //   return;
-    // }
+    if (!address) {
+      setError("Please connect your wallet to add a bounty");
+      return;
+    }
 
     try {
-      setError(""); // Clear any previous errors
-      setCreationStep("Preparing quiz with bounty...");
+      setError("");
+      
+      // First, create the quiz in backend
+      const result = await handleSaveQuiz();
+      
+      if (!result) {
+        setError("Failed to create quiz. Please try again.");
+        return;
+      }
+      
+      const { quizId } = result;
+      setCreationStep("Preparing bounty...");
       
       // Validate bounty amount
       const bountyAmountNum = parseFloat(bountyAmount);
@@ -340,12 +342,13 @@ export default function AdminPage() {
         return;
       }
 
-      // Determine token address based on selection
-      let prizeTokenAddress: string;
-      let tokenDecimals = 18; // Default for ETH and most ERC20s
+      // Determine token address and decimals
+      let tokenAddress: string;
+      let decimals: number;
 
       if (selectedCurrency === 'eth') {
-        prizeTokenAddress = ZERO_ADDRESS;
+        tokenAddress = ZERO_ADDRESS;
+        decimals = 18;
         
         // Check ETH balance
         if (ethBalance && parseFloat(ethBalance.formatted) < bountyAmountNum) {
@@ -353,111 +356,102 @@ export default function AdminPage() {
           return;
         }
       } else if (selectedCurrency === 'usdc') {
-        // Get USDC address based on current network
-        prizeTokenAddress = chain?.id === 8453 
+        tokenAddress = chain?.id === 8453 
           ? USDC_ADDRESSES.base 
           : USDC_ADDRESSES.baseSepolia;
-        tokenDecimals = 6; // USDC has 6 decimals
-
-        // Check USDC balance (simplified - you may want to fetch actual balance)
-        console.log("USDC token address:", prizeTokenAddress);
+        decimals = 6;
+        
+        // Check USDC balance
+        const usdcBalanceNum = parseFloat(displayBalance);
+        if (usdcBalanceNum < bountyAmountNum) {
+          setError(`Insufficient USDC balance. You have ${displayBalance} USDC but need ${bountyAmount} USDC`);
+          return;
+        }
       } else if (selectedCurrency === 'custom') {
         if (!customTokenAddress || customTokenAddress.trim() === '') {
           setError("Please enter a valid token contract address");
           return;
         }
-        prizeTokenAddress = customTokenAddress.trim();
-        // For custom tokens, we'll assume 18 decimals (can be improved)
-        console.log("Custom token address:", prizeTokenAddress);
+        tokenAddress = customTokenAddress.trim();
+        decimals = tokenDecimals ? Number(tokenDecimals) : 18;
       } else {
         setError("Invalid currency selection");
         return;
       }
 
-      // For ERC20 tokens, we need to approve the contract first
-      if (prizeTokenAddress !== ZERO_ADDRESS && address) {
-        try {
-          const contractAddress = getCurrentContractAddress();
-          const prizeAmountWei = parseUnits(bountyAmount, tokenDecimals);
+      // For ERC20 tokens, approve the contract first
+      if (tokenAddress !== ZERO_ADDRESS) {
+        const contractAddress = getCurrentContractAddress();
+        const amountWei = parseUnits(bountyAmount, decimals);
 
-          setCreationStep("Checking token allowance...");
-          
-          // Check current allowance using publicClient
-          const currentAllowance = await publicClient?.readContract({
-            address: prizeTokenAddress as `0x${string}`,
+        setCreationStep("Checking token allowance...");
+        
+        const currentAllowance = await publicClient?.readContract({
+          address: tokenAddress as `0x${string}`,
+          abi: ERC20_ABI,
+          functionName: 'allowance',
+          args: [address, contractAddress as `0x${string}`]
+        }) as bigint | undefined;
+
+        // If allowance is insufficient, request approval
+        // if (!currentAllowance || currentAllowance < amountWei) {
+          setCreationStep("Requesting token approval...");
+          const approvalHash = await writeContractAsync({
+            address: tokenAddress as `0x${string}`,
             abi: ERC20_ABI,
-            functionName: 'allowance',
-            args: [address, contractAddress as `0x${string}`]
-          }) as bigint | undefined;
+            functionName: 'approve',
+            args: [contractAddress as `0x${string}`, BigInt(100000000)]
+          });
 
-          console.log("Current allowance:", currentAllowance?.toString());
-          console.log("Required amount:", prizeAmountWei.toString());
-
-          // If allowance is insufficient, request approval
-          if (!currentAllowance || currentAllowance < prizeAmountWei) {
-            setCreationStep("Requesting token approval...");
-            console.log("Requesting approval for token spend");
-            
-            try {
-              const approveTxHash = await writeContract({
-                address: prizeTokenAddress as `0x${string}`,
-                abi: ERC20_ABI,
-                functionName: 'approve',
-                args: [contractAddress as `0x${string}`, prizeAmountWei]
-              });
-              
-              console.log("Approval transaction sent:", approveTxHash);
-              setCreationStep("Waiting for approval confirmation...");
-              
-              // Wait a bit for the transaction to be mined
-              // In a production app, you'd want to wait for transaction receipt
-              await new Promise(resolve => setTimeout(resolve, 3000));
-            } catch (approvalError) {
-              console.error("Error approving token:", approvalError);
-              setError("Failed to approve token spending. Please try again.");
-              return;
-            }
-          }
-        } catch (error) {
-          console.error("Error checking allowance:", error);
-          setError("Failed to check token allowance. Please try again.");
-          return;
-        }
+          setApprovalTransaction(approvalHash);
+          
+          setCreationStep("Waiting for approval confirmation...");
+          
+        // }
       }
       
-      // Create quiz on-chain with bounty deposit
-      if (address) {
-        try {
-          setCreationStep("Creating quiz with bounty on chain...");
-          const txHash = await createQuizWithWagmi(createdRoomCode, bountyAmount, prizeTokenAddress, tokenDecimals);
-          console.log("Quiz created on-chain with bounty deposit:", txHash);
-          console.log("Bounty amount deposited:", bountyAmount, selectedCurrency.toUpperCase());
-        } catch (error) {
-          console.error("Error creating quiz on-chain:", error);
-          setError("Failed to create quiz on blockchain. Please try again.");
-          return;
-        }
-      }
+      // Create quiz on-chain with bounty
+      setCreationStep("Creating quiz with bounty on-chain...");
+      const txHash = await createQuizOnChain(quizId, tokenAddress, bountyAmount, decimals);
       
-      setShowQuizOptions(false);
-      setShowShareBox(true);
-      setCreationStep("");
+      console.log("Quiz created on-chain with bounty:", {
+        quizId,
+        roomCode: createdRoomCode,
+        txHash,
+        amount: bountyAmount,
+        currency: selectedCurrency
+      });
+      
+      // Show share box
+      // setShowQuizOptions(false);
+      // setShowShareBox(true);
+      // setCreationStep("");
+      
     } catch (error) {
-      console.error("Error creating quiz with bounty:", error);
-      setError("Failed to create quiz with bounty. Please try again.");
+      console.error("Error adding bounty to quiz:", error);
+      setError(error instanceof Error ? error.message : "Failed to add bounty. Please try again.");
       setCreationStep("");
     }
   };
 
-  const handleSaveQuiz = async (isFree: boolean) => {
-    if (isCreating) return;
+  useEffect(() => {
+    if (quizTransaction) {
+      setShowQuizOptions(false);
+        setShowShareBox(true);
+        setCreationStep("");
+      }
+  }, [quizTransaction]);
+
+  // Step 1: Create quiz in backend and generate room
+  const handleSaveQuiz = async (): Promise<{ quizId: string; roomCode: string } | null> => {
+    if (isCreating) return null;
     
     setIsCreating(true);
     setError("");
-    setCreationStep("");
+    setCreationStep("Saving quiz...");
     
     try {
-      // Salva la domanda corrente se ha contenuto
+      // Save current question if it has content
       const allQuestions = [...questions];
       if (currentQuestion.text.trim() !== "") {
         if (currentQuestionIndex < questions.length) {
@@ -470,17 +464,12 @@ export default function AdminPage() {
       if (allQuestions.length === 0) {
         setError("Please add at least one question");
         setIsCreating(false);
-        return;
+        return null;
       }
       
-      // Skip balance check for initial quiz creation - will be handled in quiz options
-      console.log("Skipping balance check for initial quiz creation");
-      
-      // Step 1: Create quiz in backend first (to get quiz_id)
-      setCreationStep("Saving quiz to database...");
-      
+      // Prepare quiz data
       const quiz = {
-        id: `quiz-${Date.now()}`, // Temporary ID, backend will generate the real one
+        id: `quiz-${Date.now()}`,
         title: quizTitle || "Name your quiz",
         description: "Created from the admin interface",
         questions: allQuestions.map((q, i) => ({
@@ -493,49 +482,39 @@ export default function AdminPage() {
         createdAt: new Date()
       };
       
-      // Get contract address from environment
-      const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "";
-      
-
-
-      // Create in backend with prize amount and contract address
+      // Create quiz in backend (no contract info yet)
       const backendQuizId = await createQuizOnBackend(
         quiz,
-        isFree ? undefined : contractAddress, // Pass the contract address
-        undefined, // tx hash will be set after on-chain creation
-        address, // Fallback address for testing
-        isFree ? 0 : parseFloat(bountyAmount) // Pass the prize amount
+        undefined, // Contract address will be set later if bounty is added
+        undefined, // Tx hash will be set later if bounty is added
+        address,
+        0 // Default to 0, will be updated if bounty is added
       );
       
       console.log("Quiz saved to backend with ID:", backendQuizId);
       
-      // Step 2: Skip on-chain creation for now - will be handled in quiz options
-      console.log("Quiz prepared for creation. On-chain creation will be handled in quiz options.");
-      
-      // Step 3: Start game session and join as creator
-      setCreationStep("Preparing quiz...");
-      
+      // Start game session and join as creator
+      setCreationStep("Creating room...");
       const generatedRoomCode = await startGame(backendQuizId);
       
       // Auto-join as the creator
       const creatorPlayerId = await joinGameContext("Creator", address, generatedRoomCode);
       
-      // Update game session with creator
-      const { error } = await supabase
-      .from('game_sessions')
-      .update({ creator_session_id: creatorPlayerId })
-      .eq('room_code', generatedRoomCode);
-    
-    if (error) {
-      console.error('Failed to update creator session:', error);
-    }
+      // Update game session with creator in one call
+      await supabase
+        .from('game_sessions')
+        .update({ creator_session_id: creatorPlayerId })
+        .eq('room_code', generatedRoomCode);
       
       // Store creator ID in localStorage
       localStorage.setItem("quizPlayerId", creatorPlayerId);
       
-      // Show quiz options modal instead of immediate redirect
+      // Store room code
       setCreatedRoomCode(generatedRoomCode);
-      setShowQuizOptions(true);
+      setIsCreating(false);
+      setCreationStep("");
+      
+      return { quizId: backendQuizId, roomCode: generatedRoomCode };
       
     } catch (err) {
       console.error("Error creating quiz:", err);
@@ -543,6 +522,7 @@ export default function AdminPage() {
       setError(errorMessage);
       setIsCreating(false);
       setCreationStep("");
+      return null;
     }
   };
 
@@ -780,7 +760,7 @@ export default function AdminPage() {
         {/* Action buttons */}
         <div className="mt-6 flex flex-col gap-4 w-full max-w-md">
             <button
-              onClick={()=> setShowQuizOptions(true)}
+              onClick={() => setShowQuizOptions(true)}
               disabled={isCreating}
               className="px-8 py-4 rounded text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
@@ -846,6 +826,7 @@ export default function AdminPage() {
                   <button
                     onClick={() => {
                       const newNetworkid = chain?.id === 84532 ? 8453 : 84532;
+                      console.log('newNetworkid', newNetworkid);
                       switchChain({ chainId: newNetworkid })
                     }}
                     className="w-full flex items-center justify-between p-2 bg-gray-600 hover:bg-gray-500 rounded text-white transition-colors"
