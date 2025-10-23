@@ -4,15 +4,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
-import { useNetwork } from "@/lib/network-context";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
-import { useAccount, useWalletClient, usePublicClient, useConnect, useConnectors, useWriteContract, useSendTransaction, useBalance } from "wagmi";
-import { BrowserProvider,  } from "ethers";
+import { useAccount, useSwitchChain, usePublicClient, useWriteContract, useSendTransaction, useBalance, useReadContract } from "wagmi";
 import { HOOT_QUIZ_MANAGER_ABI, getCurrentContractAddress, ZERO_ADDRESS, USDC_ADDRESSES, ERC20_ABI } from "@/lib/contracts";
-import { parseEther, parseUnits, formatUnits } from "viem";
+import { parseEther, parseUnits } from "viem";
 import ShareBox from "@/components/ShareBox";
 
-//custom erc20:0xfF5986B1AbeE9ae2AF04242D207d35BcB6d28b75
+
 
 interface QuestionOption {
   text: string;
@@ -28,48 +26,78 @@ interface QuizQuestion {
 export default function AdminPage() {
   const router = useRouter();
   const { startGame, createQuizOnBackend, joinGame: joinGameContext } = useQuiz();
-  const { address } = useAccount();
-  const { data: walletClient } = useWalletClient();
+  const { address, isConnected, chain,status,connector} = useAccount();
+  const { chains, switchChain } = useSwitchChain()
   const publicClient = usePublicClient();
   const { supabase } = useSupabase();
-  const { currentNetwork, setNetwork } = useNetwork();
   const { context } = useMiniKit();
+  const { data: ethBalance } = useBalance({address});
+
 
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [quizTitle, setQuizTitle] = useState("Name your Quiz");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState("");
-  const [ethBalance, setEthBalance] = useState<string>("");
   const [creationStep, setCreationStep] = useState<string>("");
   const [showShareBox, setShowShareBox] = useState(false);
   const [createdRoomCode, setCreatedRoomCode] = useState<string>("");
   const [addQuestionError, setAddQuestionError] = useState<string>("");
   const [showTooltip, setShowTooltip] = useState(false);
   const [showQuizOptions, setShowQuizOptions] = useState(false);
-  const [rewardAmount, setRewardAmount] = useState("0.001");
+  const [bountyAmount, setBountyAmount] = useState("0.001");
   const [selectedCurrency, setSelectedCurrency] = useState<'usdc' | 'eth' | 'custom'>('usdc');
-  const [customTokenAddress, setCustomTokenAddress] = useState("");
+  const [customTokenAddress, _setCustomTokenAddress] = useState("");
 
   
   // Wagmi hooks for transactions
-  const { writeContract, writeContractAsync, isPending: isWritePending, error: writeError } = useWriteContract();
-  const { isPending: isSendPending, error: sendError } = useSendTransaction();
-  const { data: balance } = useBalance({ address });
-  const [usdcBalance, setUsdcBalance] = useState<string>("0");
+  const { writeContract, isPending: _isWritePending, error: writeError } = useWriteContract();
+  const { isPending: _isSendPending, error: sendError } = useSendTransaction();
+
+  // Determine ERC20 token address based on selected currency
+  const getTokenAddress = (): `0x${string}` | undefined => {
+    if (selectedCurrency === 'usdc') {
+      return (chain?.id === 8453 ? USDC_ADDRESSES.base : USDC_ADDRESSES.baseSepolia) as `0x${string}`;
+    } else if (selectedCurrency === 'custom' && customTokenAddress) {
+      return customTokenAddress as `0x${string}`;
+    }
+    return undefined;
+  };
+
+  const tokenAddress = getTokenAddress();
+
+  // Read ERC20 token balance
+  const { data: erc20Balance, refetch: refetchErc20Balance } = useReadContract({
+    address: tokenAddress,
+    abi: ERC20_ABI,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
+    query: {
+      enabled: !!address && !!tokenAddress && selectedCurrency !== 'eth'
+    }
+  });
+
+  // Read ERC20 token decimals
+  const { data: tokenDecimals } = useReadContract({
+    address: tokenAddress,
+    abi: ERC20_ABI,
+    functionName: 'decimals',
+    query: {
+      enabled: !!tokenAddress && selectedCurrency !== 'eth'
+    }
+  });
+
 
   // Debug wagmi state
   useEffect(() => {
-    console.log("🔍 Wagmi Debug Info:");
-    console.log("address:", address);
-    console.log("isWritePending:", isWritePending);
-    console.log("isSendPending:", isSendPending);
-    console.log("writeError:", writeError);
-    console.log("sendError:", sendError);
-    console.log("balance:", balance);
-    console.log("walletClient:", walletClient);
-    console.log("publicClient:", publicClient);
-  }, [address, isWritePending, isSendPending, writeError, sendError, balance, walletClient, publicClient]);
+   console.log("isConnected", isConnected);
+   console.log("address", address);
+   console.log("chain", chain);
+   console.log("status", status);
+   console.log("connector", connector);
+   console.log("chains", chains);
+  }, [isConnected, address, chain, status, connector, chains]);
+
 
 
   // Create quiz on-chain using wagmi (Farcaster compatible)
@@ -145,14 +173,26 @@ export default function AdminPage() {
   // Determine wallet info (Farcaster or wagmi)
   const farcasterUser = context?.user as { addresses?: string[] } | undefined;
   const walletAddress = address || farcasterUser?.addresses?.[0];
-  const isInFarcaster = !!context;
 
-  // Load ETH balance using wagmi
-  useEffect(() => {
-    if (balance) {
-      setEthBalance(balance.formatted);
+  // Compute display balance based on selected currency
+  const displayBalance: string = (() => {
+    if (selectedCurrency === 'eth' && ethBalance) {
+      return ethBalance.formatted;
+    } else if ((selectedCurrency === 'usdc' || selectedCurrency === 'custom') && erc20Balance !== undefined && tokenDecimals !== undefined) {
+      // Format ERC20 balance using the token's decimals
+      const decimals = Number(tokenDecimals);
+      const formattedBalance = (Number(erc20Balance) / Math.pow(10, decimals)).toString();
+      return formattedBalance;
     }
-  }, [balance]);
+    return '0';
+  })();
+
+  // Refetch ERC20 balance when currency or chain changes
+  useEffect(() => {
+    if ((selectedCurrency === 'usdc' || selectedCurrency === 'custom') && refetchErc20Balance) {
+      refetchErc20Balance();
+    }
+  }, [selectedCurrency, chain?.id, refetchErc20Balance]);
 
   // Effetto per caricare la domanda corrente quando cambia l'indice
   useEffect(() => {
@@ -279,23 +319,24 @@ export default function AdminPage() {
   const handleFreeQuiz = () => {
     setShowQuizOptions(false);
     setShowShareBox(true);
+    handleSaveQuiz(true);
   };
 
-  const handleRewardQuiz = async () => {
+  const handleBountyQuiz = async () => {
     // TEMPORARILY DISABLED FOR TESTING
     // if (!walletAddress) {
-    //   setError("Please connect your wallet to create a quiz with rewards");
+    //   setError("Please connect your wallet to create a quiz with bounty");
     //   return;
     // }
 
     try {
       setError(""); // Clear any previous errors
-      setCreationStep("Preparing quiz with reward...");
+      setCreationStep("Preparing quiz with bounty...");
       
-      // Validate reward amount
-      const rewardAmountNum = parseFloat(rewardAmount);
-      if (isNaN(rewardAmountNum) || rewardAmountNum <= 0) {
-        setError("Invalid reward amount");
+      // Validate bounty amount
+      const bountyAmountNum = parseFloat(bountyAmount);
+      if (isNaN(bountyAmountNum) || bountyAmountNum <= 0) {
+        setError("Invalid bounty amount");
         return;
       }
 
@@ -307,13 +348,13 @@ export default function AdminPage() {
         prizeTokenAddress = ZERO_ADDRESS;
         
         // Check ETH balance
-        if (ethBalance && parseFloat(ethBalance) < rewardAmountNum) {
-          setError(`Insufficient ETH balance. You have ${ethBalance} ETH but need ${rewardAmount} ETH`);
+        if (ethBalance && parseFloat(ethBalance.formatted) < bountyAmountNum) {
+          setError(`Insufficient ETH balance. You have ${ethBalance.formatted} ETH but need ${bountyAmount} ETH`);
           return;
         }
       } else if (selectedCurrency === 'usdc') {
         // Get USDC address based on current network
-        prizeTokenAddress = currentNetwork === 'base' 
+        prizeTokenAddress = chain?.id === 8453 
           ? USDC_ADDRESSES.base 
           : USDC_ADDRESSES.baseSepolia;
         tokenDecimals = 6; // USDC has 6 decimals
@@ -337,7 +378,7 @@ export default function AdminPage() {
       if (prizeTokenAddress !== ZERO_ADDRESS && address) {
         try {
           const contractAddress = getCurrentContractAddress();
-          const prizeAmountWei = parseUnits(rewardAmount, tokenDecimals);
+          const prizeAmountWei = parseUnits(bountyAmount, tokenDecimals);
 
           setCreationStep("Checking token allowance...");
           
@@ -384,13 +425,13 @@ export default function AdminPage() {
         }
       }
       
-      // Create quiz on-chain with reward deposit
+      // Create quiz on-chain with bounty deposit
       if (address) {
         try {
-          setCreationStep("Creating quiz with reward on chain...");
-          const txHash = await createQuizWithWagmi(createdRoomCode, rewardAmount, prizeTokenAddress, tokenDecimals);
-          console.log("Quiz created on-chain with reward deposit:", txHash);
-          console.log("Reward amount deposited:", rewardAmount, selectedCurrency.toUpperCase());
+          setCreationStep("Creating quiz with bounty on chain...");
+          const txHash = await createQuizWithWagmi(createdRoomCode, bountyAmount, prizeTokenAddress, tokenDecimals);
+          console.log("Quiz created on-chain with bounty deposit:", txHash);
+          console.log("Bounty amount deposited:", bountyAmount, selectedCurrency.toUpperCase());
         } catch (error) {
           console.error("Error creating quiz on-chain:", error);
           setError("Failed to create quiz on blockchain. Please try again.");
@@ -402,13 +443,13 @@ export default function AdminPage() {
       setShowShareBox(true);
       setCreationStep("");
     } catch (error) {
-      console.error("Error creating quiz with reward:", error);
-      setError("Failed to create quiz with reward. Please try again.");
+      console.error("Error creating quiz with bounty:", error);
+      setError("Failed to create quiz with bounty. Please try again.");
       setCreationStep("");
     }
   };
 
-  const handleSaveQuiz = async () => {
+  const handleSaveQuiz = async (isFree: boolean) => {
     if (isCreating) return;
     
     setIsCreating(true);
@@ -416,19 +457,6 @@ export default function AdminPage() {
     setCreationStep("");
     
     try {
-      // Validate wallet - TEMPORARILY DISABLED FOR TESTING
-      // if (!walletAddress) {
-      //   setError("Please connect your wallet first");
-      //   setIsCreating(false);
-      //   return;
-      // }
-      console.log("wallet Address", walletAddress);
-      // if (!walletClient && !isInFarcaster) {
-      //   setError("No wallet connected. Please connect wallet or use Farcaster.");
-      //   setIsCreating(false);
-      //   return;
-      // }
-      
       // Salva la domanda corrente se ha contenuto
       const allQuestions = [...questions];
       if (currentQuestion.text.trim() !== "") {
@@ -444,14 +472,6 @@ export default function AdminPage() {
         setIsCreating(false);
         return;
       }
-      
-      // Validate prize amount
-      // const prizeAmountNum = parseFloat(prizeAmount);
-      // if (isNaN(prizeAmountNum) || prizeAmountNum <= 0) {
-      //   setError("Invalid prize amount");
-      //   setIsCreating(false);
-      //   return;
-      // }
       
       // Skip balance check for initial quiz creation - will be handled in quiz options
       console.log("Skipping balance check for initial quiz creation");
@@ -476,13 +496,15 @@ export default function AdminPage() {
       // Get contract address from environment
       const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "";
       
+
+
       // Create in backend with prize amount and contract address
       const backendQuizId = await createQuizOnBackend(
         quiz,
-        contractAddress, // Pass the contract address
+        isFree ? undefined : contractAddress, // Pass the contract address
         undefined, // tx hash will be set after on-chain creation
-        walletAddress || "0x0000000000000000000000000000000000000000", // Fallback address for testing
-        1 // Pass the prize amount
+        address, // Fallback address for testing
+        isFree ? 0 : parseFloat(bountyAmount) // Pass the prize amount
       );
       
       console.log("Quiz saved to backend with ID:", backendQuizId);
@@ -496,21 +518,17 @@ export default function AdminPage() {
       const generatedRoomCode = await startGame(backendQuizId);
       
       // Auto-join as the creator
-      const creatorPlayerId = await joinGameContext("Creator", walletAddress || "0x0000000000000000000000000000000000000000", generatedRoomCode);
+      const creatorPlayerId = await joinGameContext("Creator", address, generatedRoomCode);
       
       // Update game session with creator
-      const { data: gameSessionData } = await supabase
-        .from('game_sessions')
-        .select('id')
-        .eq('room_code', generatedRoomCode)
-        .single();
-        
-      if (gameSessionData) {
-        await supabase
-          .from('game_sessions')
-          .update({ creator_session_id: creatorPlayerId })
-          .eq('id', gameSessionData.id);
-      }
+      const { error } = await supabase
+      .from('game_sessions')
+      .update({ creator_session_id: creatorPlayerId })
+      .eq('room_code', generatedRoomCode);
+    
+    if (error) {
+      console.error('Failed to update creator session:', error);
+    }
       
       // Store creator ID in localStorage
       localStorage.setItem("quizPlayerId", creatorPlayerId);
@@ -762,7 +780,7 @@ export default function AdminPage() {
         {/* Action buttons */}
         <div className="mt-6 flex flex-col gap-4 w-full max-w-md">
             <button
-              onClick={handleSaveQuiz}
+              onClick={()=> setShowQuizOptions(true)}
               disabled={isCreating}
               className="px-8 py-4 rounded text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
@@ -776,7 +794,7 @@ export default function AdminPage() {
           
         </div>
       </div>
-      
+   
       {/* Quiz Options Modal */}
       {showQuizOptions && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50">
@@ -807,19 +825,19 @@ export default function AdminPage() {
               >
                 <div className="text-left">
                   <div className="font-semibold text-lg">Free Quiz</div>
-                  <div className="text-sm text-gray-300">Create quiz without rewards</div>
+                  <div className="text-sm text-gray-300">Create quiz without bounty</div>
                 </div>
               </button>
               
-              {/* Reward Quiz Option with Input */}
+              {/* Quiz Bounty Option with Input */}
               <div className="bg-purple-600/20 rounded-lg p-4">
                 <button
-                  onClick={handleRewardQuiz}
+                  onClick={handleBountyQuiz}
                   className="w-full p-3 bg-purple-600/40 border border-purple-500 rounded-lg text-white hover:bg-purple-700 transition-colors mb-3"
                 >
                   <div className="text-left">
-                    <div className="font-semibold">Quiz with Rewards</div>
-                    <div className="text-sm text-purple-200">Add rewards from your wallet</div>
+                    <div className="font-semibold">Quiz with Bounty</div>
+                    <div className="text-sm text-purple-200">Add bounty from your wallet</div>
                   </div>
                 </button>
                 
@@ -827,29 +845,29 @@ export default function AdminPage() {
                 <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
                   <button
                     onClick={() => {
-                      const newNetwork = currentNetwork === 'baseSepolia' ? 'base' : 'baseSepolia';
-                      setNetwork(newNetwork);
+                      const newNetworkid = chain?.id === 84532 ? 8453 : 84532;
+                      switchChain({ chainId: newNetworkid })
                     }}
                     className="w-full flex items-center justify-between p-2 bg-gray-600 hover:bg-gray-500 rounded text-white transition-colors"
                   >
-                    <div className="flex items-center space-x-2">
+                     <div className="flex items-center space-x-2">
                       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                       <span className="text-sm font-medium">
-                        {currentNetwork === 'baseSepolia' ? 'Base Sepolia' : 
-                         currentNetwork === 'base' ? 'Base Mainnet' : 
+                        {chain?.id === 84532 ? 'Base Sepolia' : 
+                         chain?.id === 8453 ? 'Base Mainnet' : 
                          'Base Sepolia'}
                       </span>
                     </div>
                     <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                     </svg>
-                  </button>
+                  </button> 
                 </div>
                 
-                {/* Currency Selector */}
+                {/* Currency Selector - temp commented*/}
                 <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
                   <label className="block text-white text-sm font-medium mb-2">
-                    Reward Currency
+                    Bounty Currency
                   </label>
                   <div className="flex gap-2">
                     <button
@@ -872,7 +890,8 @@ export default function AdminPage() {
                     >
                       ETH
                     </button>
-                    <button
+                    {/* temp commenting custom */}
+                    {/* <button
                       onClick={() => setSelectedCurrency('custom')}
                       className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                         selectedCurrency === 'custom'
@@ -881,12 +900,12 @@ export default function AdminPage() {
                       }`}
                     >
                       Custom
-                    </button>
+                    </button> */}
                   </div>
                 </div>
 
-                {/* Custom Token Address Input */}  
-                {selectedCurrency === 'custom' && (
+                {/* Custom Token Address Input - Temporary disabled!*/}  
+                {/* {selectedCurrency === 'custom' && (
                   <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
                     <label className="block text-white text-sm font-medium mb-2">
                       Token Contract Address
@@ -902,24 +921,24 @@ export default function AdminPage() {
                       Enter the ERC20 token contract address
                     </div>
                   </div>
-                )}
+                )} */}
 
-                {/* Reward Amount Input */}
+                {/* Quiz Bounty Amount Input */}
                 <div className="p-3 bg-purple-600/20 rounded-lg">
                   <label className="block text-white text-sm font-medium mb-2">
-                    Reward Amount ({selectedCurrency === 'usdc' ? 'USDC' : selectedCurrency === 'eth' ? 'ETH' : 'Tokens'})
+                    Quiz Bounty ({selectedCurrency === 'usdc' ? 'USDC' : selectedCurrency === 'eth' ? 'ETH' : 'Tokens'})
                   </label>
                   <input
                     type="number"
-                    step="0.001"
+                    step="1"
                     min="0"
-                    value={rewardAmount}
-                    onChange={(e) => setRewardAmount(e.target.value)}
+                    value={bountyAmount}
+                    onChange={(e) => setBountyAmount(e.target.value)}
                     className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded text-white focus:outline-none focus:border-purple-500"
                     placeholder={selectedCurrency === 'usdc' ? '10' : selectedCurrency === 'eth' ? '0.001' : '100'}
                   />
                   <div className="text-xs text-gray-400 mt-1">
-                    Current balance: {ethBalance ? parseFloat(ethBalance).toFixed(selectedCurrency === 'eth' ? 4 : 2) : (selectedCurrency === 'eth' ? '0.0000' : '0.00')} {selectedCurrency === 'usdc' ? 'USDC' : selectedCurrency === 'eth' ? 'ETH' : 'Tokens'}
+                    Current balance: {parseFloat(displayBalance).toFixed(selectedCurrency === 'eth' ? 4 : 2)} {selectedCurrency === 'usdc' ? 'USDC' : selectedCurrency === 'eth' ? 'ETH' : 'Tokens'}
                   </div>
                 </div>
               </div>
