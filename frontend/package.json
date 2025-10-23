@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:testnet": "ENV=testnet next dev",
-    "dev:prod": "ENV=production next dev",
+    "dev:development": "ENV=development next dev",
+    "dev:production": "ENV=production next dev",
     "build": "next build",
     "build:testnet": "ENV=testnet next build",
     "build:prod": "ENV=production next build",

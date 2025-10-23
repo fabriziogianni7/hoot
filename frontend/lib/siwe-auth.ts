@@ -15,10 +15,11 @@ export async function signInWithEthereumMiniApp(): Promise<{
 }> {
   try {
     const { data, error } = await supabase.auth.signInWithWeb3({
-      chain: "ethereum",
-      statement: "I accept the Terms of Service at https://example.com/tos",
-      wallet: await sdk.wallet.getEthereumProvider() as EIP1193Provider,
-    } as Web3Credentials);
+      chain: 'ethereum',
+      message: 'message to sign',
+      signature: '',
+    })
+    // const { data, error } = await supabase.auth.signInAnonymously();
 
     return { data, error };
   } catch (error) {
