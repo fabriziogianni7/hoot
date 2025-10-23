@@ -6,21 +6,8 @@ import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { sdk } from "@farcaster/miniapp-sdk";
-import { signInWithEthereumMiniApp, signInWithEthereumWeb } from "@/lib/siwe-auth";
-import { useAccount, useConnections } from "wagmi";
-import { FarcasterAuth } from "@/components/FarcasterAuth";
-import { supabase } from "@/lib/supabase-client";
-
-
-interface AuthResponse {
-  success: boolean;
-  user?: {
-    fid: number;
-    issuedAt?: number;
-    expiresAt?: number;
-  };
-  message?: string;
-}
+import { useAccount } from "wagmi";
+import { useAuth } from "@/lib/use-auth";
 
 export default function Home() {
   const { isFrameReady, setFrameReady, context } = useMiniKit();
@@ -31,59 +18,8 @@ export default function Home() {
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
   
-  // Auth state
-  const [authData, setAuthData] = useState<AuthResponse | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [authError, setAuthError] = useState<string | null>(null);
-  
-  useEffect(() => {
-    const fetchAuthData = async () => {
-      try {
-        setIsAuthLoading(true);
-        setAuthError(null);
-        
-        const isMiniApp = await sdk.isInMiniApp();
-
-        // Qui c'è anche l'url dell immagine profilo utente!
-        
-
-        if (isMiniApp) {
-          const res = await sdk.quickAuth.fetch(`${window.location.origin}/api/auth`);
-          if (res.ok) {
-            const data = await res.json();
-            setAuthData(data);
-            
-            const { data: supabaseData, error: supabaseError } = await supabase.auth.signInAnonymously({
-              options: {
-                data: {
-                  fid: data.user.fid,
-                },
-              },
-            })
-            console.log('🔐 Supabase authentication data:', supabaseData);
-            if (supabaseError) {
-              setAuthError(`Supabase authentication failed: ${supabaseError?.message}`);
-            }
-          } else {
-            const errorData = await res.json();
-            setAuthError(errorData.message || 'Mini-app authentication failed');
-          }
-        } else {
-          // Web authentication
-          const { error: supabaseErrorWeb } = await signInWithEthereumWeb();
-          if (supabaseErrorWeb) {
-            setAuthError(`Web authentication failed: ${supabaseErrorWeb.message}`);
-          }
-        }
-      } catch (error) {
-        setAuthError(error instanceof Error ? error.message : 'Authentication failed');
-      } finally {
-        setIsAuthLoading(false);
-      }
-    };
-    
-    fetchAuthData();
-  }, []); // Empty dependency array - run only once on mount
+  // Use the shared authentication hook
+  const { authData, isAuthLoading, authError } = useAuth();
 
   
   

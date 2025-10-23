@@ -2,34 +2,23 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useMiniKit, useQuickAuth } from "@coinbase/onchainkit/minikit";
+import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
-import { useAccount } from "wagmi";
+import { useAuth } from "@/lib/use-auth";
 import { FarcasterAuth } from "@/components/FarcasterAuth";
 import { sdk } from '@farcaster/miniapp-sdk';
 
-interface AuthResponse {
-  success: boolean;
-  user?: {
-    fid: number;
-    issuedAt?: number;
-    expiresAt?: number;
-  };
-  message?: string;
-}
-
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
-  const { address, isConnected } = useAccount();
-
   const [gamePin, setGamePin] = useState("");
   const router = useRouter();
   const [error, setError] = useState("");
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
   
-
+  // Initialize authentication (runs in background for Supabase session)
+  useAuth();
 
   // Initialize the miniapp
   useEffect(() => {
@@ -58,18 +47,6 @@ export default function Home() {
       document.body.style.backgroundColor = "";
     };
   }, [setFrameReady, isFrameReady]);
-
-  const { data: authData, isLoading: isAuthLoading, error: authError } = useQuickAuth<AuthResponse>(
-    "/api/auth",
-    { method: "GET" }
-  );
-
-  // Trigger SIWE when wallet is connected and user hasn't attempted yet
-  useEffect(() => {
-    if (isConnected && address ) {
-      console.log("🔐 Triggering SIWE - wallet connected and no previous attempt");
-    }
-  }, [isConnected, address]);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
