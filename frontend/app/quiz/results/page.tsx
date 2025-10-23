@@ -168,6 +168,19 @@ export default function ResultsPage() {
             <div className="text-center mt-2 text-purple-300">
               {currentPlayer.answers.filter(a => a.isCorrect).length} correct answers out of {quiz.questions.length}
             </div>
+            {/* Debug info */}
+            <div className="text-xs text-purple-400 mt-2 text-center">
+              Debug: Total answers: {currentPlayer.answers.length}, 
+              Correct: {currentPlayer.answers.filter(a => a.isCorrect).length},
+              Score from backend: {currentPlayer.score}
+            </div>
+            <div className="text-xs text-purple-400 mt-1 text-center">
+              Answers: {JSON.stringify(currentPlayer.answers.map(a => ({ 
+                questionId: a.questionId, 
+                selected: a.selectedAnswer, 
+                correct: a.isCorrect 
+              })))}
+            </div>
           </div>
         )}
         

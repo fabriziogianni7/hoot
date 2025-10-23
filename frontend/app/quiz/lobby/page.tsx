@@ -303,7 +303,6 @@ function LobbyContent() {
             <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6 mb-8 w-full max-w-md">
               <h2 className="text-xl font-semibold mb-4 text-purple-200">Quiz Details</h2>
               <ul className="space-y-2">
-                <li>Number of questions: {quiz?.questions?.length || 0}</li>
                 <li>Game PIN: <span className="font-mono font-bold text-2xl">{contextRoomCode || roomCodeFromUrl || 'N/A'}</span></li>
                 <li>Status: <span className="capitalize">{currentGame?.status || gameData?.status || 'waiting'}</span></li>
               </ul>
@@ -348,7 +347,30 @@ function LobbyContent() {
                 <button
                   type="submit"
                   disabled={isJoining}
-                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  data-testid="join-quiz-button"
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem 0",
+                    borderRadius: "0.375rem",
+                    color: "white",
+                    fontWeight: "500",
+                    backgroundColor: isJoining ? "#4a5568" : "#795AFF",
+                    border: "none",
+                    cursor: isJoining ? "not-allowed" : "pointer",
+                    opacity: isJoining ? 0.5 : 1,
+                    transition: "background-color 0.2s ease",
+                    background: isJoining ? "#4a5568" : "#795AFF"
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isJoining) {
+                      e.currentTarget.style.backgroundColor = "#6B46C1";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isJoining) {
+                      e.currentTarget.style.backgroundColor = "#795AFF";
+                    }
+                  }}
                 >
                   {isJoining ? 'Joining...' : 'Join Quiz'}
                 </button>

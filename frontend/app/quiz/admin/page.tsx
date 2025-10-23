@@ -141,7 +141,7 @@ export default function AdminPage() {
   });
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [quizTitle, setQuizTitle] = useState("Name your Quiz");
+  const [quizTitle, setQuizTitle] = useState("");
   const [prizeAmount, setPrizeAmount] = useState("0.001");
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState("");
@@ -327,10 +327,11 @@ export default function AdminPage() {
   };
 
   const handleRewardQuiz = async () => {
-    if (!walletAddress) {
-      setError("Please connect your wallet to create a quiz with rewards");
-      return;
-    }
+    // TEMPORARILY DISABLED FOR TESTING
+    // if (!walletAddress) {
+    //   setError("Please connect your wallet to create a quiz with rewards");
+    //   return;
+    // }
 
     try {
       setCreationStep("Creating quiz with reward on chain...");
@@ -377,18 +378,18 @@ export default function AdminPage() {
     setCreationStep("");
     
     try {
-      // Validate wallet
-      if (!walletAddress) {
-        setError("Please connect your wallet first");
-        setIsCreating(false);
-        return;
-      }
+      // Validate wallet - TEMPORARILY DISABLED FOR TESTING
+      // if (!walletAddress) {
+      //   setError("Please connect your wallet first");
+      //   setIsCreating(false);
+      //   return;
+      // }
       console.log("wallet Address", walletAddress);
-      if (!walletClient && !isInFarcaster) {
-        setError("No wallet connected. Please connect wallet or use Farcaster.");
-        setIsCreating(false);
-        return;
-      }
+      // if (!walletClient && !isInFarcaster) {
+      //   setError("No wallet connected. Please connect wallet or use Farcaster.");
+      //   setIsCreating(false);
+      //   return;
+      // }
       
       // Salva la domanda corrente se ha contenuto
       const allQuestions = [...questions];
@@ -442,7 +443,7 @@ export default function AdminPage() {
         quiz,
         contractAddress, // Pass the contract address
         undefined, // tx hash will be set after on-chain creation
-        walletAddress,
+        walletAddress || "0x0000000000000000000000000000000000000000", // Fallback address for testing
         prizeAmountNum // Pass the prize amount
       );
       
@@ -457,7 +458,7 @@ export default function AdminPage() {
       const generatedRoomCode = await startGame(backendQuizId);
       
       // Auto-join as the creator
-      const creatorPlayerId = await joinGameContext("Creator", walletAddress, generatedRoomCode);
+      const creatorPlayerId = await joinGameContext("Creator", walletAddress || "0x0000000000000000000000000000000000000000", generatedRoomCode);
       
       // Update game session with creator
       const { data: gameSessionData } = await supabase
@@ -587,8 +588,9 @@ export default function AdminPage() {
             type="text"
             value={quizTitle}
             onChange={(e) => setQuizTitle(e.target.value)}
+            onFocus={(e) => e.target.select()}
             placeholder="Quiz Title"
-            className="px-4 py-2 mb-3 text-sm rounded bg-black text-white border border-white w-full"
+            className="px-4 py-2 mb-3 text- rounded bg-black text-white border border-white w-full"
           />
         </div>
         
