@@ -10,6 +10,7 @@ interface ShareBoxProps {
 
 export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxProps) {
   const [copied, setCopied] = useState(false);
+  const [pinCopied, setPinCopied] = useState(false);
   
   const quizUrl = `${window.location.origin}/quiz/lobby?room=${roomCode}`;
   
@@ -29,6 +30,25 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
       document.body.removeChild(textArea);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleCopyPin = async () => {
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      setPinCopied(true);
+      setTimeout(() => setPinCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy PIN:', err);
+      // Fallback per browser che non supportano clipboard API
+      const textArea = document.createElement('textarea');
+      textArea.value = roomCode;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setPinCopied(true);
+      setTimeout(() => setPinCopied(false), 2000);
     }
   };
 
@@ -76,8 +96,27 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
           
           <div>
             <p className="text-gray-300 mb-2">Or share the PIN:</p>
-            <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3 text-center">
-              <p className="text-2xl font-bold text-white font-mono">{roomCode}</p>
+            <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3 flex items-center justify-between">
+              <p className="text-2xl font-bold text-white font-mono flex-1 text-center">{roomCode}</p>
+              <button
+                onClick={handleCopyPin}
+                className={`p-2 rounded-lg transition-colors ml-2 ${
+                  pinCopied 
+                    ? 'bg-green-600 text-white' 
+                    : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                }`}
+                title={pinCopied ? 'Copied!' : 'Copy PIN'}
+              >
+                {pinCopied ? (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </button>
             </div>
           </div>
           
