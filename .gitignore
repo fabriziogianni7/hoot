@@ -80,3 +80,5 @@ backend/supabase/functions/.env.prod
 backend/supabase/functions/.env.testnet
 contracts/.env.prod
 contracts/.env.testnet
+contracts/.env.base
+contracts/.env.sepolia
