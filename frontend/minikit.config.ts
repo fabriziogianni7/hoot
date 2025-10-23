@@ -10,9 +10,9 @@ const ROOT_URL =
  */
 export const minikitConfig = {
   "accountAssociation": {
-    "header": "eyJmaWQiOjEzODk3MjcsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHgyZjcyNjllQzBjRjJiRjhCNWQxNjJDN2M3NmY2Yzk0NzEwNDAyMUNkIn0",
-    "payload": "eyJkb21haW4iOiI4NDYwNTIzMDE4ODAubmdyb2stZnJlZS5hcHAifQ",
-    "signature": "3GmZxY02ZXpt9I57SmIfL21lh+JYmpfphzRSh59SN3kf+oe6VwFtpEPKFUmlFB2JkjoTBLmH6SI7n2jUbSMKxRw="
+    header: `${process.env.NEXT_PUBLIC_ACCOUNT_ASSOCIATION_HEADER}` || "eyJmaWQiOjEzODk3MjcsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHgyZjcyNjllQzBjRjJiRjhCNWQxNjJDN2M3NmY2Yzk0NzEwNDAyMUNkIn0",
+    payload: `${process.env.NEXT_PUBLIC_ACCOUNT_ASSOCIATION_PAYLOAD}` || "eyJkb21haW4iOiI4NDYwNTIzMDE4ODAubmdyb2stZnJlZS5hcHAifQ",
+    signature: `${process.env.NEXT_PUBLIC_ACCOUNT_ASSOCIATION_SIGNATURE}` || "3GmZxY02ZXpt9I57SmIfL21lh+JYmpfphzRSh59SN3kf+oe6VwFtpEPKFUmlFB2JkjoTBLmH6SI7n2jUbSMKxRw="
   },
   miniapp: {
     version: "1",
