@@ -18,6 +18,7 @@ interface UseAuthReturn {
   authData: AuthResponse | null;
   isAuthLoading: boolean;
   authError: string | null;
+  isOutsideFarcaster: boolean;
   refetchAuth: () => Promise<void>;
 }
 
@@ -35,6 +36,7 @@ export function useAuth(): UseAuthReturn {
   const [authData, setAuthData] = useState<AuthResponse | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [isOutsideFarcaster, setIsOutsideFarcaster] = useState(false);
 
   const fetchAuthData = async () => {
     if (authData) return;
@@ -45,6 +47,13 @@ export function useAuth(): UseAuthReturn {
 
       // Get Farcaster context (includes user profile picture URL)
       const context = await sdk.context;
+
+      // Check if context exists and we're in a valid Farcaster/Base client
+      if (!context) {
+        setIsOutsideFarcaster(true);
+        setAuthError("App must be opened in Farcaster or Base app");
+        return;
+      }
 
       // Check if running in authorized Farcaster clients
       if (context.client.clientFid === 9152 || context.client.clientFid === 309857) {
@@ -82,12 +91,14 @@ export function useAuth(): UseAuthReturn {
 
   useEffect(() => {
     fetchAuthData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authData]);
 
   return {
     authData,
     isAuthLoading,
     authError,
+    isOutsideFarcaster,
     refetchAuth: fetchAuthData
   };
 }

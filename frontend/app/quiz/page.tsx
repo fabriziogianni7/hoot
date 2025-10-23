@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useAuth } from "@/lib/use-auth";
 import { FarcasterAuth } from "@/components/FarcasterAuth";
+import { OpenInFarcaster } from "@/components/OpenInFarcaster";
 import { sdk } from '@farcaster/miniapp-sdk';
 
 export default function Home() {
@@ -18,7 +19,7 @@ export default function Home() {
   const [isJoining, setIsJoining] = useState(false);
   
   // Initialize authentication (runs in background for Supabase session)
-  useAuth();
+  const { isOutsideFarcaster } = useAuth();
 
   // Initialize the miniapp
   useEffect(() => {
@@ -76,6 +77,11 @@ export default function Home() {
       }
     }
   };
+
+  // Show "Open in Farcaster" screen if accessed outside Farcaster/Base
+  if (isOutsideFarcaster) {
+    return <OpenInFarcaster />;
+  }
 
   return (
     <div style={{ 

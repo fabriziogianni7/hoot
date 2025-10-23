@@ -8,6 +8,7 @@ import { useQuiz } from "@/lib/quiz-context";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { useAccount } from "wagmi";
 import { useAuth } from "@/lib/use-auth";
+import { OpenInFarcaster } from "@/components/OpenInFarcaster";
 
 export default function Home() {
   const { isFrameReady, setFrameReady, context } = useMiniKit();
@@ -19,7 +20,7 @@ export default function Home() {
   const [isJoining, setIsJoining] = useState(false);
   
   // Use the shared authentication hook
-  const { authData, isAuthLoading, authError } = useAuth();
+  const { authData, isAuthLoading, authError, isOutsideFarcaster } = useAuth();
 
   
   
@@ -119,6 +120,11 @@ export default function Home() {
     
     return { primary, secondary, statusColor };
   };
+
+  // Show "Open in Farcaster" screen if accessed outside Farcaster/Base
+  if (isOutsideFarcaster) {
+    return <OpenInFarcaster />;
+  }
 
   return (
     <div style={{ 
