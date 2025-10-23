@@ -97,7 +97,6 @@ export default function Home() {
     
     // Farcaster auth
     if (authData?.success && context?.user?.displayName) {
-      console.log('🔐 Farcaster auth data:', authData);
       primary = context.user.displayName;
       secondary = "Farcaster";
     } else if (authData?.success && authData?.user?.fid) {

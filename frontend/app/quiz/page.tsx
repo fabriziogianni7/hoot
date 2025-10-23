@@ -9,7 +9,6 @@ import { useAuth } from "@/lib/use-auth";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { FarcasterAuth } from "@/components/FarcasterAuth";
 import { OpenInFarcaster } from "@/components/OpenInFarcaster";
-import { sdk } from '@farcaster/miniapp-sdk';
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
