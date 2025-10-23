@@ -85,7 +85,7 @@ export default function AdminPage() {
 
   // Create quiz on-chain using wagmi (Farcaster compatible)
   const createQuizWithWagmi = async (quizId: string, prizeAmount: string) => {
-    const contractAddress = getCurrentContractAddress('base');
+    const contractAddress = getCurrentContractAddress();
     const prizeAmountWei = parseEther(prizeAmount);
     
     console.log('Creating quiz with wagmi:', {
@@ -726,7 +726,7 @@ export default function AdminPage() {
               disabled={isCreating}
               className="px-8 py-4 rounded text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
-                backgroundColor: isCreating ? "#666" : "#8A63D2"
+                backgroundColor: isCreating ? "#666" : "#795AFF"
               }}
             >
               {isCreating ? 'Creating...' : 'Create Quiz'}
