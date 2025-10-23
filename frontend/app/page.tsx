@@ -2,13 +2,17 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useMiniKit, useQuickAuth } from "@coinbase/onchainkit/minikit";
+import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useAccount, useConnections } from "wagmi";
 import { useSIWE } from "@/lib/use-siwe";
 import { FarcasterAuth } from "@/components/FarcasterAuth";
 import { sdk } from '@farcaster/miniapp-sdk';
+import { useAccount } from "wagmi";
+import { sdk } from "@farcaster/miniapp-sdk";
+import { signInWithEthereumMiniApp, signInWithEthereumWeb } from "@/lib/siwe-auth";
+
 
 interface AuthResponse {
   success: boolean;
@@ -22,26 +26,89 @@ interface AuthResponse {
 
 export default function Home() {
   const { isFrameReady, setFrameReady, context } = useMiniKit();
-  const { address, isConnected, connector } = useAccount();
-  const connections = useConnections();
+  const { address } = useAccount();
   const [gamePin, setGamePin] = useState("");
   const router = useRouter();
   const [error, setError] = useState("");
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
   
-  // SIWE (Sign in with Ethereum) functionality
-  const { 
-    data: siweData, 
-    error: siweError, 
-    isLoading: siweLoading,
-    isAuthenticated: siweAuthenticated,
-    hasAttempted: siweAttempted,
-    signInWithEthereum,
-    getAccessToken,
-    getCurrentUser,
-    isSessionValid
-  } = useSIWE();
+  // Auth state
+  const [authData, setAuthData] = useState<AuthResponse | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  
+  useEffect(() => {
+    const fetchAuthData = async () => {
+      if (authData) return;
+
+      try {
+        setIsAuthLoading(true);
+        setAuthError(null);
+        
+        const isMiniApp = await sdk.isInMiniApp();
+
+        // Qui c'è anche l'url dell immagine profilo utente!
+        const context = await sdk.context;
+        console.log("😂 context", context);
+        
+
+
+        if (context.client.clientFid === 9152) {
+          const res = await sdk.quickAuth.fetch(`${window.location.origin}/api/auth`);
+          if (res.ok) {
+            const data = await res.json();
+            setAuthData(data);
+            
+            // Attempt Supabase authentication
+            const { error: supabaseError } = await signInWithEthereumMiniApp();
+            if (supabaseError) {
+              setAuthError(`Supabase authentication failed: ${supabaseError.message}`);
+            }
+          } else {
+            const errorData = await res.json();
+            setAuthError(errorData.message || 'Mini-app authentication failed');
+          }
+        } 
+
+        if(context.client.clientFid === 309857){
+          const res = await sdk.quickAuth.fetch(`${window.location.origin}/api/auth`);
+          if (res.ok) {
+            const data = await res.json();
+            setAuthData(data);
+            
+            // Attempt Supabase authentication
+            const { error: supabaseError } = await signInWithEthereumWeb();
+            if (supabaseError) {
+              setAuthError(`Supabase authentication failed: ${supabaseError.message}`);
+            }
+          } else {
+            const errorData = await res.json();
+            setAuthError(errorData.message || 'Mini-app authentication failed');
+          }
+        }
+
+        
+        
+        else {
+          // Web authentication
+          const { error: supabaseErrorWeb } = await signInWithEthereumWeb();
+          if (supabaseErrorWeb) {
+            setAuthError(`Web authentication failed: ${supabaseErrorWeb.message}`);
+          }
+        }
+      } catch (error) {
+        setAuthError(error instanceof Error ? error.message : 'Authentication failed');
+      } finally {
+        setIsAuthLoading(false);
+      }
+    };
+
+    fetchAuthData();
+  }, [authData]);
+
+  
+  
 
   // Initialize the miniapp
   useEffect(() => {
@@ -71,18 +138,6 @@ export default function Home() {
     };
   }, [setFrameReady, isFrameReady]);
 
-  const { data: authData, isLoading: isAuthLoading, error: authError } = useQuickAuth<AuthResponse>(
-    "/api/auth",
-    { method: "GET" }
-  );
-
-  // Trigger SIWE when wallet is connected and user hasn't attempted yet
-  useEffect(() => {
-    if (isConnected && address && !siweAttempted && !siweLoading && !siweAuthenticated) {
-      console.log("🔐 Triggering SIWE - wallet connected and no previous attempt");
-      signInWithEthereum();
-    }
-  }, [isConnected, address, siweAttempted, siweLoading, siweAuthenticated, signInWithEthereum]);
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,37 +170,40 @@ export default function Home() {
 
   // Determina il testo da mostrare nel badge dell'utente
   const getUserBadgeText = () => {
-    if (isAuthLoading || siweLoading) return { primary: "Connecting...", secondary: null };
-    if (authError || siweError) return { primary: "Not Connected", secondary: null };
+    // Check loading states
+    if (isAuthLoading) return { primary: "Connecting...", secondary: null };
+    
+    // Check for errors
+    if (authError) return { primary: "Not Connected", secondary: null };
     
     let primary = "Connected";
     let secondary = null;
+    let statusColor = "#4ade80"; // Green for connected
     
-    // Check SIWE authentication first
-    if (siweAuthenticated && siweData?.user) {
-      // Always use FID if available, fallback to email or user ID
-      if (siweData.user.user_metadata?.fid) {
-        primary = `FID: ${siweData.user.user_metadata.fid}`;
-      } else if (siweData.user.email) {
-        primary = siweData.user.email;
-      } else {
-        primary = `User: ${siweData.user.id?.slice(0, 8)}...`;
-      }
-      secondary = "SIWE Authenticated";
-    } else if (authData?.success && context?.user?.displayName) {
+    // Farcaster auth
+    if (authData?.success && context?.user?.displayName) {
+      console.log('🔐 Farcaster auth data:', authData);
       primary = context.user.displayName;
+      secondary = "Farcaster";
     } else if (authData?.success && authData?.user?.fid) {
       primary = `FID: ${authData.user.fid}`;
+      secondary = "Farcaster";
     }
     
-    // Add wallet address as secondary text if not SIWE authenticated
-    if (address && !siweAuthenticated) {
-      secondary = `${address.slice(0, 6)}...${address.slice(-4)}`;
-    } else if (!address) {
+    // Add wallet address as tertiary info
+    if (address) {
+      const walletInfo = `${address.slice(0, 6)}...${address.slice(-4)}`;
+      if (secondary) {
+        secondary = `${secondary} • ${walletInfo}`;
+      } else {
+        secondary = walletInfo;
+      }
+    } else if (!secondary) {
       secondary = "No wallet connected";
+      statusColor = "#ef4444"; // Red for not connected
     }
     
-    return { primary, secondary };
+    return { primary, secondary, statusColor };
   };
 
   return (
@@ -182,9 +240,32 @@ export default function Home() {
         right: "1rem",
         zIndex: 10
       }}>
-        <FarcasterAuth 
-          size={48}
-        />
+        <div style={{
+          backgroundColor: authData?.success ? "#1e40af" : "#222",
+          color: "white",
+          padding: "0.5rem 1rem",
+          borderRadius: "0.5rem",
+          fontSize: "0.875rem",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem"
+        }}>
+          {/* Status dot */}
+          <div style={{
+            width: "8px",
+            height: "8px",
+            borderRadius: "50%",
+            backgroundColor: getUserBadgeText().statusColor || (authData?.success ? "#4ade80" : "#ef4444")
+          }}></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.125rem" }}>
+            <div>{getUserBadgeText().primary}</div>
+            {getUserBadgeText().secondary && (
+              <div style={{ fontSize: "0.75rem", opacity: 0.8 }}>
+                {getUserBadgeText().secondary}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
       
       {/* Logo and description */}
