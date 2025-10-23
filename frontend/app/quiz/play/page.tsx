@@ -13,8 +13,8 @@ function PlayQuizContent() {
   const searchParams = useSearchParams();
   const { currentGame, getCurrentQuiz, submitAnswer, nextQuestion, setCurrentQuiz } = useQuiz();
   const { supabase } = useSupabase();
-  const [timeLeft, setTimeLeft] = useState<number>(15);
-  const [initialTime] = useState<number>(15); // Tempo iniziale fisso per calcolare la percentuale
+  const [timeLeft, setTimeLeft] = useState<number>(10);
+  const [initialTime] = useState<number>(10); // Tempo iniziale fisso per calcolare la percentuale
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
   const [startTime, setStartTime] = useState<number | null>(null);
@@ -131,7 +131,7 @@ function PlayQuizContent() {
     
     // Initialize timer
     setStartTime(Date.now());
-    setTimeLeft(15);
+    setTimeLeft(10);
     setSelectedAnswer(null);
     setIsAnswered(false);
     setShowingResults(false);
@@ -180,7 +180,7 @@ function PlayQuizContent() {
       if (playerId && quiz && currentGame) {
         const question = quiz.questions[currentQuestionIndex];
         if (question) {
-          submitAnswer(playerId, question.id, -1, 15000); // Max time
+          submitAnswer(playerId, question.id, -1, 10000); // Max time
         }
       }
       
@@ -204,7 +204,7 @@ function PlayQuizContent() {
     
     // Calculate time taken
     const endTime = Date.now();
-    const timeTaken = startTime ? endTime - startTime : 15000;
+    const timeTaken = startTime ? endTime - startTime : 10000;
     
     // Submit answer
     const playerId = localStorage.getItem("quizPlayerId");
@@ -312,31 +312,68 @@ function PlayQuizContent() {
           onClick={() => router.push('/')}
         />
       </div>
+
+              {/* Timer circle */}
+              <div className="mb-6 flex justify-center">
+          <div className="relative">
+            <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 36 36">
+              {/* Background circle */}
+              <path
+                d="M18 2.0845
+                  a 15.9155 15.9155 0 0 1 0 31.831
+                  a 15.9155 15.9155 0 0 1 0 -31.831"
+                fill="none"
+                stroke="#374151"
+                strokeWidth="3"
+              />
+              {/* Progress circle */}
+              <path
+                d="M18 2.0845
+                  a 15.9155 15.9155 0 0 1 0 31.831
+                  a 15.9155 15.9155 0 0 1 0 -31.831"
+                fill="none"
+                stroke="#8b5cf6"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeDasharray={`${(timeLeft / initialTime) * 100}, 100`}
+                style={{
+                  transition: 'stroke-dasharray 1s linear'
+                }}
+              />
+            </svg>
+            {/* Timer number in center */}
+            <div className="absolute inset-0 flex items-center justify-center mt-3">
+              <span className="text-xl font-bold text-white">{timeLeft}</span>
+            </div>
+          </div>
+        </div>
       
       <div className="relative z-10 container mx-auto py-8 px-4 pt-20 flex flex-col items-center">
-        {/* Timer display (static, without animation) */}
-        <div className="mb-4">
-          <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center text-2xl font-bold">
-            {timeLeft}
-          </div>
-        </div>
         
         {/* Question progress */}
-        <div className="w-full max-w-md mb-8">
+        <div className="w-full max-w-md mb-2">
           <div className="flex justify-between items-center mb-2">
-            <span>Question {currentQuestionIndex + 1}/{quiz.questions.length}</span>
-          </div>
-          <div className="w-full bg-gray-800 rounded-full h-2">
-            <div 
-              className="bg-purple-600 h-2 rounded-full" 
-              style={{ width: `${((currentQuestionIndex + 1) / quiz.questions.length) * 100}%` }}
-            ></div>
+            <span className="text-lg font-semibold">Question {currentQuestionIndex + 1}</span>
           </div>
         </div>
         
+        
         {/* Question */}
-        <div className="bg-gray-900/50 rounded-lg p-6 mb-8 w-full max-w-md">
-          <h2 className="text-xl font-bold mb-2 text-center">{currentQuestion.text}</h2>
+        <div className="bg-white rounded-xl p-8 mb-8 w-full max-w-2xl shadow-2xl border-2 border-gray-200" style={{ width: '600px', maxWidth: '90vw' }}>
+          <div 
+            className="text-2xl font-bold text-center text-gray-800 leading-relaxed"
+            style={{
+              maxHeight: '120px',
+              overflow: 'hidden',
+              wordWrap: 'break-word',
+              wordBreak: 'break-word'
+            }}
+          >
+            {currentQuestion.text.length > 150 ? 
+              `${currentQuestion.text.substring(0, 150)}...` : 
+              currentQuestion.text
+            }
+          </div>
         </div>
         
         {/* Answer options */}
@@ -387,9 +424,16 @@ function PlayQuizContent() {
                     fontSize: "1.25rem",
                     fontWeight: "500",
                     cursor: isAnswered || showingResults ? "default" : "pointer",
+                    maxHeight: '60px',
+                    overflow: 'hidden',
+                    wordWrap: 'break-word',
+                    wordBreak: 'break-word'
                   }}
                 >
-                  {option}
+                  {option.length > 50 ? 
+                    `${option.substring(0, 50)}...` : 
+                    option
+                  }
                 </div>
               </div>
             );
@@ -410,18 +454,6 @@ function PlayQuizContent() {
           </div>
         )}
         
-        {/* Time progress bar */}
-        <div className="w-full max-w-md mt-8">
-          <div className="w-full bg-gray-800 rounded-full h-2">
-            <div 
-              className="bg-purple-600 h-2 rounded-full" 
-              style={{ 
-                width: `${timePercentageRef.current}%`,
-                transition: "width 1s linear"
-              }}
-            ></div>
-          </div>
-        </div>
         
         {/* Debug info */}
         {process.env.NODE_ENV !== "production" && (

@@ -216,7 +216,7 @@ export default function Home() {
           marginTop: "0.05rem",
           width: "250px"
         }}>
-          You can use Hoot to join an existing quiz or to create a new ones
+          You can use Hoot to join an existing quiz or to create new ones
         </p>
       </div>
 

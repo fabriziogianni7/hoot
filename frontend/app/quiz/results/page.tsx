@@ -183,14 +183,44 @@ export default function ResultsPage() {
                 } ${index < 3 ? 'border-2 border-yellow-500/50' : ''}`}
               >
                 <div className="flex items-center">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center mr-3 ${
-                    index === 0 ? 'bg-yellow-500 text-black' :
-                    index === 1 ? 'bg-gray-400 text-black' :
-                    index === 2 ? 'bg-orange-600 text-white' :
-                    'bg-gray-700'
-                  }`}>
-                    {index + 1}
-                  </div>
+                  {index < 3 ? (
+                    <div className="w-10 h-10 mr-3 flex items-center justify-center">
+                      {index === 0 && (
+                        <div className="relative">
+                          {/* Gold Medal */}
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 shadow-lg border-2 border-yellow-300 flex items-center justify-center">
+                            <span className="text-yellow-900 font-bold text-lg">1</span>
+                          </div>
+                          {/* Ribbon */}
+                          <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-3 bg-gradient-to-r from-blue-600 via-white to-red-600 rounded-sm"></div>
+                        </div>
+                      )}
+                      {index === 1 && (
+                        <div className="relative">
+                          {/* Silver Medal */}
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-300 to-gray-500 shadow-lg border-2 border-gray-200 flex items-center justify-center">
+                            <span className="text-gray-800 font-bold text-lg">2</span>
+                          </div>
+                          {/* Ribbon */}
+                          <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-3 bg-gradient-to-r from-blue-600 via-white to-red-600 rounded-sm"></div>
+                        </div>
+                      )}
+                      {index === 2 && (
+                        <div className="relative">
+                          {/* Bronze Medal */}
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 shadow-lg border-2 border-orange-300 flex items-center justify-center">
+                            <span className="text-orange-900 font-bold text-lg">3</span>
+                          </div>
+                          {/* Ribbon */}
+                          <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-3 bg-gradient-to-r from-blue-600 via-white to-red-600 rounded-sm"></div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center mr-3">
+                      <span className="text-gray-300 font-bold">{index + 1}</span>
+                    </div>
+                  )}
                   <div>{player.name}</div>
                 </div>
                 <div className="font-bold">{player.score}</div>

@@ -387,7 +387,7 @@ function LobbyContent() {
                   href="/"
                   className="w-full py-2 bg-purple-800/50 border border-purple-600/50 hover:bg-purple-700/50 rounded text-purple-100 font-medium text-center transition-colors"
                 >
-                  Exit Quiz
+                  Leave Lobby
                 </Link>
               </div>
             )}
