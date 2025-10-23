@@ -6,19 +6,8 @@ import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { sdk } from "@farcaster/miniapp-sdk";
-import { signInWithEthereumMiniApp, signInWithEthereumWeb } from "@/lib/siwe-auth";
-import { useAccount, useConnections } from "wagmi";
-import { FarcasterAuth } from "@/components/FarcasterAuth";
-
-interface AuthResponse {
-  success: boolean;
-  user?: {
-    fid: number;
-    issuedAt?: number;
-    expiresAt?: number;
-  };
-  message?: string;
-}
+import { useAccount } from "wagmi";
+import { useAuth } from "@/lib/use-auth";
 
 export default function Home() {
   const { isFrameReady, setFrameReady, context } = useMiniKit();
@@ -29,79 +18,8 @@ export default function Home() {
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
   
-  // Auth state
-  const [authData, setAuthData] = useState<AuthResponse | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [authError, setAuthError] = useState<string | null>(null);
-  
-  useEffect(() => {
-    const fetchAuthData = async () => {
-      if (authData) return;
-
-      try {
-        setIsAuthLoading(true);
-        setAuthError(null);
-        
-        const isMiniApp = await sdk.isInMiniApp();
-
-        // Qui c'è anche l'url dell immagine profilo utente!
-        const context = await sdk.context;
-        console.log("😂 context", context);
-        
-
-
-        if (context.client.clientFid === 9152) {
-          const res = await sdk.quickAuth.fetch(`${window.location.origin}/api/auth`);
-          if (res.ok) {
-            const data = await res.json();
-            setAuthData(data);
-            
-            // Attempt Supabase authentication
-            const { error: supabaseError } = await signInWithEthereumMiniApp();
-            if (supabaseError) {
-              setAuthError(`Supabase authentication failed: ${supabaseError.message}`);
-            }
-          } else {
-            const errorData = await res.json();
-            setAuthError(errorData.message || 'Mini-app authentication failed');
-          }
-        } 
-
-        if(context.client.clientFid === 309857){
-          const res = await sdk.quickAuth.fetch(`${window.location.origin}/api/auth`);
-          if (res.ok) {
-            const data = await res.json();
-            setAuthData(data);
-            
-            // Attempt Supabase authentication
-            const { error: supabaseError } = await signInWithEthereumWeb();
-            if (supabaseError) {
-              setAuthError(`Supabase authentication failed: ${supabaseError.message}`);
-            }
-          } else {
-            const errorData = await res.json();
-            setAuthError(errorData.message || 'Mini-app authentication failed');
-          }
-        }
-
-        
-        
-        else {
-          // Web authentication
-          const { error: supabaseErrorWeb } = await signInWithEthereumWeb();
-          if (supabaseErrorWeb) {
-            setAuthError(`Web authentication failed: ${supabaseErrorWeb.message}`);
-          }
-        }
-      } catch (error) {
-        setAuthError(error instanceof Error ? error.message : 'Authentication failed');
-      } finally {
-        setIsAuthLoading(false);
-      }
-    };
-
-    fetchAuthData();
-  }, [authData]);
+  // Use the shared authentication hook
+  const { authData, isAuthLoading, authError } = useAuth();
 
   
   
