@@ -7,6 +7,7 @@ import type { GameState } from "@/lib/types";
 import { useSupabase } from "@/lib/supabase-context";
 import { useAccount } from "wagmi";
 import Link from "next/link";
+import { sdk } from "@farcaster/miniapp-sdk";
 
 export default function ResultsPage() {
   const router = useRouter();
@@ -45,9 +46,6 @@ export default function ResultsPage() {
       `Play Hoot Quiz and test your knowledge! 🦉`;
     
     try {
-      // Import Farcaster SDK
-      const { sdk } = await import('@farcaster/miniapp-sdk');
-      
       // Use the new composeCast function
       await sdk.actions.composeCast({ 
         text: castText,
