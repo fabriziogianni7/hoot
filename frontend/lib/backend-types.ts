@@ -9,6 +9,9 @@ export interface Quiz {
   creator_address: string
   contract_address: string | null
   contract_tx_hash: string | null
+  network_id: string | null
+  user_fid: string | null
+  user_id: string | null
   status: 'pending' | 'active' | 'completed' | 'cancelled'
   created_at?: string
   started_at?: string | null
@@ -70,9 +73,10 @@ export interface CreateQuizRequest {
   }>
   prize_amount: number
   prize_token?: string | null
-  creator_address: string
   contract_address?: string | null
-  contract_tx_hash?: string | null
+  creator_address: string
+  network_id: string
+  user_fid?: string | null
 }
 
 export interface CreateQuizResponse {

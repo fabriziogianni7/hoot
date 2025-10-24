@@ -20,6 +20,7 @@ export async function signInSupabase(): Promise<{
     console.log("🧨client",client)
 
     // Check if user with this fid already exists
+    debugger
     if (user.fid) {
       // First, check current session
       const { data: sessionData } = await supabase.auth.getSession();

@@ -14,6 +14,7 @@ import { HOOT_QUIZ_MANAGER_ABI, getCurrentContractAddress, ZERO_ADDRESS } from "
 import { parseEther } from "viem";
 import NetworkSwitcher from "@/components/NetworkSwitcher";
 import ShareBox from "@/components/ShareBox";
+import { sdk } from "@farcaster/miniapp-sdk";
 
 //custom erc20:0xfF5986B1AbeE9ae2AF04242D207d35BcB6d28b75
 
@@ -37,12 +38,37 @@ export default function AdminPage() {
   const { connect } = useConnect();
   const connectors = useConnectors();
   const { supabase } = useSupabase();
-  const { currentNetwork, setNetwork } = useNetwork();
-  const { context } = useMiniKit();
+  const { data: ethBalance } = useBalance({address});
+
+
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [quizTitle, setQuizTitle] = useState("Name your Quiz");
+  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState("");
+  const [creationStep, setCreationStep] = useState<string>("");
+  const [showShareBox, setShowShareBox] = useState(false);
+  const [createdRoomCode, setCreatedRoomCode] = useState<string>("");
+  const [addQuestionError, setAddQuestionError] = useState<string>("");
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [showQuizOptions, setShowQuizOptions] = useState(false);
+  const [bountyAmount, setBountyAmount] = useState("0.001");
+  const [selectedCurrency, setSelectedCurrency] = useState<'usdc' | 'eth' | 'custom'>('usdc');
+  const [customTokenAddress, _setCustomTokenAddress] = useState("");
+  const [quizTransaction, setQuizTransaction] = useState<string>("");
+  const [_approvalTransaction, setApprovalTransaction] = useState<string>("");
+  const [hootContractAddress, setHootContractAddress] = useState<string>("");
   
   // Wagmi hooks for transactions
   const { writeContract, isPending: isWritePending, error: writeError } = useWriteContract();
   const { sendTransaction, isPending: isSendPending, error: sendError } = useSendTransaction();
+
+
+  useEffect(() => {
+    const hootAddress = chain?.id === 8453 ? `0x013e9b64f97e6943dcd1e167ec5c96754a6e9636` as `0x${string}` : `0x573496a44ace1d713723f5d91fcde63bf3d82d3a` as `0x${string}`;
+    setHootContractAddress(hootAddress);
+  }, [chain]);
+
   const { data: balance } = useBalance({ address });
 
   // Debug wagmi state
