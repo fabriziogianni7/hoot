@@ -11,6 +11,9 @@ export interface CreateQuizRequest {
   prize_token?: string
   creator_address: string
   contract_address?: string
+  network_id?: string
+  user_fid?: string
+  user_id?: string // Auth user ID from Supabase auth.users
 }
 
 export interface JoinGameRequest {
@@ -53,7 +56,11 @@ export interface GameSession {
     prize_amount: number
     prize_token: string | null
     contract_address: string | null
+    contract_tx_hash: string | null
     creator_address: string
+    network_id: string | null
+    user_fid: string | null
+    user_id: string | null
     status: string
   }
 }
