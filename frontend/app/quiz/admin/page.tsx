@@ -4,11 +4,11 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
-import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import { useAccount, useSwitchChain, usePublicClient, useWriteContract, useSendTransaction, useBalance, useReadContract } from "wagmi";
-import { HOOT_QUIZ_MANAGER_ABI, getCurrentContractAddress, ZERO_ADDRESS, USDC_ADDRESSES, ERC20_ABI } from "@/lib/contracts";
+import { HOOT_QUIZ_MANAGER_ABI, ZERO_ADDRESS, USDC_ADDRESSES, ERC20_ABI } from "@/lib/contracts";
 import { parseEther, parseUnits } from "viem";
 import ShareBox from "@/components/ShareBox";
+import { sdk } from "@farcaster/miniapp-sdk";
 
 
 
@@ -48,13 +48,20 @@ export default function AdminPage() {
   const [selectedCurrency, setSelectedCurrency] = useState<'usdc' | 'eth' | 'custom'>('usdc');
   const [customTokenAddress, _setCustomTokenAddress] = useState("");
   const [quizTransaction, setQuizTransaction] = useState<string>("");
-  const [approvalTransaction, setApprovalTransaction] = useState<string>("");
-
+  const [_approvalTransaction, setApprovalTransaction] = useState<string>("");
+  const [hootContractAddress, setHootContractAddress] = useState<string>("");
   
   // Wagmi hooks for transactions
   const { writeContractAsync, isPending: _isWritePending, error: writeError } = useWriteContract();
 
   const { isPending: _isSendPending, error: sendError } = useSendTransaction();
+
+
+  useEffect(() => {
+    const hootAddress = chain?.id === 8453 ? `0x013e9b64f97e6943dcd1e167ec5c96754a6e9636` as `0x${string}` : `0x573496a44ace1d713723f5d91fcde63bf3d82d3a` as `0x${string}`;
+    setHootContractAddress(hootAddress);
+  }, [chain]);
+
 
   // Determine ERC20 token address based on selected currency
   const getTokenAddress = (): `0x${string}` | undefined => {
@@ -89,10 +96,6 @@ export default function AdminPage() {
     }
   });
 
-useEffect(() => {
-  console.log('chai', chain);
-}, [chain]);
-
 
 
   // Create quiz on-chain using wagmi
@@ -102,7 +105,7 @@ useEffect(() => {
     amount: string,
     decimals: number = 18
   ) => {
-    const contractAddress = chain?.id === 8453 ? `0x013e9b64f97e6943dcd1e167ec5c96754a6e9636` as `0x${string}` : `0x573496a44ace1d713723f5d91fcde63bf3d82d3a` as `0x${string}`;
+    
     const isETH = tokenAddress === ZERO_ADDRESS;
     
     // Parse amount based on token type
@@ -111,7 +114,7 @@ useEffect(() => {
       : parseUnits(amount, decimals);
     
     console.log('Creating quiz on-chain:', {
-      contractAddress,
+      hootContractAddress,
       quizId,
       tokenAddress,
       amount,
@@ -121,7 +124,7 @@ useEffect(() => {
     });
     
     const txHash = await  writeContractAsync({
-      address: contractAddress as `0x${string}`,
+      address: hootContractAddress as `0x${string}`,
       abi: HOOT_QUIZ_MANAGER_ABI,
       functionName: 'createQuiz',
       args: [quizId, tokenAddress as `0x${string}`, amountWei],
@@ -381,7 +384,8 @@ useEffect(() => {
 
       // For ERC20 tokens, approve the contract first
       if (tokenAddress !== ZERO_ADDRESS) {
-        const contractAddress = getCurrentContractAddress();
+        
+
         const amountWei = parseUnits(bountyAmount, decimals);
 
         setCreationStep("Checking token allowance...");
@@ -390,42 +394,50 @@ useEffect(() => {
           address: tokenAddress as `0x${string}`,
           abi: ERC20_ABI,
           functionName: 'allowance',
-          args: [address, contractAddress as `0x${string}`]
+          args: [address, hootContractAddress as `0x${string}`]
         }) as bigint | undefined;
 
         // If allowance is insufficient, request approval
-        // if (!currentAllowance || currentAllowance < amountWei) {
+        if (!currentAllowance || currentAllowance < amountWei) {
           setCreationStep("Requesting token approval...");
           const approvalHash = await writeContractAsync({
             address: tokenAddress as `0x${string}`,
             abi: ERC20_ABI,
             functionName: 'approve',
-            args: [contractAddress as `0x${string}`, BigInt(100000000)]
+            args: [hootContractAddress as `0x${string}`, BigInt(amountWei)]
           });
 
           setApprovalTransaction(approvalHash);
           
           setCreationStep("Waiting for approval confirmation...");
           
-        // }
+        }
       }
       
       // Create quiz on-chain with bounty
       setCreationStep("Creating quiz with bounty on-chain...");
       const txHash = await createQuizOnChain(quizId, tokenAddress, bountyAmount, decimals);
       
+      // Update backend with prize token, contract address, and transaction hash
+      await supabase
+        .from('quizzes')
+        .update({ 
+          prize_token: tokenAddress,
+          prize_amount: parseFloat(bountyAmount),
+          contract_address: hootContractAddress,
+          contract_tx_hash: txHash
+        })
+        .eq('id', quizId);
+      
       console.log("Quiz created on-chain with bounty:", {
         quizId,
         roomCode: createdRoomCode,
         txHash,
         amount: bountyAmount,
-        currency: selectedCurrency
+        currency: selectedCurrency,
+        tokenAddress
       });
-      
-      // Show share box
-      // setShowQuizOptions(false);
-      // setShowShareBox(true);
-      // setCreationStep("");
+    
       
     } catch (error) {
       console.error("Error adding bounty to quiz:", error);
@@ -441,6 +453,10 @@ useEffect(() => {
         setCreationStep("");
       }
   }, [quizTransaction]);
+
+
+ 
+
 
   // Step 1: Create quiz in backend and generate room
   const handleSaveQuiz = async (): Promise<{ quizId: string; roomCode: string } | null> => {
@@ -481,14 +497,17 @@ useEffect(() => {
         })),
         createdAt: new Date()
       };
-      
+      const userFid = (await (sdk.context)).user.fid;
+
       // Create quiz in backend (no contract info yet)
       const backendQuizId = await createQuizOnBackend(
         quiz,
-        undefined, // Contract address will be set later if bounty is added
-        undefined, // Tx hash will be set later if bounty is added
-        address,
-        0 // Default to 0, will be updated if bounty is added
+        undefined, // Contract address (will be set later if bounty is added)
+        chain?.id, // network id
+        userFid?.toString(), // user fid (not available in this context)
+        address, // user address (creator address)
+        0, // prize amount (will be updated later for bounty quizzes)
+        undefined // prize token (will be updated later for bounty quizzes)
       );
       
       console.log("Quiz saved to backend with ID:", backendQuizId);

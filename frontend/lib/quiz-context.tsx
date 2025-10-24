@@ -22,11 +22,11 @@ interface QuizContextType {
   currentQuiz: Quiz | null
   currentGame: GameState | null
   setCurrentQuiz: (quiz: Quiz) => void
-  createQuizOnBackend: (quiz: Quiz, contractAddress?: string, contractTxHash?: string, creatorAddress?: string, prizeAmount?: number) => Promise<string>
-  startGame: (quizId: string, roomCode?: string) => Promise<string>
+  createQuizOnBackend: (quiz: Quiz, contractAddress?: string | undefined , networkId?: number | undefined, userFid?: string | undefined, userAddress?: string | undefined, prizeAmount?: number, prizeToken?: string | undefined ) => Promise<string>
+  startGame: (quizId: string, customRoomCode?: string) => Promise<string>
   joinGame: (playerName: string, walletAddress?: string, providedRoomCode?: string) => Promise<string>
   submitAnswer: (playerId: string, questionId: string, answer: number, timeToAnswer: number) => Promise<void>
-  nextQuestion: () => void
+  nextQuestion: () => Promise<void>
   endGame: () => void
   getCurrentQuiz: () => Quiz | null
   findGameByRoomCode: (roomCode: string) => Promise<GameSession | null>
@@ -90,12 +90,22 @@ export function QuizProvider({ children }: { children: ReactNode }) {
 
   const createQuizOnBackend = useCallback(async (
     quiz: Quiz, 
-    contractAddress?: string, 
-    contractTxHash?: string,
-    creatorAddress?: string,
-    prizeAmount?: number
+    contractAddress?: string | undefined, 
+    networkId?: number | undefined,
+    userFid?: string | undefined,
+    userAddress?: string | undefined,
+    prizeAmount?: number,
+    prizeToken?: string | undefined
   ): Promise<string> => {
     try {
+      // Validate required fields
+      if (!userAddress) {
+        throw new Error('User address is required to create a quiz')
+      }
+      if (!networkId) {
+        throw new Error('Network ID is required to create a quiz')
+      }
+
       const request: CreateQuizRequest = {
         title: quiz.title,
         description: quiz.description,
@@ -106,9 +116,11 @@ export function QuizProvider({ children }: { children: ReactNode }) {
           time_limit: q.timeLimit
         })),
         prize_amount: prizeAmount || 0,
-        creator_address: creatorAddress || '0x0000000000000000000000000000000000000000',
+        prize_token: prizeToken,
         contract_address: contractAddress,
-        contract_tx_hash: contractTxHash
+        creator_address: userAddress,
+        network_id: networkId.toString(),
+        user_fid: userFid
       }
 
       const response = await callEdgeFunction<CreateQuizRequest, CreateQuizResponse>(
