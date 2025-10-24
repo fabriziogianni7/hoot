@@ -22,6 +22,7 @@ interface QuizContextType {
   currentQuiz: Quiz | null
   currentGame: GameState | null
   setCurrentQuiz: (quiz: Quiz) => void
+  setCurrentGame: (game: GameState | null) => void
   createQuizOnBackend: (quiz: Quiz, contractAddress?: string | undefined , networkId?: number | undefined, userFid?: string | undefined, userAddress?: string | undefined, prizeAmount?: number, prizeToken?: string | undefined ) => Promise<string>
   startGame: (quizId: string, customRoomCode?: string) => Promise<string>
   joinGame: (playerName: string, walletAddress?: string, providedRoomCode?: string) => Promise<string>
@@ -468,6 +469,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
         currentQuiz,
         currentGame,
         setCurrentQuiz,
+        setCurrentGame,
         createQuizOnBackend,
         startGame,
         joinGame,

@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
+import type { GameState } from "@/lib/types";
 import { useSupabase } from "@/lib/supabase-context";
 import { useAccount } from "wagmi";
 import Link from "next/link";
 
 export default function ResultsPage() {
   const router = useRouter();
-  const { currentGame, getCurrentQuiz, endGame, gameSessionId } = useQuiz();
+  const { currentGame, getCurrentQuiz, endGame, gameSessionId, setCurrentGame } = useQuiz();
   const { address } = useAccount();
   const { supabase } = useSupabase();
   
@@ -28,7 +29,41 @@ export default function ResultsPage() {
   
   const quiz = getCurrentQuiz();
   
-  // Load quiz data from backend
+  // Handle casting result
+  const handleCastResult = async () => {
+    if (!currentPlayer || !quiz) return;
+    
+    const correctAnswers = currentPlayer.answers.filter(a => a.isCorrect).length;
+    const totalQuestions = quiz.questions.length;
+    const playerRank = sortedPlayers.findIndex(p => p.id === currentPlayerId) + 1;
+    
+    // Create the cast text
+    const castText = `🎯 Just completed "${quiz.title}" quiz!\n\n` +
+      `📊 My Score: ${currentPlayer.score} points\n` +
+      `✅ Got ${correctAnswers}/${totalQuestions} questions right\n` +
+      `🏆 Ranked #${playerRank} out of ${sortedPlayers.length} players\n\n` +
+      `Play Hoot Quiz and test your knowledge! 🦉`;
+    
+    try {
+      // Import Farcaster SDK
+      const { sdk } = await import('@farcaster/miniapp-sdk');
+      
+      // Use the new composeCast function
+      await sdk.actions.composeCast({ 
+        text: castText,
+        close: false,
+        channelKey: 'hoot',
+        embeds: []
+      });
+    } catch (error) {
+      console.error('Error casting:', error);
+      // Fallback to copy to clipboard
+      navigator.clipboard.writeText(castText);
+      alert('Cast text copied to clipboard!');
+    }
+  };
+  
+  // Load quiz data and player answers from backend
   useEffect(() => {
     const loadQuizData = async () => {
       if (!currentGame || !quiz) return;
@@ -46,6 +81,64 @@ export default function ResultsPage() {
           // Check if current user is creator
           if (address && data.creator_address) {
             setIsCreator(address.toLowerCase() === data.creator_address.toLowerCase());
+          }
+        }
+
+        // Load player answers from backend
+        const playerId = localStorage.getItem("quizPlayerId");
+        console.log('Player ID:', playerId);
+        if (playerId) {
+          const { data: answersData, error: answersError } = await supabase
+            .from('answers')
+            .select(`
+              *,
+              questions (
+                correct_answer_index
+              )
+            `)
+            .eq('player_session_id', playerId);
+
+          if (!answersError && answersData) {
+            
+            // Update current player with correct answers
+            if (currentGame) {
+              const updatedPlayers = currentGame.players.map((player) => {
+                if (player.id !== playerId) return player;
+                
+                const backendAnswers = answersData.map(answer => {
+                  // Calculate isCorrect by comparing selected answer with correct answer
+                  const isCorrect = answer.questions?.correct_answer_index !== null && 
+                    answer.selected_answer_index === answer.questions.correct_answer_index;
+                  
+                  console.log('Answer calculation:', {
+                    questionId: answer.question_id,
+                    selected: answer.selected_answer_index,
+                    correct: answer.questions?.correct_answer_index,
+                    backendIsCorrect: answer.is_correct,
+                    calculatedIsCorrect: isCorrect
+                  });
+                  
+                  return {
+                    questionId: answer.question_id,
+                    selectedAnswer: answer.selected_answer_index,
+                    timeToAnswer: answer.time_taken,
+                    isCorrect: isCorrect // Use calculated value instead of backend
+                  };
+                });
+                
+                return {
+                  ...player,
+                  answers: backendAnswers
+                };
+              });
+              
+              const updatedGame = {
+                ...currentGame,
+                players: updatedPlayers
+              };
+              
+              setCurrentGame(updatedGame);
+            }
           }
         }
       } catch (err) {
@@ -79,10 +172,9 @@ export default function ResultsPage() {
   const currentPlayer = currentGame.players.find(p => p.id === currentPlayerId);
   
   const handleDistributePrizes = async () => {
-    if (!address || !quizData || !gameSessionId) {
-      console.error('❌ Missing required data:', { address, quizDataId: quizData?.id, gameSessionId });
-      return;
-    }
+      if (!address || !quizData || !gameSessionId) {
+        return;
+      }
     
     setIsDistributing(true);
     setDistributionError("");
@@ -94,15 +186,12 @@ export default function ResultsPage() {
         creator_wallet_address: address
       };
       
-      console.log('📤 Sending complete-game request:', requestBody);
       setDistributionStatus("Completing game and distributing prizes...");
       
       // Call the complete-game edge function using Supabase client
       const { data: result, error: invokeError } = await supabase.functions.invoke('complete-game', {
         body: requestBody
       });
-      
-      console.log('📥 Complete-game response:', result);
       
       if (invokeError) {
         console.error('❌ Edge function error:', invokeError);
@@ -168,19 +257,6 @@ export default function ResultsPage() {
             <div className="text-center mt-2 text-purple-300">
               {currentPlayer.answers.filter(a => a.isCorrect).length} correct answers out of {quiz.questions.length}
             </div>
-            {/* Debug info */}
-            <div className="text-xs text-purple-400 mt-2 text-center">
-              Debug: Total answers: {currentPlayer.answers.length}, 
-              Correct: {currentPlayer.answers.filter(a => a.isCorrect).length},
-              Score from backend: {currentPlayer.score}
-            </div>
-            <div className="text-xs text-purple-400 mt-1 text-center">
-              Answers: {JSON.stringify(currentPlayer.answers.map(a => ({ 
-                questionId: a.questionId, 
-                selected: a.selectedAnswer, 
-                correct: a.isCorrect 
-              })))}
-            </div>
           </div>
         )}
         
@@ -197,37 +273,10 @@ export default function ResultsPage() {
               >
                 <div className="flex items-center">
                   {index < 3 ? (
-                    <div className="w-10 h-10 mr-3 flex items-center justify-center">
-                      {index === 0 && (
-                        <div className="relative">
-                          {/* Gold Medal */}
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 shadow-lg border-2 border-yellow-300 flex items-center justify-center">
-                            <span className="text-yellow-900 font-bold text-lg">1</span>
-                          </div>
-                          {/* Ribbon */}
-                          <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-3 bg-gradient-to-r from-blue-600 via-white to-red-600 rounded-sm"></div>
-                        </div>
-                      )}
-                      {index === 1 && (
-                        <div className="relative">
-                          {/* Silver Medal */}
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-300 to-gray-500 shadow-lg border-2 border-gray-200 flex items-center justify-center">
-                            <span className="text-gray-800 font-bold text-lg">2</span>
-                          </div>
-                          {/* Ribbon */}
-                          <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-3 bg-gradient-to-r from-blue-600 via-white to-red-600 rounded-sm"></div>
-                        </div>
-                      )}
-                      {index === 2 && (
-                        <div className="relative">
-                          {/* Bronze Medal */}
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-orange-600 shadow-lg border-2 border-orange-300 flex items-center justify-center">
-                            <span className="text-orange-900 font-bold text-lg">3</span>
-                          </div>
-                          {/* Ribbon */}
-                          <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-3 bg-gradient-to-r from-blue-600 via-white to-red-600 rounded-sm"></div>
-                        </div>
-                      )}
+                    <div className="w-10 h-10 mr-3 flex items-center justify-center text-2xl">
+                      {index === 0 && <span>👑</span>}
+                      {index === 1 && <span>🥈</span>}
+                      {index === 2 && <span>🥉</span>}
                     </div>
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center mr-3">
@@ -242,8 +291,8 @@ export default function ResultsPage() {
           </div>
         </div>
         
-        {/* Prize Distribution Section - Visible to all, but only creator can distribute */}
-        {quizData && quizData.prize_amount > 0 && quizData.status !== 'completed' && (
+        {/* Prize Distribution Section - Only show for paid quizzes (>= 0.01 ETH) */}
+        {quizData && quizData.prize_amount >= 0.01 && quizData.status !== 'completed' && (
           <div className="bg-purple-600/20 border border-purple-500 rounded-lg p-6 mb-8 w-full max-w-md">
             <h3 className="text-xl font-semibold mb-4 text-center text-purple-200">Prize Distribution</h3>
             
@@ -331,23 +380,40 @@ export default function ResultsPage() {
           </div>
         )}
         
-        <div className="flex flex-col sm:flex-row gap-4 w-full max-w-md">
-          <button
-            onClick={() => {
-              endGame();
-              router.push("/");
-            }}
-            className="py-2 px-4 bg-gray-700 hover:bg-gray-600 rounded text-white font-medium flex-1 text-center"
-          >
-            Exit
-          </button>
+        <div className="flex flex-col gap-4 w-full max-w-md">
+          {/* Cast Result Button */}
+          {currentPlayer && (
+            <button
+              onClick={handleCastResult}
+              className="py-4 px-8 bg-purple-600 hover:bg-purple-700 rounded text-white font-medium text-center transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+              </svg>
+              Cast Your Result
+            </button>
+          )}
           
-          <Link 
-            href="/quiz/admin"
-            className="py-2 px-4 bg-purple-600 hover:bg-purple-700 rounded text-white font-medium flex-1 text-center transition-colors"
-          >
-            Create New Quiz
-          </Link>
+          <div className="bg-purple-900/30 border border-purple-500 rounded-lg p-4">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <button
+                onClick={() => {
+                  endGame();
+                  router.push("/");
+                }}
+                className="py-2 px-4 bg-gray-700 hover:bg-gray-600 rounded text-white font-medium flex-1 text-center"
+              >
+                Exit
+              </button>
+              
+              <Link 
+                href="/quiz/admin"
+                className="py-2 px-4 bg-transparent border-2 border-purple-600 hover:bg-purple-600/10 rounded text-purple-200 font-medium flex-1 text-center transition-colors"
+              >
+                Create New Quiz
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     </div>

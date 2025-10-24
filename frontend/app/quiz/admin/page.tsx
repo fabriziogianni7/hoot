@@ -125,14 +125,14 @@ export default function AdminPage() {
     
     const txHash = await  writeContractAsync({
       address: hootContractAddress as `0x${string}`,
-      abi: HOOT_QUIZ_MANAGER_ABI,
-      functionName: 'createQuiz',
+        abi: HOOT_QUIZ_MANAGER_ABI,
+        functionName: 'createQuiz',
       args: [quizId, tokenAddress as `0x${string}`, amountWei],
       value: isETH ? amountWei : BigInt(0),
-    });
+      });
     setQuizTransaction(txHash);
     console.log('Quiz created on-chain, tx hash:', txHash);
-    return txHash;
+      return txHash;
   };
 
   // CSS per forzare i colori degli input
@@ -224,7 +224,7 @@ export default function AdminPage() {
     // Non nascondere il tooltip qui, solo quando la domanda è completa
   };
 
-  
+
   const handleQuestionClick = (index: number) => {
     // Salva la domanda corrente prima di cambiare
     if (currentQuestion.text.trim() !== "") {
@@ -312,8 +312,8 @@ export default function AdminPage() {
     
     if (result) {
       // After quiz is created, show share box
-      setShowQuizOptions(false);
-      setShowShareBox(true);
+    setShowQuizOptions(false);
+    setShowShareBox(true);
     }
   };
 
@@ -344,7 +344,7 @@ export default function AdminPage() {
         setError("Invalid bounty amount");
         return;
       }
-
+      
       // Determine token address and decimals
       let tokenAddress: string;
       let decimals: number;
@@ -498,14 +498,14 @@ export default function AdminPage() {
         createdAt: new Date()
       };
       const userFid = (await (sdk.context)).user.fid;
-
+      
       // Create quiz in backend (no contract info yet)
       const backendQuizId = await createQuizOnBackend(
         quiz,
         undefined, // Contract address (will be set later if bounty is added)
-        chain?.id, // network id
+        chain?.id , // network id (use Base Sepolia as default)
         userFid?.toString(), // user fid (not available in this context)
-        address, // user address (creator address)
+        address , // user address (use dummy if not connected)
         0, // prize amount (will be updated later for bounty quizzes)
         undefined // prize token (will be updated later for bounty quizzes)
       );
@@ -520,9 +520,9 @@ export default function AdminPage() {
       const creatorPlayerId = await joinGameContext("Creator", address, generatedRoomCode);
       
       // Update game session with creator in one call
-      await supabase
-        .from('game_sessions')
-        .update({ creator_session_id: creatorPlayerId })
+        await supabase
+          .from('game_sessions')
+          .update({ creator_session_id: creatorPlayerId })
         .eq('room_code', generatedRoomCode);
       
       // Store creator ID in localStorage
@@ -568,8 +568,8 @@ export default function AdminPage() {
         }}
       />
       
-      {/* Logo in top left */}
-      <div className="absolute top-4 left-4 z-20">
+      {/* Logo centered */}
+      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20">
         <img 
           src="/Logo.png" 
           alt="Hoot Logo" 
@@ -681,39 +681,47 @@ export default function AdminPage() {
         <div className="w-full max-w-md flex flex-col gap-4 mb-8">
           {currentQuestion.options.map((option, index) => {
             const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
+            const isCorrect = currentQuestion.correctAnswer === index;
             return (
-            <div 
-              key={index}
-              className={`${option.color} rounded p-4 text-white relative border-2`}
-              style={{ 
-                backgroundColor: `${colors[index]}40`, // Aggiunge opacità al colore di sfondo
-                borderColor: colors[index],
-                borderWidth: '2px'
-              }}
-              onClick={() => handleCorrectAnswerChange(index)}
-            >
-              {/* Indicatore di risposta corretta */}
-              <div className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center"
-                   style={{ 
-                     backgroundColor: currentQuestion.correctAnswer === index ? 'white' : 'rgba(255, 255, 255, 0.3)'
-                   }}>
-                {currentQuestion.correctAnswer === index ? (
-                  <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  <div className="w-2 h-2 rounded-full bg-white"></div>
-                )}
+              <div 
+                key={index}
+                className={`${option.color} rounded p-4 text-white relative border-2 transition-all duration-200 cursor-pointer select-none`}
+                style={{ 
+                  backgroundColor: `${colors[index]}40`,
+                  borderColor: colors[index],
+                  borderWidth: isCorrect ? '3px' : '2px',
+                  boxShadow: isCorrect ? `0 0 0 3px ${colors[index]}30` : 'none',
+                  transform: isCorrect ? 'scale(1.02)' : 'scale(1)'
+                }}
+                onClick={() => handleCorrectAnswerChange(index)}
+              >
+                {/* Indicatore di risposta corretta - molto più grande e visibile */}
+                <div 
+                  className="absolute -top-2 -right-2 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 z-10 shadow-lg"
+                  style={{ 
+                    backgroundColor: isCorrect ? '#10B981' : 'rgba(255, 255, 255, 0.2)',
+                    border: '3px solid white'
+                  }}
+                >
+                  {isCorrect ? (
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <div className="w-4 h-4 rounded-full bg-white opacity-50"></div>
+                  )}
+                </div>
+                
+                
+                <input
+                  type="text"
+                  value={option.text}
+                  onChange={(e) => handleOptionChange(index, e.target.value)}
+                  placeholder={`add reply ${index + 1}`}
+                  className="quiz-input w-full bg-transparent focus:outline-none pr-12"
+                  onClick={(e) => e.stopPropagation()}
+                />
               </div>
-              <input
-                type="text"
-                value={option.text}
-                onChange={(e) => handleOptionChange(index, e.target.value)}
-                placeholder={`add reply ${index + 1}`}
-                className="quiz-input w-full bg-transparent focus:outline-none"
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
             );
           })}
         </div>
@@ -793,7 +801,7 @@ export default function AdminPage() {
           
         </div>
       </div>
-   
+      
       {/* Quiz Options Modal */}
       {showQuizOptions && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50">
@@ -850,7 +858,7 @@ export default function AdminPage() {
                     }}
                     className="w-full flex items-center justify-between p-2 bg-gray-600 hover:bg-gray-500 rounded text-white transition-colors"
                   >
-                     <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2">
                       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                       <span className="text-sm font-medium">
                         {chain?.id === 84532 ? 'Base Sepolia' : 
@@ -861,7 +869,7 @@ export default function AdminPage() {
                     <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                     </svg>
-                  </button> 
+                  </button>
                 </div>
                 
                 {/* Currency Selector - temp commented*/}
