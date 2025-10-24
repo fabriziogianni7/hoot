@@ -32,19 +32,62 @@ export const HOOT_QUIZ_MANAGER_ABI = [
         "type": "string"
       },
       {
-        "internalType": "address[4]",
+        "internalType": "address[]",
         "name": "winners",
-        "type": "address[4]"
+        "type": "address[]"
       },
       {
-        "internalType": "uint256[4]",
+        "internalType": "uint256[]",
         "name": "amounts",
-        "type": "uint256[4]"
+        "type": "uint256[]"
       }
     ],
     "name": "distributePrize",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getTreasuryFeePercent",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getFeePrecision",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
+
+// ERC20 ABI for checking token decimals
+export const ERC20_ABI = [
+  {
+    "inputs": [],
+    "name": "decimals",
+    "outputs": [
+      {
+        "internalType": "uint8",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   }
 ]
