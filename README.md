@@ -7,8 +7,6 @@ An onchain version of Kahoot with web3 dynamics, featuring smart contracts for p
 
 - [🚀 Features](#-features)
 - [🏗️ Architecture](#️-architecture)
-- [🏆 Sponsor: Enclave](#-sponsor-enclave)
-- [🎮 Calimero Integration](#-calimero-integration)
 - [📋 Prerequisites](#-prerequisites)
 - [🛠️ Setup Instructions](#️-setup-instructions)
 - [🎮 How to Use](#-how-to-use)
@@ -52,34 +50,6 @@ An onchain version of Kahoot with web3 dynamics, featuring smart contracts for p
 - **Real-time UI**: Live game state updates
 - **Mobile First**: Responsive design
 - **Game Flow**: Create → Join → Play → Results
-
-## 🏆 Sponsor: Enclave
-
-This project is proudly integrating [Enclave](https://enclave.gg), a cutting-edge protocol that enables E3 encryption on Ethereum. Enclave provides the infrastructure and tools needed to build privacy-preserving smart contracts that can perform computations on encrypted data without revealing sensitive information.
-
-### 🤝 Enclave Integration
-
-The `hoot-enclave/` directory contains a specialized FHE implementation that demonstrates advanced privacy-preserving capabilities:
-
-- **FHE Program**: Computes the difference between two encrypted numbers
-- **Risc0 ZKVM Integration**: Provides zero-knowledge proofs for FHE computations
-- **Privacy-Preserving Logic**: Players can submit encrypted inputs for secure computation
-
-The FHE component allows for secure, private computations where sensitive game data (like scores or strategic inputs) can be processed without exposing the underlying values to the network or other players.
-
-here a small video demo: https://youtu.be/4yskVfkffic
-
-### 🎮 Calimero Integration
-
-The `hoot-calimero/` directory contains a peer-to-peer implementation using [Calimero](https://calimero.network), a self-sovereign blockchain network that enables private, secure computations:
-
-- **Self-Sovereign Tic Tac Toe**: Players can engage in private tic-tac-toe games without revealing their moves to external parties
-- **Peer-to-Peer Architecture**: Direct player-to-player communication without centralized intermediaries
-- **Privacy-Preserving Gameplay**: Game state and moves are kept private between participants
-- **Decentralized Gaming**: Leverages Calimero's infrastructure for secure, private blockchain interactions
-
-The Calimero integration demonstrates how traditional games can be enhanced with blockchain privacy features, allowing players to maintain control over their game data while still benefiting from decentralized infrastructure.
-
 
 ## 📋 Prerequisites
 
