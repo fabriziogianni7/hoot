@@ -245,7 +245,8 @@ function LobbyContent() {
         .from('game_sessions')
         .update({ 
           status: 'in_progress',
-          started_at: new Date().toISOString()
+          started_at: new Date().toISOString(),
+          question_started_at: new Date().toISOString()
         })
         .eq('id', gameSessionId);
         
