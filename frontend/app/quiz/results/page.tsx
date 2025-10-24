@@ -30,7 +30,7 @@ export default function ResultsPage() {
   const quiz = getCurrentQuiz();
   
   // Handle casting result
-  const handleCastResult = () => {
+  const handleCastResult = async () => {
     if (!currentPlayer || !quiz) return;
     
     const correctAnswers = currentPlayer.answers.filter(a => a.isCorrect).length;
@@ -44,24 +44,22 @@ export default function ResultsPage() {
       `🏆 Ranked #${playerRank} out of ${sortedPlayers.length} players\n\n` +
       `Play Hoot Quiz and test your knowledge! 🦉`;
     
-    // Try to use Farcaster SDK if available
-    if (typeof window !== 'undefined' && (window as any).farcaster) {
-      try {
-        (window as any).farcaster.cast(castText);
-      } catch (error) {
-        console.error('Error casting:', error);
-        // Fallback to copy to clipboard
-        navigator.clipboard.writeText(castText);
-        alert('Cast text copied to clipboard!');
-      }
-    } else {
-      // Fallback: copy to clipboard
-      navigator.clipboard.writeText(castText).then(() => {
-        alert('Cast text copied to clipboard! You can paste it in Farcaster.');
-      }).catch(() => {
-        // If clipboard fails, show the text in a prompt
-        prompt('Copy this text to share your result:', castText);
+    try {
+      // Import Farcaster SDK
+      const { sdk } = await import('@farcaster/miniapp-sdk');
+      
+      // Use the new composeCast function
+      await sdk.actions.composeCast({ 
+        text: castText,
+        close: false,
+        channelKey: 'hoot',
+        embeds: []
       });
+    } catch (error) {
+      console.error('Error casting:', error);
+      // Fallback to copy to clipboard
+      navigator.clipboard.writeText(castText);
+      alert('Cast text copied to clipboard!');
     }
   };
   
@@ -90,7 +88,7 @@ export default function ResultsPage() {
         const playerId = localStorage.getItem("quizPlayerId");
         if (playerId) {
           const { data: answersData, error: answersError } = await supabase
-            .from('player_answers')
+            .from('answers')
             .select(`
               *,
               questions (
@@ -100,31 +98,32 @@ export default function ResultsPage() {
             .eq('player_session_id', playerId);
 
           if (!answersError && answersData) {
-            console.log('Loaded answers from backend:', answersData);
             
             // Update current player with correct answers
-            setCurrentGame((prev: GameState | null) => {
-              if (!prev) return prev;
+            if (currentGame) {
+              const updatedPlayers = currentGame.players.map((player) => {
+                if (player.id !== playerId) return player;
+                
+                const backendAnswers = answersData.map(answer => ({
+                  questionId: answer.question_id,
+                  selectedAnswer: answer.selected_answer_index,
+                  timeToAnswer: answer.time_taken,
+                  isCorrect: answer.is_correct // Use backend's is_correct instead of recalculating
+                }));
+                
+                return {
+                  ...player,
+                  answers: backendAnswers
+                };
+              });
               
-              return {
-                ...prev,
-                players: prev.players.map((player) => {
-                  if (player.id !== playerId) return player;
-                  
-                  const backendAnswers = answersData.map(answer => ({
-                    questionId: answer.question_id,
-                    selectedAnswer: answer.answer_index,
-                    timeToAnswer: answer.time_taken,
-                    isCorrect: answer.answer_index === answer.questions.correct_answer_index
-                  }));
-                  
-                  return {
-                    ...player,
-                    answers: backendAnswers
-                  };
-                })
+              const updatedGame = {
+                ...currentGame,
+                players: updatedPlayers
               };
-            });
+              
+              setCurrentGame(updatedGame);
+            }
           }
         }
       } catch (err) {
@@ -158,10 +157,9 @@ export default function ResultsPage() {
   const currentPlayer = currentGame.players.find(p => p.id === currentPlayerId);
   
   const handleDistributePrizes = async () => {
-    if (!address || !quizData || !gameSessionId) {
-      console.error('❌ Missing required data:', { address, quizDataId: quizData?.id, gameSessionId });
-      return;
-    }
+      if (!address || !quizData || !gameSessionId) {
+        return;
+      }
     
     setIsDistributing(true);
     setDistributionError("");
@@ -173,15 +171,12 @@ export default function ResultsPage() {
         creator_wallet_address: address
       };
       
-      console.log('📤 Sending complete-game request:', requestBody);
       setDistributionStatus("Completing game and distributing prizes...");
       
       // Call the complete-game edge function using Supabase client
       const { data: result, error: invokeError } = await supabase.functions.invoke('complete-game', {
         body: requestBody
       });
-      
-      console.log('📥 Complete-game response:', result);
       
       if (invokeError) {
         console.error('❌ Edge function error:', invokeError);
@@ -246,25 +241,6 @@ export default function ResultsPage() {
             <div className="text-4xl font-bold text-center text-purple-100">{currentPlayer.score}</div>
             <div className="text-center mt-2 text-purple-300">
               {currentPlayer.answers.filter(a => a.isCorrect).length} correct answers out of {quiz.questions.length}
-            </div>
-            {/* Debug info */}
-            <div className="text-xs text-purple-400 mt-2 text-center">
-              Debug: Total answers: {currentPlayer.answers.length}, 
-              Correct: {currentPlayer.answers.filter(a => a.isCorrect).length},
-              Score from backend: {currentPlayer.score}
-            </div>
-            <div className="text-xs text-purple-400 mt-1 text-center">
-              Player ID: {currentPlayerId}
-            </div>
-            <div className="text-xs text-purple-400 mt-1 text-center">
-              All players: {currentGame.players.length}
-            </div>
-            <div className="text-xs text-purple-400 mt-1 text-center">
-              Answers: {JSON.stringify(currentPlayer.answers.map(a => ({ 
-                questionId: a.questionId, 
-                selected: a.selectedAnswer, 
-                correct: a.isCorrect 
-              })))}
             </div>
           </div>
         )}

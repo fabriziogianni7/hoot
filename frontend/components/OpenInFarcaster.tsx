@@ -64,7 +64,7 @@ export function OpenInFarcaster() {
           fontSize: "1.75rem",
           fontWeight: "bold",
           marginBottom: "1rem",
-          color: "#8A63D2"
+          color: "#795AFF"
         }}>
           Open in Farcaster or Base App
         </h1>
@@ -91,7 +91,7 @@ export function OpenInFarcaster() {
             fontSize: "1.125rem",
             fontWeight: "600",
             marginBottom: "1rem",
-            color: "#8A63D2"
+            color: "#795AFF"
           }}>
             How to access Hoot:
           </h2>

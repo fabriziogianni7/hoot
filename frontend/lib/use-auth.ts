@@ -39,7 +39,7 @@ export function useAuth(): UseAuthReturn {
   
   // TEMPORARY: Disable Farcaster check for mobile testing
   // TODO: Set to false before production deployment
-  const DISABLE_FARCASTER_CHECK = true;
+  const DISABLE_FARCASTER_CHECK = false;
   const [isOutsideFarcaster, setIsOutsideFarcaster] = useState(false);
 
   const fetchAuthData = async () => {

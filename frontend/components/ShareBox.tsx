@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { sdk } from "@farcaster/miniapp-sdk";
 
 interface ShareBoxProps {
   roomCode: string;
@@ -50,6 +51,16 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
       setPinCopied(true);
       setTimeout(() => setPinCopied(false), 2000);
     }
+  };
+
+  const handleCastQuiz = async () => {
+    const text = `🎯 Join my quiz on Hoot! The PIN is: ${roomCode}\n\n${quizUrl}`;
+    await sdk.actions.composeCast({ 
+      text,
+      close: false,
+      channelKey: 'hoot',
+      embeds: [`${quizUrl}` as string]
+    });
   };
 
   return (
@@ -121,48 +132,7 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
           </div>
           
           <button
-            onClick={() => {
-              const castText = `🎯 Join my quiz! PIN: ${roomCode}\n\n${quizUrl}`;
-              
-              // Detect if we're on mobile
-              const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-              console.log('🔍 Mobile detection:', isMobile, navigator.userAgent);
-              
-              // Try to open Farcaster app or web
-              const farcasterUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(castText)}`;
-              
-              if (isMobile) {
-                // On mobile, try app first with better fallback
-                const appUrl = `farcaster://compose?text=${encodeURIComponent(castText)}`;
-                
-                // Create invisible iframe to try app
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.src = appUrl;
-                document.body.appendChild(iframe);
-                
-                // Fallback to web after longer delay on mobile
-                setTimeout(() => {
-                  document.body.removeChild(iframe);
-                  window.open(farcasterUrl, '_blank');
-                }, 2000);
-              } else {
-                // On desktop, use the original method
-                const appUrl = `farcaster://compose?text=${encodeURIComponent(castText)}`;
-                
-                const link = document.createElement('a');
-                link.href = appUrl;
-                link.style.display = 'none';
-                document.body.appendChild(link);
-                
-                link.click();
-                setTimeout(() => {
-                  window.open(farcasterUrl, '_blank');
-                }, 1000);
-                
-                document.body.removeChild(link);
-              }
-            }}
+            onClick={handleCastQuiz}
             className="w-full py-3 px-4 rounded-lg font-medium bg-purple-600 hover:bg-purple-700 text-white transition-colors flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">

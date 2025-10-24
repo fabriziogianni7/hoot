@@ -332,7 +332,7 @@ function PlayQuizContent() {
                   a 15.9155 15.9155 0 0 1 0 31.831
                   a 15.9155 15.9155 0 0 1 0 -31.831"
                 fill="none"
-                stroke="#8b5cf6"
+                stroke="#795AFF"
                 strokeWidth="3"
                 strokeLinecap="round"
                 strokeDasharray={`${(timeLeft / initialTime) * 100}, 100`}

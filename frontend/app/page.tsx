@@ -18,6 +18,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
   
   // Use the shared authentication hook
   const { authData, isAuthLoading, authError, isOutsideFarcaster } = useAuth();
@@ -98,10 +99,10 @@ export default function Home() {
     // Farcaster auth
     if (authData?.success && context?.user?.displayName) {
       primary = context.user.displayName;
-      secondary = "Farcaster";
+      secondary = null; // Remove "Farcaster" text
     } else if (authData?.success && authData?.user?.fid) {
       primary = `FID: ${authData.user.fid}`;
-      secondary = "Farcaster";
+      secondary = null; // Remove "Farcaster" text
     }
     
     // Add wallet address as tertiary info
@@ -160,7 +161,7 @@ export default function Home() {
         zIndex: 10
       }}>
         <div style={{
-          backgroundColor: authData?.success ? "#1e40af" : "#222",
+          backgroundColor: authData?.success ? "#795AFF" : "#222", // Farcaster purple
           color: "white",
           padding: "0.5rem 1rem",
           borderRadius: "0.5rem",
@@ -206,18 +207,20 @@ export default function Home() {
             width: "auto"
           }}
         />
-        {/* Description text */}
-        <p style={{
-          color: "white",
-          fontSize: "0.8rem",
-          textAlign: "center",
-          lineHeight: "1.3",
-          opacity: 0.9,
-          marginTop: "0.05rem",
-          width: "250px"
-        }}>
-          You can use Hoot to join an existing quiz or to create new ones
-        </p>
+        {/* Description text - hide when input is focused */}
+        {!isInputFocused && (
+          <p style={{
+            color: "white",
+            fontSize: "0.8rem",
+            textAlign: "center",
+            lineHeight: "1.3",
+            opacity: 0.9,
+            marginTop: "0.05rem",
+            width: "250px"
+          }}>
+            You can use Hoot to join an existing quiz or to create new ones
+          </p>
+        )}
       </div>
 
       {/* Main content */}
@@ -264,6 +267,8 @@ export default function Home() {
                   setGamePin(value);
                 }
               }}
+              onFocus={() => setIsInputFocused(true)}
+              onBlur={() => setIsInputFocused(false)}
               placeholder="Insert PIN"
               maxLength={6}
               style={{

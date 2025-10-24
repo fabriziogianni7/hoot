@@ -486,9 +486,9 @@ useEffect(() => {
       const backendQuizId = await createQuizOnBackend(
         quiz,
         undefined, // Contract address will be set later if bounty is added
-        chain?.id || 84532, // network id (use Base Sepolia as default)
+        chain?.id, // network id
         undefined, // user fid
-        address || "0x0000000000000000000000000000000000000000", // user address (use dummy if not connected)
+        address, // user address
         0, // prize amount (will be updated if bounty is added)
         undefined // prize token (will be updated if bounty is added)
       );
@@ -664,39 +664,47 @@ useEffect(() => {
         <div className="w-full max-w-md flex flex-col gap-4 mb-8">
           {currentQuestion.options.map((option, index) => {
             const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
+            const isCorrect = currentQuestion.correctAnswer === index;
             return (
-            <div 
-              key={index}
-              className={`${option.color} rounded p-4 text-white relative border-2`}
-              style={{ 
-                backgroundColor: `${colors[index]}40`, // Aggiunge opacità al colore di sfondo
-                borderColor: colors[index],
-                borderWidth: '2px'
-              }}
-              onClick={() => handleCorrectAnswerChange(index)}
-            >
-              {/* Indicatore di risposta corretta */}
-              <div className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center"
-                   style={{ 
-                     backgroundColor: currentQuestion.correctAnswer === index ? 'white' : 'rgba(255, 255, 255, 0.3)'
-                   }}>
-                {currentQuestion.correctAnswer === index ? (
-                  <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  <div className="w-2 h-2 rounded-full bg-white"></div>
-                )}
+              <div 
+                key={index}
+                className={`${option.color} rounded p-4 text-white relative border-2 transition-all duration-200 cursor-pointer select-none`}
+                style={{ 
+                  backgroundColor: `${colors[index]}40`,
+                  borderColor: colors[index],
+                  borderWidth: isCorrect ? '3px' : '2px',
+                  boxShadow: isCorrect ? `0 0 0 3px ${colors[index]}30` : 'none',
+                  transform: isCorrect ? 'scale(1.02)' : 'scale(1)'
+                }}
+                onClick={() => handleCorrectAnswerChange(index)}
+              >
+                {/* Indicatore di risposta corretta - molto più grande e visibile */}
+                <div 
+                  className="absolute -top-2 -right-2 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 z-10 shadow-lg"
+                  style={{ 
+                    backgroundColor: isCorrect ? '#10B981' : 'rgba(255, 255, 255, 0.2)',
+                    border: '3px solid white'
+                  }}
+                >
+                  {isCorrect ? (
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  ) : (
+                    <div className="w-4 h-4 rounded-full bg-white opacity-50"></div>
+                  )}
+                </div>
+
+                
+                <input
+                  type="text"
+                  value={option.text}
+                  onChange={(e) => handleOptionChange(index, e.target.value)}
+                  placeholder={`add reply ${index + 1}`}
+                  className="quiz-input w-full bg-transparent focus:outline-none pr-12"
+                  onClick={(e) => e.stopPropagation()}
+                />
               </div>
-              <input
-                type="text"
-                value={option.text}
-                onChange={(e) => handleOptionChange(index, e.target.value)}
-                placeholder={`add reply ${index + 1}`}
-                className="quiz-input w-full bg-transparent focus:outline-none"
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
             );
           })}
         </div>
