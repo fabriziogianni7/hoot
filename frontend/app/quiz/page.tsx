@@ -17,6 +17,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
+  const [isPinFocused, setIsPinFocused] = useState(false);
   
   // Initialize authentication (runs in background for Supabase session)
   const { isOutsideFarcaster } = useAuth();
@@ -139,18 +140,20 @@ export default function Home() {
             width: "auto"
           }}
         />
-        {/* Description text */}
-        <p style={{
-          color: "white",
-          fontSize: "0.8rem",
-          textAlign: "center",
-          lineHeight: "1.3",
-          opacity: 0.9,
-          marginTop: "0.05rem",
-          width: "250px"
-        }}>
-          You can use Hoot to join an existing quiz or to create new ones
-        </p>
+        {/* Description text - hide when PIN input is focused */}
+        {!isPinFocused && (
+          <p style={{
+            color: "white",
+            fontSize: "0.8rem",
+            textAlign: "center",
+            lineHeight: "1.3",
+            opacity: 0.9,
+            marginTop: "0.05rem",
+            width: "250px"
+          }}>
+            You can use Hoot to join an existing quiz or to create new ones
+          </p>
+        )}
       </div>
 
       {/* Main content */}
@@ -197,6 +200,8 @@ export default function Home() {
                   setGamePin(value);
                 }
               }}
+              onFocus={() => setIsPinFocused(true)}
+              onBlur={() => setIsPinFocused(false)}
               placeholder="Insert PIN"
               maxLength={6}
               style={{

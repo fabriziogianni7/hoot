@@ -18,6 +18,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
+  const [isPinFocused, setIsPinFocused] = useState(false);
   
   // Use the shared authentication hook
   const { authData, isAuthLoading, authError, isOutsideFarcaster } = useAuth();
@@ -160,7 +161,7 @@ export default function Home() {
         zIndex: 10
       }}>
         <div style={{
-          backgroundColor: authData?.success ? "#1e40af" : "#222",
+          backgroundColor: "#795AFF",
           color: "white",
           padding: "0.5rem 1rem",
           borderRadius: "0.5rem",
@@ -178,11 +179,14 @@ export default function Home() {
           }}></div>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.125rem" }}>
             <div>{getUserBadgeText().primary}</div>
-            {getUserBadgeText().secondary && (
-              <div style={{ fontSize: "0.75rem", opacity: 0.8 }}>
-                {getUserBadgeText().secondary}
-              </div>
-            )}
+            {(() => {
+              const badgeText = getUserBadgeText();
+              return badgeText.secondary && !badgeText.secondary.includes("Farcaster") && (
+                <div style={{ fontSize: "0.75rem", opacity: 0.8 }}>
+                  {badgeText.secondary}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -206,18 +210,20 @@ export default function Home() {
             width: "auto"
           }}
         />
-        {/* Description text */}
-        <p style={{
-          color: "white",
-          fontSize: "0.8rem",
-          textAlign: "center",
-          lineHeight: "1.3",
-          opacity: 0.9,
-          marginTop: "0.05rem",
-          width: "250px"
-        }}>
-          You can use Hoot to join an existing quiz or to create new ones
-        </p>
+        {/* Description text - hide when PIN input is focused */}
+        {!isPinFocused && (
+          <p style={{
+            color: "white",
+            fontSize: "0.8rem",
+            textAlign: "center",
+            lineHeight: "1.3",
+            opacity: 0.9,
+            marginTop: "0.05rem",
+            width: "250px"
+          }}>
+            You can use Hoot to join an existing quiz or to create new ones
+          </p>
+        )}
       </div>
 
       {/* Main content */}
@@ -264,6 +270,8 @@ export default function Home() {
                   setGamePin(value);
                 }
               }}
+              onFocus={() => setIsPinFocused(true)}
+              onBlur={() => setIsPinFocused(false)}
               placeholder="Insert PIN"
               maxLength={6}
               style={{
@@ -353,7 +361,9 @@ export default function Home() {
           <p>
             Need help? 
             <a 
-              href="#" 
+              href="https://t.me/hoot_quiz" 
+              target="_blank"
+              rel="noopener noreferrer"
               style={{ 
                 color: "#6b7280", 
                 textDecoration: "underline",

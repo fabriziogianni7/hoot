@@ -399,7 +399,7 @@ function PlayQuizContent() {
       </div>
 
               {/* Timer circle */}
-              <div className="mt-6 flex justify-center">
+              <div className="mb-6 flex justify-center">
           <div className="relative">
             <svg className="w-20 h-20 transform -rotate-90" viewBox="0 0 36 36">
               {/* Background circle */}
