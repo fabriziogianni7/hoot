@@ -294,7 +294,9 @@ export function QuizProvider({ children }: { children: ReactNode }) {
               quizId: prev.quizId || updated.quiz_id, // Preserve or set quizId from backend
               status: updated.status === 'waiting' ? 'waiting' : 
                       updated.status === 'in_progress' ? 'question' : 'finished',
-              currentQuestionIndex: updated.current_question_index
+              currentQuestionIndex: updated.current_question_index,
+              questionStartTime: updated.question_started_at ? 
+                new Date(updated.question_started_at).getTime() : null
             }
           })
         }
@@ -418,7 +420,8 @@ export function QuizProvider({ children }: { children: ReactNode }) {
           .from('game_sessions')
           .update({ 
             current_question_index: nextIndex,
-            status: 'in_progress'
+            status: 'in_progress',
+            question_started_at: new Date().toISOString()
           })
           .eq('id', gameSessionId)
 

@@ -11,7 +11,7 @@ import { useSupabase } from "@/lib/supabase-context";
 function PlayQuizContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { currentGame, getCurrentQuiz, submitAnswer, nextQuestion, setCurrentQuiz } = useQuiz();
+  const { currentGame, getCurrentQuiz, submitAnswer, nextQuestion, setCurrentQuiz, gameSessionId } = useQuiz();
   const { supabase } = useSupabase();
   const [timeLeft, setTimeLeft] = useState<number>(10);
   const [initialTime] = useState<number>(10); // Tempo iniziale fisso per calcolare la percentuale
@@ -20,6 +20,9 @@ function PlayQuizContent() {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [showingResults, setShowingResults] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
+  const [isCreator, setIsCreator] = useState(false);
+  const [serverStartTime, setServerStartTime] = useState<number | null>(null);
+  const [playerResponses, setPlayerResponses] = useState<Record<string, { answered: boolean; isCorrect?: boolean }>>({});
   
   // Utilizziamo useRef per mantenere lo stato del timer tra i render
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -99,6 +102,59 @@ function PlayQuizContent() {
     loadQuizFromUrl();
   }, [searchParams, quiz, supabase, setCurrentQuiz]);
   
+  // Check if current player is the creator
+  useEffect(() => {
+    const checkCreator = async () => {
+      if (!gameSessionId) return;
+      
+      const { data } = await supabase
+        .from('game_sessions')
+        .select('creator_session_id')
+        .eq('id', gameSessionId)
+        .single();
+      
+      const currentPlayerId = localStorage.getItem("quizPlayerId");
+      if (data && currentPlayerId) {
+        setIsCreator(data.creator_session_id === currentPlayerId);
+      }
+    };
+    
+    checkCreator();
+  }, [gameSessionId, supabase]);
+  
+  // Subscribe to real-time answer updates for creator view
+  useEffect(() => {
+    if (!isCreator || !gameSessionId || !currentGame) return;
+    
+    // Subscribe to real-time answer updates
+    const answersChannel = supabase
+      .channel(`answers:${gameSessionId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'answers',
+          filter: `player_session_id=in.(${currentGame.players.map(p => p.id).join(',')})`
+        },
+        (payload) => {
+          const answer = payload.new as any;
+          setPlayerResponses(prev => ({
+            ...prev,
+            [answer.player_session_id]: {
+              answered: true,
+              isCorrect: answer.is_correct
+            }
+          }));
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(answersChannel);
+    };
+  }, [isCreator, gameSessionId, currentGame, supabase]);
+  
   // Redirect if no game is active
   useEffect(() => {
     if (isLoadingFromUrl) return; // Wait for URL loading to complete
@@ -129,16 +185,37 @@ function PlayQuizContent() {
       clearInterval(timerRef.current);
     }
     
-    // Initialize timer
-    setStartTime(Date.now());
-    setTimeLeft(10);
+    // Get server start time for synchronized timing
+    const questionStartTimeFromServer = currentGame.questionStartTime;
+    if (questionStartTimeFromServer) {
+      setServerStartTime(questionStartTimeFromServer);
+      
+      // Calculate elapsed time since question started
+      const now = Date.now();
+      const elapsed = Math.floor((now - questionStartTimeFromServer) / 1000);
+      const remaining = Math.max(0, 10 - elapsed);
+      
+      setTimeLeft(remaining);
+      
+      if (remaining > 0) {
+        setStartTime(questionStartTimeFromServer);
+        startTimer();
+      } else {
+        // Question already timed out
+        handleTimeUp();
+      }
+    } else {
+      // Fallback if no server time
+      setTimeLeft(10);
+      setStartTime(Date.now());
+      startTimer();
+    }
+    
     setSelectedAnswer(null);
     setIsAnswered(false);
     setShowingResults(false);
+    setPlayerResponses({});
     timePercentageRef.current = 100;
-    
-    // Avvia un nuovo timer
-    startTimer();
     
     console.log("Question reset for index:", currentQuestionIndex);
     
@@ -175,20 +252,22 @@ function PlayQuizContent() {
     if (!isAnswered && !showingResults) {
       setIsAnswered(true);
       
-      // Auto-submit -1 for no answer
-      const playerId = localStorage.getItem("quizPlayerId");
-      if (playerId && quiz && currentGame) {
-        const question = quiz.questions[currentQuestionIndex];
-        if (question) {
-          submitAnswer(playerId, question.id, -1, 10000); // Max time
+      // Auto-submit -1 for no answer (only for non-creators, since creators don't answer)
+      if (!isCreator) {
+        const playerId = localStorage.getItem("quizPlayerId");
+        if (playerId && quiz && currentGame) {
+          const question = quiz.questions[currentQuestionIndex];
+          if (question) {
+            submitAnswer(playerId, question.id, -1, 10000); // Max time
+          }
         }
       }
       
-      // Show results for 5 seconds
+      // Show results
       setShowingResults(true);
-      setTimeout(() => {
-        handleNextQuestion();
-      }, 5000);
+      
+      // Creator has manual control via "Next Question" button, no automatic advancement
+      // Non-creators wait for creator to advance
     }
   };
   
@@ -214,12 +293,12 @@ function PlayQuizContent() {
         submitAnswer(playerId, question.id, answerIndex, timeTaken);
       }
     }
-    const timeoutDuration = Math.min(timeLeft * 1000, 5000);
-    // Show results for 5 seconds but keep the timer running
+    
+    // Show results
     setShowingResults(true);
-    setTimeout(() => {
-      handleNextQuestion();
-    }, timeoutDuration);
+    
+    // Creator has manual control via "Next Question" button
+    // Non-creators wait for creator to advance via realtime update
   };
   
   const handleNextQuestion = () => {
@@ -230,10 +309,17 @@ function PlayQuizContent() {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    
+    // Only creator can advance questions
+    if (isCreator) {
+      console.log("Creator advancing to next question");
+      nextQuestion();
+    } else {
+      console.log("Non-creator waiting for question advance from host");
+    }
+    
     setShowingResults(false);
     setIsAnswered(false);
-
-    nextQuestion();
   };
   
   // Debug logging
@@ -376,69 +462,133 @@ function PlayQuizContent() {
           </div>
         </div>
         
-        {/* Answer options */}
-        <div className="flex flex-col gap-4 w-full max-w-md">
-          {currentQuestion.options.map((option, index) => {
-            const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
-            const baseColor = colors[index % colors.length];
-            
-            let backgroundColor = `${baseColor}40`; // Sfondo trasparente come admin
-            let borderColor = baseColor; // Bordo colorato
-            
-            if (showingResults) {
-              if (index === correctAnswerIndex) {
-                backgroundColor = "#22c55e40"; // green-500 con trasparenza
-                borderColor = "#22c55e";
-              } else if (index === selectedAnswer && index !== correctAnswerIndex) {
-                backgroundColor = "#dc262640"; // red-600 con trasparenza
-                borderColor = "#dc2626";
-              } else {
-                backgroundColor = "#37415140"; // gray-700 con trasparenza
-                borderColor = "#374151";
-              }
-            }
-            
-            return (
-              <div 
-                key={index}
-                className="rounded p-4 text-white relative border-2 cursor-pointer hover:opacity-80 transition-opacity"
-                style={{ 
-                  backgroundColor: backgroundColor, // Sfondo colorato pieno
-                  borderColor: borderColor, // Bordo dello stesso colore
-                  borderWidth: '2px',
-                  opacity: isAnswered || showingResults ? (index === selectedAnswer || index === correctAnswerIndex ? 1 : 0.7) : 1,
-                }}
-                onClick={() => handleAnswerSelect(index)}
-              >
-                {/* Indicatore di risposta corretta */}
-                {showingResults && index === correctAnswerIndex && (
-                  <div className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center bg-white">
-                    <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                )}
-                <div 
-                  className="w-full bg-transparent focus:outline-none text-center"
-                  style={{
-                    fontSize: "1.25rem",
-                    fontWeight: "500",
-                    cursor: isAnswered || showingResults ? "default" : "pointer",
-                    maxHeight: '60px',
-                    overflow: 'hidden',
-                    wordWrap: 'break-word',
-                    wordBreak: 'break-word'
-                  }}
-                >
-                  {option.length > 50 ? 
-                    `${option.substring(0, 50)}...` : 
-                    option
-                  }
-                </div>
+        {/* Answer options - Different view for creator vs players */}
+        {isCreator ? (
+          // Creator view - Show player responses
+          <div className="w-full max-w-md">
+            <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6 mb-4">
+              <h3 className="text-xl font-semibold mb-4 text-purple-200 text-center">
+                Player Responses ({Object.keys(playerResponses).length}/{currentGame.players.length - 1})
+              </h3>
+              <div className="space-y-2">
+                {currentGame.players
+                  .filter(p => p.id !== localStorage.getItem("quizPlayerId")) // Exclude creator
+                  .map(player => {
+                    const response = playerResponses[player.id];
+                    return (
+                      <div 
+                        key={player.id}
+                        className="flex items-center justify-between p-3 rounded bg-purple-700/20 border border-purple-500/30"
+                      >
+                        <span className="text-purple-100">{player.name}</span>
+                        <div className="flex items-center gap-2">
+                          {response?.answered ? (
+                            <>
+                              <span className={`text-sm ${response.isCorrect ? 'text-green-400' : 'text-red-400'}`}>
+                                {response.isCorrect ? '✓' : '✗'}
+                              </span>
+                              <span className="text-sm text-purple-200">{player.score} pts</span>
+                            </>
+                          ) : (
+                            <span className="text-sm text-gray-400">Waiting...</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
-            );
-          })}
-        </div>
+            </div>
+            
+            {/* Show correct answer to creator */}
+            <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-4 text-center mb-4">
+              <p className="text-sm text-green-200 mb-2">Correct Answer:</p>
+              <p className="text-lg font-semibold text-green-100">
+                {currentQuestion.options[correctAnswerIndex]}
+              </p>
+            </div>
+            
+            {/* Next Question button for creator */}
+            <button
+              onClick={handleNextQuestion}
+              className="w-full py-3 rounded text-white font-semibold transition-colors hover:opacity-90"
+              style={{
+                backgroundColor: "#22c55e",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "#16a34a";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "#22c55e";
+              }}
+            >
+              Next Question →
+            </button>
+          </div>
+        ) : (
+          // Player view - Show answer options
+          <div className="flex flex-col gap-4 w-full max-w-md">
+            {currentQuestion.options.map((option, index) => {
+              const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
+              const baseColor = colors[index % colors.length];
+              
+              let backgroundColor = `${baseColor}40`; // Sfondo trasparente come admin
+              let borderColor = baseColor; // Bordo colorato
+              
+              if (showingResults) {
+                if (index === correctAnswerIndex) {
+                  backgroundColor = "#22c55e40"; // green-500 con trasparenza
+                  borderColor = "#22c55e";
+                } else if (index === selectedAnswer && index !== correctAnswerIndex) {
+                  backgroundColor = "#dc262640"; // red-600 con trasparenza
+                  borderColor = "#dc2626";
+                } else {
+                  backgroundColor = "#37415140"; // gray-700 con trasparenza
+                  borderColor = "#374151";
+                }
+              }
+              
+              return (
+                <div 
+                  key={index}
+                  className="rounded p-4 text-white relative border-2 cursor-pointer hover:opacity-80 transition-opacity"
+                  style={{ 
+                    backgroundColor: backgroundColor, // Sfondo colorato pieno
+                    borderColor: borderColor, // Bordo dello stesso colore
+                    borderWidth: '2px',
+                    opacity: isAnswered || showingResults ? (index === selectedAnswer || index === correctAnswerIndex ? 1 : 0.7) : 1,
+                  }}
+                  onClick={() => handleAnswerSelect(index)}
+                >
+                  {/* Indicatore di risposta corretta */}
+                  {showingResults && index === correctAnswerIndex && (
+                    <div className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center bg-white">
+                      <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  )}
+                  <div 
+                    className="w-full bg-transparent focus:outline-none text-center"
+                    style={{
+                      fontSize: "1.25rem",
+                      fontWeight: "500",
+                      cursor: isAnswered || showingResults ? "default" : "pointer",
+                      maxHeight: '60px',
+                      overflow: 'hidden',
+                      wordWrap: 'break-word',
+                      wordBreak: 'break-word'
+                    }}
+                  >
+                    {option.length > 50 ? 
+                      `${option.substring(0, 50)}...` : 
+                      option
+                    }
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
         
         {/* Results info */}
         {showingResults && (
