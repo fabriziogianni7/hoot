@@ -60,28 +60,7 @@ An onchain version of Kahoot with web3 dynamics, featuring smart contracts for p
 
 ## 🛠️ Setup Instructions
 
-### Quick Start (Automated)
-
-🎉 **New!** Use the automated startup script for a one-command setup:
-
-```bash
-./start-project.sh
-```
-
-This script will automatically:
-- Start the local Anvil blockchain
-- Set up ngrok tunnel for external access
-- Deploy smart contracts
-- Start Supabase local development
-- Launch the Next.js frontend
-
-**Requirements:** Node.js, Foundry, Supabase CLI, and ngrok installed.
-
-For detailed information, see [README-startup.md](README-startup.md).
-
 ### Manual Setup
-
-If you prefer manual control or the automated script doesn't work:
 
 ### 1. Clone and Install Dependencies
 
