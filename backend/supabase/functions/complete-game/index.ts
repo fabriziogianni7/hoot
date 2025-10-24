@@ -216,7 +216,7 @@ serve(async (req) => {
 
   try {
     console.log('🎯 complete-game function called')
-    const supabase = initSupabaseClient(true)
+    const supabase = initSupabaseClient(req, true)
     const requestBody = await req.json()
     console.log('📥 Request body:', JSON.stringify(requestBody, null, 2))
     

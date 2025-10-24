@@ -11,7 +11,8 @@ function validateQuizData(request: CreateQuizRequest): string | null {
     title: request.title,
     questions: request.questions,
     prize_amount: request.prize_amount,
-    creator_address: request.creator_address
+    creator_address: request.creator_address,
+    network_id: request.network_id
   })
   
   if (requiredError) return requiredError
@@ -49,6 +50,9 @@ async function createQuiz(supabase: ReturnType<typeof initSupabaseClient>, reque
       prize_token: request.prize_token || null,
       creator_address: request.creator_address,
       contract_address: request.contract_address || null,
+      network_id: request.network_id,
+      user_fid: request.user_fid || null,
+      user_id: request.user_id || null,
       status: QUIZ_STATUS.PENDING
     })
     .select()
@@ -88,8 +92,23 @@ serve(async (req) => {
   }
 
   try {
-    const supabase = initSupabaseClient()
+    const supabase = initSupabaseClient(req)
     const request: CreateQuizRequest = await req.json()
+
+    // Get authenticated user from the session
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError) {
+      console.warn('Auth error:', authError.message)
+    }
+
+    // If user is authenticated, use their ID; otherwise allow creation without user_id (for backward compatibility)
+    if (user) {
+      request.user_id = user.id
+      console.log('Creating quiz for authenticated user:', user.id)
+    } else {
+      console.warn('Creating quiz without authenticated user')
+    }
 
     // Validate input
     const validationError = validateQuizData(request)
