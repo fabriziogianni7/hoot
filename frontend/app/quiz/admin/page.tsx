@@ -4,13 +4,18 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
+import { useNetwork } from "@/lib/network-context";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
-import { useAccount, useSwitchChain, usePublicClient, useWriteContract, useSendTransaction, useBalance, useReadContract } from "wagmi";
-import { HOOT_QUIZ_MANAGER_ABI, getCurrentContractAddress, ZERO_ADDRESS, USDC_ADDRESSES, ERC20_ABI } from "@/lib/contracts";
-import { parseEther, parseUnits } from "viem";
+import { useAccount, useWalletClient, usePublicClient, useConnect, useConnectors, useWriteContract, useSendTransaction, useBalance } from "wagmi";
+import { BrowserProvider,  } from "ethers";
+import { createQuizOnChain } from "@/lib/contract-helpers";
+import { formatAddress, getEthBalance } from "@/lib/contract-helpers";
+import { HOOT_QUIZ_MANAGER_ABI, getCurrentContractAddress, ZERO_ADDRESS } from "@/lib/contracts";
+import { parseEther } from "viem";
+import NetworkSwitcher from "@/components/NetworkSwitcher";
 import ShareBox from "@/components/ShareBox";
 
-
+//custom erc20:0xfF5986B1AbeE9ae2AF04242D207d35BcB6d28b75
 
 interface QuestionOption {
   text: string;
@@ -26,110 +31,85 @@ interface QuizQuestion {
 export default function AdminPage() {
   const router = useRouter();
   const { startGame, createQuizOnBackend, joinGame: joinGameContext } = useQuiz();
-  const { address, isConnected: _isConnected, chain, status: _status, connector: _connector} = useAccount();
-  const { chains: _chains, switchChain } = useSwitchChain()
+  const { address } = useAccount();
+  const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
+  const { connect } = useConnect();
+  const connectors = useConnectors();
   const { supabase } = useSupabase();
-  const { data: ethBalance } = useBalance({address});
-
-
-  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [quizTitle, setQuizTitle] = useState("Name your Quiz");
-  const [isCreating, setIsCreating] = useState(false);
-  const [error, setError] = useState("");
-  const [creationStep, setCreationStep] = useState<string>("");
-  const [showShareBox, setShowShareBox] = useState(false);
-  const [createdRoomCode, setCreatedRoomCode] = useState<string>("");
-  const [addQuestionError, setAddQuestionError] = useState<string>("");
-  const [showTooltip, setShowTooltip] = useState(false);
-  const [showQuizOptions, setShowQuizOptions] = useState(false);
-  const [bountyAmount, setBountyAmount] = useState("0.001");
-  const [selectedCurrency, setSelectedCurrency] = useState<'usdc' | 'eth' | 'custom'>('usdc');
-  const [customTokenAddress, _setCustomTokenAddress] = useState("");
-  const [quizTransaction, setQuizTransaction] = useState<string>("");
-  const [approvalTransaction, setApprovalTransaction] = useState<string>("");
-
+  const { currentNetwork, setNetwork } = useNetwork();
+  const { context } = useMiniKit();
   
   // Wagmi hooks for transactions
-  const { writeContractAsync, isPending: _isWritePending, error: writeError } = useWriteContract();
+  const { writeContract, isPending: isWritePending, error: writeError } = useWriteContract();
+  const { sendTransaction, isPending: isSendPending, error: sendError } = useSendTransaction();
+  const { data: balance } = useBalance({ address });
 
-  const { isPending: _isSendPending, error: sendError } = useSendTransaction();
+  // Debug wagmi state
+  useEffect(() => {
+    console.log("🔍 Wagmi Debug Info:");
+    console.log("address:", address);
+    console.log("isWritePending:", isWritePending);
+    console.log("isSendPending:", isSendPending);
+    console.log("writeError:", writeError);
+    console.log("sendError:", sendError);
+    console.log("balance:", balance);
+    console.log("walletClient:", walletClient);
+    console.log("publicClient:", publicClient);
+  }, [address, isWritePending, isSendPending, writeError, sendError, balance, walletClient, publicClient]);
 
-  // Determine ERC20 token address based on selected currency
-  const getTokenAddress = (): `0x${string}` | undefined => {
-    if (selectedCurrency === 'usdc') {
-      return (chain?.id === 8453 ? USDC_ADDRESSES.base : USDC_ADDRESSES.baseSepolia) as `0x${string}`;
-    } else if (selectedCurrency === 'custom' && customTokenAddress) {
-      return customTokenAddress as `0x${string}`;
-    }
-    return undefined;
+  // Helper function to convert wagmi walletClient to ethers Signer
+  const getEthersSigner = async () => {
+    if (!walletClient) return null;
+    const { account, chain, transport } = walletClient;
+    const network = {
+      chainId: chain.id,
+      name: chain.name,
+      ensAddress: chain.contracts?.ensRegistry?.address,
+    };
+    const provider = new BrowserProvider(transport, network);
+    const signer = await provider.getSigner(account.address);
+    return signer;
   };
 
-  const tokenAddress = getTokenAddress();
+  // Helper function to get ethers Provider from publicClient
+  const getEthersProvider = () => {
+    if (!publicClient) return null;
+    const network = {
+      chainId: publicClient.chain.id,
+      name: publicClient.chain.name,
+      ensAddress: publicClient.chain.contracts?.ensRegistry?.address,
+    };
+    return new BrowserProvider(publicClient.transport, network);
+  };
 
-  // Read ERC20 token balance
-  const { data: erc20Balance, refetch: refetchErc20Balance } = useReadContract({
-    address: tokenAddress,
-    abi: ERC20_ABI,
-    functionName: 'balanceOf',
-    args: address ? [address] : undefined,
-    query: {
-      enabled: !!address && !!tokenAddress && selectedCurrency !== 'eth'
-    }
-  });
-
-  // Read ERC20 token decimals
-  const { data: tokenDecimals } = useReadContract({
-    address: tokenAddress,
-    abi: ERC20_ABI,
-    functionName: 'decimals',
-    query: {
-      enabled: !!tokenAddress && selectedCurrency !== 'eth'
-    }
-  });
-
-useEffect(() => {
-  console.log('chai', chain);
-}, [chain]);
-
-
-
-  // Create quiz on-chain using wagmi
-  const createQuizOnChain = async (
-    quizId: string,
-    tokenAddress: string,
-    amount: string,
-    decimals: number = 18
-  ) => {
-    const contractAddress = chain?.id === 8453 ? `0x013e9b64f97e6943dcd1e167ec5c96754a6e9636` as `0x${string}` : `0x573496a44ace1d713723f5d91fcde63bf3d82d3a` as `0x${string}`;
-    const isETH = tokenAddress === ZERO_ADDRESS;
+  // Create quiz on-chain using wagmi (Farcaster compatible)
+  const createQuizWithWagmi = async (quizId: string, prizeAmount: string) => {
+    const contractAddress = getCurrentContractAddress();
+    const prizeAmountWei = parseEther(prizeAmount);
     
-    // Parse amount based on token type
-    const amountWei = isETH 
-      ? parseEther(amount)
-      : parseUnits(amount, decimals);
-    
-    console.log('Creating quiz on-chain:', {
+    console.log('Creating quiz with wagmi:', {
       contractAddress,
       quizId,
-      tokenAddress,
-      amount,
-      decimals,
-      amountWei: amountWei.toString(),
-      isETH
+      prizeAmount,
+      prizeAmountWei: prizeAmountWei.toString()
     });
-    
-    const txHash = await  writeContractAsync({
-      address: contractAddress as `0x${string}`,
-      abi: HOOT_QUIZ_MANAGER_ABI,
-      functionName: 'createQuiz',
-      args: [quizId, tokenAddress as `0x${string}`, amountWei],
-      value: isETH ? amountWei : BigInt(0),
-    });
-    setQuizTransaction(txHash);
-    console.log('Quiz created on-chain, tx hash:', txHash);
-    return txHash;
+
+    try {
+      const txHash = await writeContract({
+        address: contractAddress as `0x${string}`,
+        abi: HOOT_QUIZ_MANAGER_ABI,
+        functionName: 'createQuiz',
+        args: [quizId, ZERO_ADDRESS, prizeAmountWei],
+        value: prizeAmountWei,
+      });
+      
+      console.log('Quiz created successfully:', txHash);
+      return txHash;
+    } catch (error) {
+      console.error('Error creating quiz:', error);
+      throw error;
+    }
   };
 
   // CSS per forzare i colori degli input
@@ -159,27 +139,36 @@ useEffect(() => {
     ],
     correctAnswer: 0
   });
-  
+  const [questions, setQuestions] = useState<QuizQuestion[]>([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [quizTitle, setQuizTitle] = useState("Name your Quiz");
+  const [prizeAmount, setPrizeAmount] = useState("0.001");
+  const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState("");
+  const [showNetworkSwitcher, setShowNetworkSwitcher] = useState(false);
+  const [ethBalance, setEthBalance] = useState<string>("");
+  const [creationStep, setCreationStep] = useState<string>("");
+  const [showShareBox, setShowShareBox] = useState(false);
+  const [createdRoomCode, setCreatedRoomCode] = useState<string>("");
+  const [addQuestionError, setAddQuestionError] = useState<string>("");
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [showQuizOptions, setShowQuizOptions] = useState(false);
+  const [rewardAmount, setRewardAmount] = useState("0.001");
+  const [selectedCurrency, setSelectedCurrency] = useState<'usdc' | 'eth' | 'custom'>('usdc');
+  const [customTokenAddress, setCustomTokenAddress] = useState("");
 
-  // Compute display balance based on selected currency
-  const displayBalance: string = (() => {
-    if (selectedCurrency === 'eth' && ethBalance) {
-      return ethBalance.formatted;
-    } else if ((selectedCurrency === 'usdc' || selectedCurrency === 'custom') && erc20Balance !== undefined && tokenDecimals !== undefined) {
-      // Format ERC20 balance using the token's decimals
-      const decimals = Number(tokenDecimals);
-      const formattedBalance = (Number(erc20Balance) / Math.pow(10, decimals)).toString();
-      return formattedBalance;
-    }
-    return '0';
-  })();
+  // Determine wallet info (Farcaster or wagmi)
+  const farcasterUser = context?.user as { addresses?: string[] } | undefined;
+  const walletAddress = address || farcasterUser?.addresses?.[0];
+  const isInFarcaster = !!context;
 
-  // Refetch ERC20 balance when currency or chain changes
+  // Load ETH balance using wagmi
   useEffect(() => {
-    if ((selectedCurrency === 'usdc' || selectedCurrency === 'custom') && refetchErc20Balance) {
-      refetchErc20Balance();
+    if (balance) {
+      setEthBalance(balance.formatted);
     }
-  }, [selectedCurrency, chain?.id, refetchErc20Balance]);
+  }, [balance]);
 
   // Effetto per caricare la domanda corrente quando cambia l'indice
   useEffect(() => {
@@ -221,7 +210,36 @@ useEffect(() => {
     // Non nascondere il tooltip qui, solo quando la domanda è completa
   };
 
-  
+  const handleSaveQuestion = () => {
+    // Validazione
+    if (currentQuestion.text.trim() === "") {
+      alert("Please enter a question");
+      return;
+    }
+
+    // Verifica che almeno due opzioni siano compilate
+    const filledOptions = currentQuestion.options.filter(opt => opt.text.trim() !== "");
+    if (filledOptions.length < 2) {
+      alert("Please add at least two answer options");
+      return;
+    }
+
+    const newQuestions = [...questions];
+    
+    if (currentQuestionIndex < questions.length) {
+      // Modifica di una domanda esistente
+      newQuestions[currentQuestionIndex] = currentQuestion;
+    } else {
+      // Aggiunta di una nuova domanda
+      newQuestions.push(currentQuestion);
+    }
+    
+    setQuestions(newQuestions);
+    
+    // Passa alla prossima domanda
+    setCurrentQuestionIndex(newQuestions.length);
+  };
+
   const handleQuestionClick = (index: number) => {
     // Salva la domanda corrente prima di cambiare
     if (currentQuestion.text.trim() !== "") {
@@ -303,155 +321,76 @@ useEffect(() => {
     }
   };
 
-  const handleFreeQuiz = async () => {
-    // Create quiz without bounty
-    const result = await handleSaveQuiz();
-    
-    if (result) {
-      // After quiz is created, show share box
-      setShowQuizOptions(false);
-      setShowShareBox(true);
-    }
+  const handleFreeQuiz = () => {
+    setShowQuizOptions(false);
+    setShowShareBox(true);
   };
 
-  // Step 2: Create quiz and add bounty on-chain
-  const handleBountyQuiz = async () => {
-    if (!address) {
-      setError("Please connect your wallet to add a bounty");
+  const handleRewardQuiz = async () => {
+    if (!walletAddress) {
+      setError("Please connect your wallet to create a quiz with rewards");
       return;
     }
 
     try {
-      setError("");
+      setCreationStep("Creating quiz with reward on chain...");
       
-      // First, create the quiz in backend
-      const result = await handleSaveQuiz();
-      
-      if (!result) {
-        setError("Failed to create quiz. Please try again.");
+      // Validate reward amount
+      const rewardAmountNum = parseFloat(rewardAmount);
+      if (isNaN(rewardAmountNum) || rewardAmountNum <= 0) {
+        setError("Invalid reward amount");
         return;
       }
       
-      const { quizId } = result;
-      setCreationStep("Preparing bounty...");
-      
-      // Validate bounty amount
-      const bountyAmountNum = parseFloat(bountyAmount);
-      if (isNaN(bountyAmountNum) || bountyAmountNum <= 0) {
-        setError("Invalid bounty amount");
+      // Check balance
+      if (ethBalance && parseFloat(ethBalance) < rewardAmountNum) {
+        setError(`Insufficient balance. You have ${ethBalance} ETH but need ${rewardAmount} ETH`);
         return;
       }
-
-      // Determine token address and decimals
-      let tokenAddress: string;
-      let decimals: number;
-
-      if (selectedCurrency === 'eth') {
-        tokenAddress = ZERO_ADDRESS;
-        decimals = 18;
-        
-        // Check ETH balance
-        if (ethBalance && parseFloat(ethBalance.formatted) < bountyAmountNum) {
-          setError(`Insufficient ETH balance. You have ${ethBalance.formatted} ETH but need ${bountyAmount} ETH`);
+      
+      // Create quiz on-chain with reward deposit
+      if (address) {
+        try {
+          const txHash = await createQuizWithWagmi(createdRoomCode, rewardAmount);
+          console.log("Quiz created on-chain with reward deposit:", txHash);
+          console.log("Reward amount deposited:", rewardAmount, "ETH");
+        } catch (error) {
+          console.error("Error creating quiz on-chain:", error);
+          setError("Failed to create quiz on blockchain. Please try again.");
           return;
         }
-      } else if (selectedCurrency === 'usdc') {
-        tokenAddress = chain?.id === 8453 
-          ? USDC_ADDRESSES.base 
-          : USDC_ADDRESSES.baseSepolia;
-        decimals = 6;
-        
-        // Check USDC balance
-        const usdcBalanceNum = parseFloat(displayBalance);
-        if (usdcBalanceNum < bountyAmountNum) {
-          setError(`Insufficient USDC balance. You have ${displayBalance} USDC but need ${bountyAmount} USDC`);
-          return;
-        }
-      } else if (selectedCurrency === 'custom') {
-        if (!customTokenAddress || customTokenAddress.trim() === '') {
-          setError("Please enter a valid token contract address");
-          return;
-        }
-        tokenAddress = customTokenAddress.trim();
-        decimals = tokenDecimals ? Number(tokenDecimals) : 18;
-      } else {
-        setError("Invalid currency selection");
-        return;
-      }
-
-      // For ERC20 tokens, approve the contract first
-      if (tokenAddress !== ZERO_ADDRESS) {
-        const contractAddress = getCurrentContractAddress();
-        const amountWei = parseUnits(bountyAmount, decimals);
-
-        setCreationStep("Checking token allowance...");
-        
-        const currentAllowance = await publicClient?.readContract({
-          address: tokenAddress as `0x${string}`,
-          abi: ERC20_ABI,
-          functionName: 'allowance',
-          args: [address, contractAddress as `0x${string}`]
-        }) as bigint | undefined;
-
-        // If allowance is insufficient, request approval
-        // if (!currentAllowance || currentAllowance < amountWei) {
-          setCreationStep("Requesting token approval...");
-          const approvalHash = await writeContractAsync({
-            address: tokenAddress as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: 'approve',
-            args: [contractAddress as `0x${string}`, BigInt(100000000)]
-          });
-
-          setApprovalTransaction(approvalHash);
-          
-          setCreationStep("Waiting for approval confirmation...");
-          
-        // }
       }
       
-      // Create quiz on-chain with bounty
-      setCreationStep("Creating quiz with bounty on-chain...");
-      const txHash = await createQuizOnChain(quizId, tokenAddress, bountyAmount, decimals);
-      
-      console.log("Quiz created on-chain with bounty:", {
-        quizId,
-        roomCode: createdRoomCode,
-        txHash,
-        amount: bountyAmount,
-        currency: selectedCurrency
-      });
-      
-      // Show share box
-      // setShowQuizOptions(false);
-      // setShowShareBox(true);
-      // setCreationStep("");
-      
+      setShowQuizOptions(false);
+      setShowShareBox(true);
     } catch (error) {
-      console.error("Error adding bounty to quiz:", error);
-      setError(error instanceof Error ? error.message : "Failed to add bounty. Please try again.");
-      setCreationStep("");
+      console.error("Error creating quiz with reward:", error);
+      setError("Failed to create quiz with reward. Please try again.");
     }
   };
 
-  useEffect(() => {
-    if (quizTransaction) {
-      setShowQuizOptions(false);
-        setShowShareBox(true);
-        setCreationStep("");
-      }
-  }, [quizTransaction]);
-
-  // Step 1: Create quiz in backend and generate room
-  const handleSaveQuiz = async (): Promise<{ quizId: string; roomCode: string } | null> => {
-    if (isCreating) return null;
+  const handleSaveQuiz = async () => {
+    if (isCreating) return;
     
     setIsCreating(true);
     setError("");
-    setCreationStep("Saving quiz...");
+    setCreationStep("");
     
     try {
-      // Save current question if it has content
+      // Validate wallet
+      if (!walletAddress) {
+        setError("Please connect your wallet first");
+        setIsCreating(false);
+        return;
+      }
+      console.log("wallet Address", walletAddress);
+      if (!walletClient && !isInFarcaster) {
+        setError("No wallet connected. Please connect wallet or use Farcaster.");
+        setIsCreating(false);
+        return;
+      }
+      
+      // Salva la domanda corrente se ha contenuto
       const allQuestions = [...questions];
       if (currentQuestion.text.trim() !== "") {
         if (currentQuestionIndex < questions.length) {
@@ -464,12 +403,25 @@ useEffect(() => {
       if (allQuestions.length === 0) {
         setError("Please add at least one question");
         setIsCreating(false);
-        return null;
+        return;
       }
       
-      // Prepare quiz data
+      // Validate prize amount
+      const prizeAmountNum = parseFloat(prizeAmount);
+      if (isNaN(prizeAmountNum) || prizeAmountNum <= 0) {
+        setError("Invalid prize amount");
+        setIsCreating(false);
+        return;
+      }
+      
+      // Skip balance check for initial quiz creation - will be handled in quiz options
+      console.log("Skipping balance check for initial quiz creation");
+      
+      // Step 1: Create quiz in backend first (to get quiz_id)
+      setCreationStep("Saving quiz to database...");
+      
       const quiz = {
-        id: `quiz-${Date.now()}`,
+        id: `quiz-${Date.now()}`, // Temporary ID, backend will generate the real one
         title: quizTitle || "Name your quiz",
         description: "Created from the admin interface",
         questions: allQuestions.map((q, i) => ({
@@ -482,39 +434,51 @@ useEffect(() => {
         createdAt: new Date()
       };
       
-      // Create quiz in backend (no contract info yet)
+      // Get contract address from environment
+      const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "";
+      
+      // Create in backend with prize amount and contract address
       const backendQuizId = await createQuizOnBackend(
         quiz,
-        undefined, // Contract address will be set later if bounty is added
-        undefined, // Tx hash will be set later if bounty is added
-        address,
-        0 // Default to 0, will be updated if bounty is added
+        contractAddress, // Pass the contract address
+        undefined, // tx hash will be set after on-chain creation
+        walletAddress,
+        prizeAmountNum // Pass the prize amount
       );
       
       console.log("Quiz saved to backend with ID:", backendQuizId);
       
-      // Start game session and join as creator
-      setCreationStep("Creating room...");
+      // Step 2: Skip on-chain creation for now - will be handled in quiz options
+      console.log("Quiz prepared for creation. On-chain creation will be handled in quiz options.");
+      
+      // Step 3: Start game session and join as creator
+      setCreationStep("Preparing quiz...");
+      
       const generatedRoomCode = await startGame(backendQuizId);
       
       // Auto-join as the creator
-      const creatorPlayerId = await joinGameContext("Creator", address, generatedRoomCode);
+      const creatorPlayerId = await joinGameContext("Creator", walletAddress, generatedRoomCode);
       
-      // Update game session with creator in one call
-      await supabase
+      // Update game session with creator
+      const { data: gameSessionData } = await supabase
         .from('game_sessions')
-        .update({ creator_session_id: creatorPlayerId })
-        .eq('room_code', generatedRoomCode);
+        .select('id')
+        .eq('room_code', generatedRoomCode)
+        .single();
+        
+      if (gameSessionData) {
+        await supabase
+          .from('game_sessions')
+          .update({ creator_session_id: creatorPlayerId })
+          .eq('id', gameSessionData.id);
+      }
       
       // Store creator ID in localStorage
       localStorage.setItem("quizPlayerId", creatorPlayerId);
       
-      // Store room code
+      // Show quiz options modal instead of immediate redirect
       setCreatedRoomCode(generatedRoomCode);
-      setIsCreating(false);
-      setCreationStep("");
-      
-      return { quizId: backendQuizId, roomCode: generatedRoomCode };
+      setShowQuizOptions(true);
       
     } catch (err) {
       console.error("Error creating quiz:", err);
@@ -522,7 +486,6 @@ useEffect(() => {
       setError(errorMessage);
       setIsCreating(false);
       setCreationStep("");
-      return null;
     }
   };
 
@@ -577,7 +540,7 @@ useEffect(() => {
               </svg>
             </button> */}
             
-            {/* {showNetworkSwitcher && (
+            {showNetworkSwitcher && (
               <div className="absolute top-full left-0 mt-1 w-full bg-gray-800 rounded-lg shadow-lg z-50">
                 {/* <button
                   onClick={() => {
@@ -590,8 +553,8 @@ useEffect(() => {
                 >
                   Base Sepolia
                 </button> */}
-              {/* </div> */}
-            {/* )}  */}
+              </div>
+            )}
           </div>
         </div>
 
@@ -624,9 +587,8 @@ useEffect(() => {
             type="text"
             value={quizTitle}
             onChange={(e) => setQuizTitle(e.target.value)}
-            onFocus={(e) => e.target.select()}
             placeholder="Quiz Title"
-            className="px-4 py-2 mb-3 text- rounded bg-black text-white border border-white w-full"
+            className="px-4 py-2 mb-3 text-sm rounded bg-black text-white border border-white w-full"
           />
         </div>
         
@@ -760,7 +722,7 @@ useEffect(() => {
         {/* Action buttons */}
         <div className="mt-6 flex flex-col gap-4 w-full max-w-md">
             <button
-              onClick={() => setShowQuizOptions(true)}
+              onClick={handleSaveQuiz}
               disabled={isCreating}
               className="px-8 py-4 rounded text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
@@ -774,7 +736,7 @@ useEffect(() => {
           
         </div>
       </div>
-   
+      
       {/* Quiz Options Modal */}
       {showQuizOptions && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50">
@@ -805,19 +767,19 @@ useEffect(() => {
               >
                 <div className="text-left">
                   <div className="font-semibold text-lg">Free Quiz</div>
-                  <div className="text-sm text-gray-300">Create quiz without bounty</div>
+                  <div className="text-sm text-gray-300">Create quiz without rewards</div>
                 </div>
               </button>
               
-              {/* Quiz Bounty Option with Input */}
+              {/* Reward Quiz Option with Input */}
               <div className="bg-purple-600/20 rounded-lg p-4">
                 <button
-                  onClick={handleBountyQuiz}
+                  onClick={handleRewardQuiz}
                   className="w-full p-3 bg-purple-600/40 border border-purple-500 rounded-lg text-white hover:bg-purple-700 transition-colors mb-3"
                 >
                   <div className="text-left">
-                    <div className="font-semibold">Quiz with Bounty</div>
-                    <div className="text-sm text-purple-200">Add bounty from your wallet</div>
+                    <div className="font-semibold">Quiz with Rewards</div>
+                    <div className="text-sm text-purple-200">Add rewards from your wallet</div>
                   </div>
                 </button>
                 
@@ -825,30 +787,29 @@ useEffect(() => {
                 <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
                   <button
                     onClick={() => {
-                      const newNetworkid = chain?.id === 84532 ? 8453 : 84532;
-                      console.log('newNetworkid', newNetworkid);
-                      switchChain({ chainId: newNetworkid })
+                      const newNetwork = currentNetwork === 'baseSepolia' ? 'base' : 'baseSepolia';
+                      setNetwork(newNetwork);
                     }}
                     className="w-full flex items-center justify-between p-2 bg-gray-600 hover:bg-gray-500 rounded text-white transition-colors"
                   >
-                     <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2">
                       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                       <span className="text-sm font-medium">
-                        {chain?.id === 84532 ? 'Base Sepolia' : 
-                         chain?.id === 8453 ? 'Base Mainnet' : 
+                        {currentNetwork === 'baseSepolia' ? 'Base Sepolia' : 
+                         currentNetwork === 'base' ? 'Base Mainnet' : 
                          'Base Sepolia'}
                       </span>
                     </div>
                     <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                     </svg>
-                  </button> 
+                  </button>
                 </div>
                 
-                {/* Currency Selector - temp commented*/}
+                {/* Currency Selector */}
                 <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
                   <label className="block text-white text-sm font-medium mb-2">
-                    Bounty Currency
+                    Reward Currency
                   </label>
                   <div className="flex gap-2">
                     <button
@@ -871,8 +832,7 @@ useEffect(() => {
                     >
                       ETH
                     </button>
-                    {/* temp commenting custom */}
-                    {/* <button
+                    <button
                       onClick={() => setSelectedCurrency('custom')}
                       className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                         selectedCurrency === 'custom'
@@ -881,12 +841,12 @@ useEffect(() => {
                       }`}
                     >
                       Custom
-                    </button> */}
+                    </button>
                   </div>
                 </div>
 
-                {/* Custom Token Address Input - Temporary disabled!*/}  
-                {/* {selectedCurrency === 'custom' && (
+                {/* Custom Token Address Input */}  
+                {selectedCurrency === 'custom' && (
                   <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
                     <label className="block text-white text-sm font-medium mb-2">
                       Token Contract Address
@@ -902,24 +862,24 @@ useEffect(() => {
                       Enter the ERC20 token contract address
                     </div>
                   </div>
-                )} */}
+                )}
 
-                {/* Quiz Bounty Amount Input */}
+                {/* Reward Amount Input */}
                 <div className="p-3 bg-purple-600/20 rounded-lg">
                   <label className="block text-white text-sm font-medium mb-2">
-                    Quiz Bounty ({selectedCurrency === 'usdc' ? 'USDC' : selectedCurrency === 'eth' ? 'ETH' : 'Tokens'})
+                    Reward Amount ({selectedCurrency === 'usdc' ? 'USDC' : selectedCurrency === 'eth' ? 'ETH' : 'Tokens'})
                   </label>
                   <input
                     type="number"
-                    step="1"
+                    step="0.001"
                     min="0"
-                    value={bountyAmount}
-                    onChange={(e) => setBountyAmount(e.target.value)}
+                    value={rewardAmount}
+                    onChange={(e) => setRewardAmount(e.target.value)}
                     className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded text-white focus:outline-none focus:border-purple-500"
                     placeholder={selectedCurrency === 'usdc' ? '10' : selectedCurrency === 'eth' ? '0.001' : '100'}
                   />
                   <div className="text-xs text-gray-400 mt-1">
-                    Current balance: {parseFloat(displayBalance).toFixed(selectedCurrency === 'eth' ? 4 : 2)} {selectedCurrency === 'usdc' ? 'USDC' : selectedCurrency === 'eth' ? 'ETH' : 'Tokens'}
+                    Current balance: {ethBalance ? parseFloat(ethBalance).toFixed(selectedCurrency === 'eth' ? 4 : 2) : (selectedCurrency === 'eth' ? '0.0000' : '0.00')} {selectedCurrency === 'usdc' ? 'USDC' : selectedCurrency === 'eth' ? 'ETH' : 'Tokens'}
                   </div>
                 </div>
               </div>

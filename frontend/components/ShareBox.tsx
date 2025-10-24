@@ -124,25 +124,44 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
             onClick={() => {
               const castText = `🎯 Join my quiz! PIN: ${roomCode}\n\n${quizUrl}`;
               
+              // Detect if we're on mobile
+              const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+              console.log('🔍 Mobile detection:', isMobile, navigator.userAgent);
+              
               // Try to open Farcaster app or web
               const farcasterUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(castText)}`;
               
-              // Try to open in Farcaster app first, fallback to web
-              const appUrl = `farcaster://compose?text=${encodeURIComponent(castText)}`;
-              
-              // Create a temporary link to try app first
-              const link = document.createElement('a');
-              link.href = appUrl;
-              link.style.display = 'none';
-              document.body.appendChild(link);
-              
-              // Try to open app, fallback to web after short delay
-              link.click();
-              setTimeout(() => {
-                window.open(farcasterUrl, '_blank');
-              }, 1000);
-              
-              document.body.removeChild(link);
+              if (isMobile) {
+                // On mobile, try app first with better fallback
+                const appUrl = `farcaster://compose?text=${encodeURIComponent(castText)}`;
+                
+                // Create invisible iframe to try app
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                iframe.src = appUrl;
+                document.body.appendChild(iframe);
+                
+                // Fallback to web after longer delay on mobile
+                setTimeout(() => {
+                  document.body.removeChild(iframe);
+                  window.open(farcasterUrl, '_blank');
+                }, 2000);
+              } else {
+                // On desktop, use the original method
+                const appUrl = `farcaster://compose?text=${encodeURIComponent(castText)}`;
+                
+                const link = document.createElement('a');
+                link.href = appUrl;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                
+                link.click();
+                setTimeout(() => {
+                  window.open(farcasterUrl, '_blank');
+                }, 1000);
+                
+                document.body.removeChild(link);
+              }
             }}
             className="w-full py-3 px-4 rounded-lg font-medium bg-purple-600 hover:bg-purple-700 text-white transition-colors flex items-center justify-center gap-2"
           >

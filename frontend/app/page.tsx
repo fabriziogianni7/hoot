@@ -353,7 +353,9 @@ export default function Home() {
           <p>
             Need help? 
             <a 
-              href="#" 
+              href="https://t.me/hoot_quiz" 
+              target="_blank"
+              rel="noopener noreferrer"
               style={{ 
                 color: "#6b7280", 
                 textDecoration: "underline",
