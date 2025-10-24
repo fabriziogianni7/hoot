@@ -177,13 +177,18 @@ function PlayQuizContent() {
   // Reset states when question changes
   useEffect(() => {
     if (!currentGame || !quiz) return;
-    
-    if (showingResults) return;
 
     // Pulisci il timer precedente se esiste
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
+    
+    // Reset states FIRST - this must run every time the question changes
+    setSelectedAnswer(null);
+    setIsAnswered(false);
+    setShowingResults(false);
+    setPlayerResponses({});
+    timePercentageRef.current = 100;
     
     // Get server start time for synchronized timing
     const questionStartTimeFromServer = currentGame.questionStartTime;
@@ -210,12 +215,6 @@ function PlayQuizContent() {
       setStartTime(Date.now());
       startTimer();
     }
-    
-    setSelectedAnswer(null);
-    setIsAnswered(false);
-    setShowingResults(false);
-    setPlayerResponses({});
-    timePercentageRef.current = 100;
     
     console.log("Question reset for index:", currentQuestionIndex);
     
