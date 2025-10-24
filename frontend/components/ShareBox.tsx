@@ -1,5 +1,6 @@
 "use client";
 
+import sdk from "@farcaster/miniapp-sdk";
 import { useState } from "react";
 
 interface ShareBoxProps {
@@ -50,6 +51,16 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
       setPinCopied(true);
       setTimeout(() => setPinCopied(false), 2000);
     }
+  };
+
+  const handleCastQuiz = async () => {
+    const text = `🎯 Join my quiz on Hoot! The PIN is: ${roomCode}\n\n${quizUrl}`;
+    await sdk.actions.composeCast({ 
+      text,
+      close: false,
+      channelKey: 'hoot',
+      embeds: [`${quizUrl}` as string]
+    });
   };
 
   return (
@@ -121,29 +132,7 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
           </div>
           
           <button
-            onClick={() => {
-              const castText = `🎯 Join my quiz! PIN: ${roomCode}\n\n${quizUrl}`;
-              
-              // Try to open Farcaster app or web
-              const farcasterUrl = `https://warpcast.com/~/compose?text=${encodeURIComponent(castText)}`;
-              
-              // Try to open in Farcaster app first, fallback to web
-              const appUrl = `farcaster://compose?text=${encodeURIComponent(castText)}`;
-              
-              // Create a temporary link to try app first
-              const link = document.createElement('a');
-              link.href = appUrl;
-              link.style.display = 'none';
-              document.body.appendChild(link);
-              
-              // Try to open app, fallback to web after short delay
-              link.click();
-              setTimeout(() => {
-                window.open(farcasterUrl, '_blank');
-              }, 1000);
-              
-              document.body.removeChild(link);
-            }}
+            onClick={handleCastQuiz}
             className="w-full py-3 px-4 rounded-lg font-medium bg-purple-600 hover:bg-purple-700 text-white transition-colors flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
