@@ -36,6 +36,10 @@ export function useAuth(): UseAuthReturn {
   const [authData, setAuthData] = useState<AuthResponse | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  
+  // TEMPORARY: Disable Farcaster check for mobile testing
+  // TODO: Set to false before production deployment
+  const DISABLE_FARCASTER_CHECK = true;
   const [isOutsideFarcaster, setIsOutsideFarcaster] = useState(false);
 
   const fetchAuthData = async () => {
@@ -49,9 +53,16 @@ export function useAuth(): UseAuthReturn {
       const context = await sdk.context;
 
       // Check if context exists and we're in a valid Farcaster/Base client
-      if (!context) {
+      if (!context && !DISABLE_FARCASTER_CHECK) {
         setIsOutsideFarcaster(true);
         setAuthError("App must be opened in Farcaster or Base app");
+        return;
+      }
+      
+      // If Farcaster check is disabled, skip authentication
+      if (DISABLE_FARCASTER_CHECK) {
+        console.log('🚧 Farcaster check disabled for testing');
+        setIsAuthLoading(false);
         return;
       }
 
@@ -98,7 +109,7 @@ export function useAuth(): UseAuthReturn {
     authData,
     isAuthLoading,
     authError,
-    isOutsideFarcaster,
+    isOutsideFarcaster: DISABLE_FARCASTER_CHECK ? false : isOutsideFarcaster,
     refetchAuth: fetchAuthData
   };
 }
