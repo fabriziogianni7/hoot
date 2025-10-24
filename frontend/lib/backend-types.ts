@@ -35,6 +35,7 @@ export interface GameSession {
   status: 'waiting' | 'in_progress' | 'completed'
   current_question_index: number
   creator_session_id: string | null
+  question_started_at?: string | null
   started_at?: string | null
   ended_at?: string | null
   created_at?: string
