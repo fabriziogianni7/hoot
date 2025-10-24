@@ -318,7 +318,7 @@ deno_version = 2
 
 [edge_runtime.secrets]
 PRIZE_DISTRIBUTOR_PRIVATE_KEY = "env(PRIZE_DISTRIBUTOR_PRIVATE_KEY)"
-RPC_URL_LOCAL = "http://localhost:8545"
+RPC_URL = "http://localhost:8545"
 
 [analytics]
 enabled = true

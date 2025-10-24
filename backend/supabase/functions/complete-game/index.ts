@@ -6,6 +6,7 @@ import { validateRequired, compareAddresses } from '../_shared/validation.ts'
 import { initSupabaseClient } from '../_shared/supabase.ts'
 import {
   HOOT_QUIZ_MANAGER_ABI,
+  ERC20_ABI,
   ZERO_ADDRESS,
   TREASURY_FEE_PCT,
   FIRST_PLACE_PCT,
@@ -25,6 +26,7 @@ async function fetchGameSession(supabase: ReturnType<typeof initSupabaseClient>,
         id,
         title,
         prize_amount,
+        prize_token,
         contract_address,
         creator_address,
         status
@@ -99,20 +101,26 @@ async function markGameAsCompleted(supabase: ReturnType<typeof initSupabaseClien
   if (error) throw new Error('Failed to update game session')
 }
 
-function calculateTopPlayers(playerSessions: PlayerSession[], creatorAddress: string) {
+function calculateTopPlayers(playerSessions: PlayerSession[], creatorAddress: string, maxWinners: number = 3) {
   const topPlayers = playerSessions
     .sort((a, b) => (b.total_score || 0) - (a.total_score || 0))
-    .slice(0, 3)
+    .slice(0, maxWinners)
 
-  const winners = topPlayers.map(p => p.wallet_address || creatorAddress)
-  const scores = topPlayers.map(p => p.total_score || 0)
+  // Only include players with valid wallet addresses and scores > 0
+  const winners = topPlayers
+    .filter(p => p.wallet_address && p.total_score && p.total_score > 0)
+    .map(p => p.wallet_address!)
+  
+  const scores = topPlayers
+    .filter(p => p.wallet_address && p.total_score && p.total_score > 0)
+    .map(p => p.total_score || 0)
 
-  // Pad to exactly 3 elements with creator address
-  while (winners.length < 3) {
-    winners.push(creatorAddress)
-  }
-  while (scores.length < 3) {
-    scores.push(0)
+  // If no valid winners, return creator as single winner
+  if (winners.length === 0) {
+    return { 
+      winners: [creatorAddress], 
+      scores: [0] 
+    }
   }
 
   return { winners, scores }
@@ -120,47 +128,128 @@ function calculateTopPlayers(playerSessions: PlayerSession[], creatorAddress: st
 
 interface PrizeDistribution {
   totalPrize: bigint
-  firstPlacePrize: bigint
-  secondPlacePrize: bigint
-  thirdPlacePrize: bigint
   treasuryFee: bigint
-  winners4: string[]
-  amounts4: bigint[]
+  distributedPrize: bigint
+  winners: string[]
+  amounts: bigint[]
+  prizeBreakdown: bigint[]
 }
 
+/**
+ * Get token decimals from contract or return 18 for ETH
+ */
+async function getTokenDecimals(
+  prizeToken: string | null,
+  rpcUrl: string
+): Promise<number> {
+  // ETH uses 18 decimals
+  if (!prizeToken || prizeToken === ZERO_ADDRESS) {
+    return 18
+  }
+
+  try {
+    const provider = new ethers.JsonRpcProvider(rpcUrl)
+    const tokenContract = new ethers.Contract(prizeToken, ERC20_ABI, provider)
+    const decimals = await tokenContract.decimals()
+    return Number(decimals)
+  } catch (error) {
+    console.warn('Failed to get token decimals, defaulting to 18:', error)
+    return 18
+  }
+}
+
+/**
+ * Get treasury fee settings from contract
+ */
+async function getTreasuryFeeSettings(
+  contractAddress: string,
+  rpcUrl: string
+): Promise<{ feePercent: bigint; feePrecision: bigint }> {
+  try {
+    const provider = new ethers.JsonRpcProvider(rpcUrl)
+    const contract = new ethers.Contract(contractAddress, HOOT_QUIZ_MANAGER_ABI, provider)
+    
+    const feePercent = await contract.getTreasuryFeePercent()
+    const feePrecision = await contract.getFeePrecision()
+    
+    return {
+      feePercent: BigInt(feePercent.toString()),
+      feePrecision: BigInt(feePrecision.toString())
+    }
+  } catch (error) {
+    console.warn('Failed to get treasury fee settings from contract, using defaults:', error)
+    // Default: 10% with precision of 1000000 (4 decimals)
+    return {
+      feePercent: 100000n,
+      feePrecision: 1000000n
+    }
+  }
+}
+
+/**
+ * Calculate prize distribution with dynamic winner count and token decimals
+ * Treasury fee is handled on-chain, so we only calculate winner prizes
+ */
 function calculatePrizeDistribution(
   prizeAmount: number,
   winners: string[],
-  treasuryAddress: string
+  decimals: number,
+  treasuryFeePercent: bigint,
+  feePrecision: bigint
 ): PrizeDistribution {
-  const totalPrize = BigInt(Math.floor(prizeAmount * 1e18))
-  const treasuryFee = (totalPrize * TREASURY_FEE_PCT) / 100n
-  const firstPlacePrize = (totalPrize * FIRST_PLACE_PCT) / 100n
-  const secondPlacePrize = (totalPrize * SECOND_PLACE_PCT) / 100n
-  const thirdPlacePrize = (totalPrize * THIRD_PLACE_PCT) / 100n
-
-  const winners4 = [
-    winners[0],
-    winners[1],
-    winners[2],
-    treasuryAddress
-  ]
-
-  const amounts4 = [
-    firstPlacePrize,
-    secondPlacePrize,
-    thirdPlacePrize,
-    treasuryFee
-  ]
+  // Convert prize amount to token's native units (e.g., 18 decimals for ETH, 6 for USDC)
+  const totalPrize = BigInt(Math.floor(prizeAmount * Math.pow(10, decimals)))
+  
+  // Calculate treasury fee (same as contract does)
+  const treasuryFee = (totalPrize * treasuryFeePercent) / feePrecision
+  
+  // Amount to distribute among winners (excluding treasury)
+  const distributedPrize = totalPrize - treasuryFee
+  
+  // Prize percentages based on number of winners
+  const percentages = getPrizePercentages(winners.length)
+  
+  // Calculate individual prizes
+  const amounts: bigint[] = []
+  const prizeBreakdown: bigint[] = []
+  
+  for (let i = 0; i < winners.length; i++) {
+    const amount = (distributedPrize * percentages[i]) / 100n
+    amounts.push(amount)
+    prizeBreakdown.push(amount)
+  }
 
   return {
     totalPrize,
-    firstPlacePrize,
-    secondPlacePrize,
-    thirdPlacePrize,
     treasuryFee,
-    winners4,
-    amounts4
+    distributedPrize,
+    winners,
+    amounts,
+    prizeBreakdown
+  }
+}
+
+/**
+ * Get prize distribution percentages based on number of winners
+ * Returns array of percentages that sum to 100
+ */
+function getPrizePercentages(winnerCount: number): bigint[] {
+  switch (winnerCount) {
+    case 1:
+      return [100n]
+    case 2:
+      return [60n, 40n]
+    case 3:
+      return [50n, 30n, 20n]
+    case 4:
+      return [40n, 30n, 20n, 10n]
+    case 5:
+      return [35n, 25n, 20n, 12n, 8n]
+    default: {
+      // Shouldn't happen, but fallback to equal distribution
+      const equal = 100n / BigInt(winnerCount)
+      return Array(winnerCount).fill(equal)
+    }
   }
 }
 
@@ -170,7 +259,7 @@ async function distributePrizesOnChain(
   distribution: PrizeDistribution
 ): Promise<string> {
   const privateKey = Deno.env.get('PRIZE_DISTRIBUTOR_PRIVATE_KEY')
-  const rpcUrl = Deno.env.get('RPC_URL_LOCAL') || 'http://localhost:8545'
+  const rpcUrl = Deno.env.get('RPC_URL') || 'http://localhost:8545'
 
   if (!privateKey) {
     throw new Error('PRIZE_DISTRIBUTOR_PRIVATE_KEY environment variable is required')
@@ -180,10 +269,11 @@ async function distributePrizesOnChain(
   const wallet = new ethers.Wallet(privateKey, provider)
   const contract = new ethers.Contract(contractAddress, HOOT_QUIZ_MANAGER_ABI, wallet)
 
+  // Call distributePrize with winners and amounts arrays (treasury is handled on-chain)
   const tx = await contract.distributePrize(
     quizId,
-    distribution.winners4,
-    distribution.amounts4
+    distribution.winners,
+    distribution.amounts
   )
 
   const receipt = await tx.wait()
@@ -306,48 +396,68 @@ serve(async (req) => {
       console.log('⚠️ Game already marked as completed, skipping update')
     }
 
-    // Calculate top players
+    // Calculate top players (up to 5 winners)
     console.log('🔍 Calculating top players...')
-    const { winners, scores } = calculateTopPlayers(playerSessions, gameSession.quizzes!.creator_address)
+    const { winners, scores } = calculateTopPlayers(playerSessions, gameSession.quizzes!.creator_address, 5)
     console.log('✅ Top players calculated:')
     console.log('Winners:', winners)
     console.log('Scores:', scores)
 
     // Handle prize distribution
     let prizeDistributed = false
+    let txHash: string | undefined
     const contractAddress = gameSession.quizzes?.contract_address
     const prizeAmount = gameSession.quizzes?.prize_amount || 0
+    const prizeToken = gameSession.quizzes?.prize_token || null
 
     console.log('🔍 Prize distribution check:')
     console.log('Contract address:', contractAddress)
     console.log('Prize amount:', prizeAmount)
+    console.log('Prize token:', prizeToken || 'ETH')
 
     if (contractAddress && prizeAmount > 0) {
       console.log('💰 Starting prize distribution...')
       
-      const treasuryAddress = Deno.env.get('TREASURY_ADDRESS')
-      console.log('Treasury address from env:', treasuryAddress)
+      const rpcUrl = Deno.env.get('RPC_URL') || 'http://localhost:8545'
       
-      if (!treasuryAddress) {
-        console.error('❌ TREASURY_ADDRESS environment variable is missing')
-        throw new Error('TREASURY_ADDRESS environment variable is required')
-      }
+      // Get token decimals
+      console.log('🔍 Getting token decimals...')
+      const decimals = await getTokenDecimals(prizeToken, rpcUrl)
+      console.log('✅ Token decimals:', decimals)
+      
+      // Get treasury fee settings from contract
+      console.log('🔍 Getting treasury fee settings from contract...')
+      const { feePercent, feePrecision } = await getTreasuryFeeSettings(contractAddress, rpcUrl)
+      console.log('✅ Treasury fee settings:')
+      console.log('Fee percent:', feePercent.toString())
+      console.log('Fee precision:', feePrecision.toString())
+      console.log('Effective fee rate:', Number(feePercent) / Number(feePrecision) * 100, '%')
 
-      const distribution = calculatePrizeDistribution(prizeAmount, winners, treasuryAddress)
+      // Calculate prize distribution
+      const distribution = calculatePrizeDistribution(
+        prizeAmount,
+        winners,
+        decimals,
+        feePercent,
+        feePrecision
+      )
       console.log('💰 Prize distribution calculated:')
       console.log('Total prize:', distribution.totalPrize.toString())
-      console.log('First place:', distribution.firstPlacePrize.toString())
-      console.log('Second place:', distribution.secondPlacePrize.toString())
-      console.log('Third place:', distribution.thirdPlacePrize.toString())
       console.log('Treasury fee:', distribution.treasuryFee.toString())
-      console.log('Winners array:', distribution.winners4)
-      console.log('Amounts array:', distribution.amounts4.map(a => a.toString()))
+      console.log('Distributed to winners:', distribution.distributedPrize.toString())
+      console.log('Number of winners:', distribution.winners.length)
+      console.log('Winners array:', distribution.winners)
+      console.log('Amounts array:', distribution.amounts.map(a => a.toString()))
+      console.log('Prize breakdown:')
+      distribution.prizeBreakdown.forEach((prize, i) => {
+        console.log(`  Place ${i + 1}: ${prize.toString()}`)
+      })
       
       console.log('🔍 Calling smart contract...')
       console.log('Contract address:', contractAddress)
       console.log('Quiz ID:', gameSession.quiz_id)
       
-      const txHash = await distributePrizesOnChain(contractAddress, gameSession.quiz_id, distribution)
+      txHash = await distributePrizesOnChain(contractAddress, gameSession.quiz_id, distribution)
       console.log('✅ Transaction successful! Hash:', txHash)
       
       console.log('🔍 Updating quiz with transaction...')
@@ -362,10 +472,11 @@ serve(async (req) => {
     const responseData = {
       success: true,
       message: 'Game completed successfully',
-      winners: winners.slice(0, 3),
-      scores: scores.slice(0, 3),
+      winners,
+      scores,
       contract_address: contractAddress,
-      prize_distributed: prizeDistributed
+      prize_distributed: prizeDistributed,
+      ...(txHash && { contract_tx_hash: txHash })
     }
     console.log('📤 Sending success response:', JSON.stringify(responseData, null, 2))
     return successResponse(responseData)
