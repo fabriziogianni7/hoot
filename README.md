@@ -17,7 +17,6 @@ An onchain version of Kahoot with web3 dynamics, featuring smart contracts for p
 - [🚀 Deployment](#-deployment)
 - [🤝 Contributing](#-contributing)
 - [📄 License](#-license)
-- [🆘 Troubleshooting](#-troubleshooting)
 - [🎯 Future Enhancements](#-future-enhancements)
 
 ## 🚀 Features
@@ -379,40 +378,6 @@ hoot/
 ## 📄 License
 
 This project is licensed under the MIT License.
-
-## 🆘 Troubleshooting
-
-### Common Issues
-
-1. **Supabase Connection Issues**: 
-   - Ensure Supabase is running locally: `supabase status`
-   - Check if Docker is running (required for Supabase)
-   - Restart Supabase: `supabase stop && supabase start`
-
-2. **Migration Issues**:
-   - If migrations fail, try: `supabase db reset`
-   - Check migration files in `backend/supabase/migrations/`
-   - Verify database is running: `supabase status`
-
-3. **Edge Functions Issues**:
-   - If functions don't deploy, try: `supabase functions serve`
-   - Check function logs: `supabase functions logs <function-name>`
-   - Verify functions are in `backend/supabase/functions/`
-   - Restart Supabase: `supabase stop && supabase start`
-   - **"Missing authorization header" error**: This is normal in development - functions work but need proper auth headers in production
-
-4. **Wallet Connection**: Make sure MetaMask is installed and unlocked
-
-5. **Contract Deployment**: Check that you have sufficient ETH for gas fees
-
-6. **Backend Service**: Ensure all environment variables are set correctly
-
-### Getting Help
-
-- Check the logs in your browser console
-- Verify all services are running
-- Ensure environment variables are correctly set
-- Check network connectivity
 
 ## 🎯 Future Enhancements
 
