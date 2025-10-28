@@ -3,11 +3,18 @@
 import { useState, useEffect, useCallback } from "react";
 import { sdk } from "@farcaster/miniapp-sdk";
 
+
 import { supabase } from "./supabase-client";
-import { useAccount, useConnections, useSignMessage, useEnsName } from "wagmi";
+import {
+  useAccount,
+  useConnections,
+  useSignMessage,
+  useEnsName,
+} from "wagmi";
 import type { Session, AuthError, User } from "@supabase/supabase-js";
 import { base, mainnet } from "viem/chains";
 import { toCoinType } from "viem";
+import { SiweMessage } from "siwe";
 
 interface LoggedUser {
   address?: string;
@@ -23,6 +30,7 @@ interface UseAuthReturn {
   loggedUser: LoggedUser | null;
   isAuthLoading: boolean;
   authError: string | null;
+  triggerAuth: () => Promise<void>;
 }
 
 /**
@@ -43,6 +51,7 @@ export function useAuth(): UseAuthReturn {
   const { signMessageAsync } = useSignMessage();
   const { address, chainId } = useAccount();
   const connections = useConnections();
+
   const { data: ensName } = useEnsName({
     address,
     chainId: mainnet.id,
@@ -101,38 +110,95 @@ export function useAuth(): UseAuthReturn {
       const nonce = Math.random().toString(36).substring(2, 15);
       const issuedAt = new Date().toISOString();
 
-      const message = `${domain} wants you to sign in with your Ethereum account:
-${address}
+      const message = new SiweMessage({
+        domain,
+        address,
+        statement: "Sign in to ib Hoot!",
+        uri: origin,
+        version: "1",
+        chainId: 8453,
+        nonce: nonce,
+        issuedAt: issuedAt,
+      }).prepareMessage();
 
-Sign in to Hoot!
+      // let signature = await signMessageAsync({ message });
+      let signature;
+      let debugSig;
 
-URI: ${origin}
-Version: 1
-Chain ID: 8453
-Nonce: ${nonce}
-Issued At: ${issuedAt}`;
-
-      console.log("📝 Requesting signature...");
-      const signature = await signMessageAsync({ message });
+      console.log("📝 Requesting signature...", signature);
 
       console.log("✅ Signature received, signing in...");
-      const { data, error } = await supabase.auth.signInWithWeb3({
-        chain: "ethereum",
-        message,
-        signature: signature as `0x${string}`,
-        options: {
-          signInWithEthereum: {
-            address,
-            chainId,
-          },
-        },
-      });
 
-      if (error) {
-        throw error;
+      let response = null;
+
+      const context = await sdk.context;
+      if (context.client.clientFid === 309857) {
+        // For this specific client, use SIWE verification API route
+        console.log("🔐 Using SIWE verification for FID 309857");
+        
+        // Generate signature
+        signature = await signMessageAsync({ message });
+        
+        // Send to SIWE verification API route
+        const apiResponse = await fetch('/api/auth/siwe-verify', {
+          method: 'POST',
+          body: JSON.stringify({ 
+            message, 
+            signature, 
+            address 
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        const apiData = await apiResponse.json();
+        
+        if (!apiResponse.ok || apiData.error) {
+          throw new Error(apiData.error || 'SIWE verification failed');
+        }
+
+        const { access_token, refresh_token } = apiData;
+        
+        if (!access_token || !refresh_token) {
+          throw new Error('Missing tokens in API response');
+        }
+
+        // Set Supabase session with the returned tokens
+        const { data, error: sessionError } = await supabase.auth.setSession({
+          access_token,
+          refresh_token,
+        });
+
+        if (sessionError || !data.session) {
+          throw sessionError || new Error('Failed to create session');
+        }
+
+        console.log("✅ SIWE authentication successful");
+        
+        // Set response to continue with normal flow
+        response = { data, error: null };
+      } else {
+        signature = await signMessageAsync({ message });
       }
 
-      if (data?.session) {
+      if (!response) {
+        response = await supabase.auth.signInWithWeb3({
+          chain: "ethereum",
+          message,
+          signature: signature as `0x${string}`,
+          options: {
+            signInWithEthereum: {
+              address,
+              chainId,
+            },
+          },
+        });
+      }
+
+      if (response?.error) {
+        throw `retSigDebug error: ${debugSig} error:${response.error}`;
+      }
+
+      if (response?.data?.session) {
         // Update user metadata in Supabase
         const context = await sdk.context;
         const isMiniapp = await sdk.isInMiniApp();
@@ -155,7 +221,7 @@ Issued At: ${issuedAt}`;
             },
           });
         }
-        setSessionData(data);
+        setSessionData(response.data);
       }
     } catch (error: any) {
       console.error("❌ Sign in error:", error);
@@ -163,7 +229,19 @@ Issued At: ${issuedAt}`;
       setSessionError(error as AuthError);
       setIsAuthLoading(false);
     }
-  }, [address, chainId, signMessageAsync, connections.length]);
+  }, [address, chainId, signMessageAsync, connections.length, ensName]);
+
+  const triggerAuth = useCallback(async () => {
+    if (connections.length === 0) {
+      console.log("⚠️ No wallet connected. Please connect wallet first.");
+      setAuthError("Please connect your wallet first");
+      return;
+    }
+
+    if (!sessionData) {
+      await signMsgAndSignInWithWeb3();
+    }
+  }, [connections.length, sessionData, signMsgAndSignInWithWeb3]);
 
   // Effect 1: Check for existing session when wallet connects
   useEffect(() => {
@@ -225,29 +303,29 @@ Issued At: ${issuedAt}`;
     signMsgAndSignInWithWeb3,
   ]);
 
- // Effect 3: When we have session data, create logged user
-useEffect(() => {
-  if (!sessionData?.session || connections.length === 0) {
-    return;
-  }
-
-  const setupUser = async () => {
-    try {
-      console.log("👤 Setting up user...");
-      
-      const user = await createLoggedUser(sessionData.session);
-      setLoggedUser(user);
-      setIsAuthLoading(false);
-      console.log("✅ User setup complete");
-    } catch (error: any) {
-      console.error("❌ User setup error:", error);
-      setAuthError(error.message || "Failed to setup user");
-      setIsAuthLoading(false);
+  // Effect 3: When we have session data, create logged user
+  useEffect(() => {
+    if (!sessionData?.session || connections.length === 0) {
+      return;
     }
-  };
 
-  setupUser();
-}, [sessionData, connections.length, createLoggedUser]);
+    const setupUser = async () => {
+      try {
+        console.log("👤 Setting up user...");
+
+        const user = await createLoggedUser(sessionData.session);
+        setLoggedUser(user);
+        setIsAuthLoading(false);
+        console.log("✅ User setup complete");
+      } catch (error: any) {
+        console.error("❌ User setup error:", error);
+        setAuthError(error.message || "Failed to setup user");
+        setIsAuthLoading(false);
+      }
+    };
+
+    setupUser();
+  }, [sessionData, connections.length, createLoggedUser]);
 
   // Effect 4: Handle disconnection
   useEffect(() => {
@@ -263,5 +341,6 @@ useEffect(() => {
     loggedUser,
     isAuthLoading,
     authError,
+    triggerAuth,
   };
 }

@@ -13,6 +13,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@base-org/account": "^2.4.0",
     "@coinbase/onchainkit": "latest",
     "@farcaster/auth-kit": "^0.8.1",
     "@farcaster/miniapp-sdk": "^0.2.1",
@@ -30,6 +31,7 @@
     "postcss": "^8.4.31",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "siwe": "^3.0.0",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^3.3.0",
     "viem": "^2.38.3",
