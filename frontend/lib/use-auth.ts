@@ -132,7 +132,7 @@ export function useAuth(): UseAuthReturn {
       let response = null;
 
       const context = await sdk.context;
-      if (context.client.clientFid === 309857) {
+      if (context?.client?.clientFid === 309857) {
         // For this specific client, use SIWE verification API route
         console.log("🔐 Using SIWE verification for FID 309857");
         
@@ -145,7 +145,9 @@ export function useAuth(): UseAuthReturn {
           body: JSON.stringify({ 
             message, 
             signature, 
-            address 
+            address,
+            fid: context.user.fid ? context.user.fid : null,
+            username: context.user.username ? context.user.username : null,
           }),
           headers: { 'Content-Type': 'application/json' },
         });
@@ -178,9 +180,6 @@ export function useAuth(): UseAuthReturn {
         response = { data, error: null };
       } else {
         signature = await signMessageAsync({ message });
-      }
-
-      if (!response) {
         response = await supabase.auth.signInWithWeb3({
           chain: "ethereum",
           message,
@@ -194,8 +193,10 @@ export function useAuth(): UseAuthReturn {
         });
       }
 
+      
+
       if (response?.error) {
-        throw `retSigDebug error: ${debugSig} error:${response.error}`;
+        throw `error signin in:${response.error}`;
       }
 
       if (response?.data?.session) {
