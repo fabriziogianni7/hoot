@@ -1,11 +1,11 @@
 import { farcasterMiniApp as miniAppConnector } from "@farcaster/miniapp-wagmi-connector";
 import { createConfig, http } from "wagmi";
-import { coinbaseWallet, injected } from "wagmi/connectors";
-import { base, basePreconf, baseSepolia } from "viem/chains";
+import { baseAccount, injected } from "wagmi/connectors";
+import { base, baseSepolia } from "viem/chains";
 
 
 // Configure all available chains
-const chains = [basePreconf, baseSepolia] as const;
+const chains = [base, baseSepolia] as const;
 
 // Create transport configuration for all chains
 const transports = {
@@ -18,9 +18,10 @@ export const wagmiConfig = createConfig({
   transports,
   connectors: [
     miniAppConnector(),
-    coinbaseWallet({
+    baseAccount({
       appName: "Hoot!",
+      
     }),
     injected()    
-  ],
+  ]
 });
