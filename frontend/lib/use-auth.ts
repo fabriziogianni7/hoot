@@ -133,8 +133,8 @@ export function useAuth(): UseAuthReturn {
           message,
           signature,
           address,
-          fid: context.user.fid ? context.user.fid : null,
-          username: context.user.username ? context.user.username : null,
+          fid: context?.user?.fid ? context.user.fid : null,
+          username: context?.user?.username ? context.user.username : null,
         }),
         headers: { "Content-Type": "application/json" },
       });
