@@ -1,249 +1,220 @@
 "use client";
 
 import { useEffect, useState, useRef, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 // Disable pre-rendering for this page
 export const dynamic = 'force-dynamic';
-import { useQuiz } from "@/lib/quiz-context";
-import { useSupabase } from "@/lib/supabase-context";
 
-function PlayQuizContent() {
+function MockPlayQuizContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const { currentGame, getCurrentQuiz, submitAnswer, nextQuestion, setCurrentQuiz, gameSessionId } = useQuiz();
-  const { supabase } = useSupabase();
-  const [timeLeft, setTimeLeft] = useState<number>(10);
-  const [initialTime, setInitialTime] = useState<number>(10); // Tempo iniziale per calcolare la percentuale
+  
+  // Mock data - quiz with questions
+  const mockQuiz = {
+    id: "mock-quiz-123",
+    title: "Test Quiz",
+    description: "A mock quiz for testing purposes",
+    questions: [
+      {
+        id: "q1",
+        text: "What is the capital of France?",
+        options: ["London", "Berlin", "Paris", "Madrid"],
+        correctAnswer: 2,
+        timeLimit: 15
+      },
+      {
+        id: "q2", 
+        text: "Which planet is closest to the Sun?",
+        options: ["Venus", "Mercury", "Earth", "Mars"],
+        correctAnswer: 1,
+        timeLimit: 15
+      },
+      {
+        id: "q3",
+        text: "What is 2 + 2?",
+        options: ["3", "4", "5", "6"],
+        correctAnswer: 1,
+        timeLimit: 10
+      },
+      {
+        id: "q4",
+        text: "What is the largest mammal?",
+        options: ["Elephant", "Blue Whale", "Giraffe", "Hippopotamus"],
+        correctAnswer: 1,
+        timeLimit: 12
+      },
+      {
+        id: "q5",
+        text: "Which programming language is this written in?",
+        options: ["JavaScript", "Python", "TypeScript", "Java"],
+        correctAnswer: 2,
+        timeLimit: 8
+      }
+    ],
+    createdAt: new Date()
+  };
+
+  // Mock game data
+  const mockGame = {
+    id: "mock-game-123",
+    quizId: "mock-quiz-123",
+    status: "active",
+    currentQuestionIndex: 0,
+    questionStartTime: Date.now(),
+    players: [
+      {
+        id: "player-1",
+        name: "Test Player 1",
+        score: 0
+      },
+      {
+        id: "player-2", 
+        name: "Test Player 2",
+        score: 0
+      },
+      {
+        id: "player-3",
+        name: "Test Player 3", 
+        score: 0
+      }
+    ]
+  };
+
+  // State management
+  const [timeLeft, setTimeLeft] = useState<number>(15);
+  const [initialTime, setInitialTime] = useState<number>(15);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [showingResults, setShowingResults] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [isCreator, setIsCreator] = useState(false);
-  const [serverStartTime, setServerStartTime] = useState<number | null>(null);
   const [playerResponses, setPlayerResponses] = useState<Record<string, { answered: boolean; isCorrect?: boolean }>>({});
   const [showPointsBanner, setShowPointsBanner] = useState(false);
   const [earnedPoints, setEarnedPoints] = useState(0);
   const [showConfetti, setShowConfetti] = useState(false);
   
-  // Utilizziamo useRef per mantenere lo stato del timer tra i render
+  // Timer refs
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const timePercentageRef = useRef<number>(100);
-  
-  const [isLoadingFromUrl, setIsLoadingFromUrl] = useState(true);
-  
-  const quiz = getCurrentQuiz();
-  
-  // Load quiz from URL parameters if not in context
-  useEffect(() => {
-    const loadQuizFromUrl = async () => {
-      const quizIdFromUrl = searchParams?.get('quizId');
-      const roomCodeFromUrl = searchParams?.get('room');
-      
-      console.log('Play page - URL params:', { quizIdFromUrl, roomCodeFromUrl });
-      
-      // If quiz is already loaded, we're good
-      if (quiz || !quizIdFromUrl) {
-        setIsLoadingFromUrl(false);
-        return;
-      }
-      
-      try {
-        console.log('Loading quiz from backend with ID:', quizIdFromUrl);
-        
-        // Fetch quiz from backend
-        const { data: quizData, error: quizError } = await supabase
-          .from('quizzes')
-          .select('*')
-          .eq('id', quizIdFromUrl)
-          .single();
-          
-        if (quizError || !quizData) {
-          console.error('Failed to load quiz:', quizError);
-          setIsLoadingFromUrl(false);
-          return;
-        }
-        
-        // Fetch questions
-        const { data: questionsData, error: questionsError } = await supabase
-          .from('questions')
-          .select('*')
-          .eq('quiz_id', quizIdFromUrl)
-          .order('order_index', { ascending: true });
-          
-        if (questionsError) {
-          console.error('Failed to load questions:', questionsError);
-          setIsLoadingFromUrl(false);
-          return;
-        }
-        
-        // Convert to frontend format and add to context
-        const loadedQuiz = {
-          id: quizData.id,
-          title: quizData.title,
-          description: quizData.description || "",
-          questions: (questionsData || []).map((q: { id: string; question_text: string; options: string[]; correct_answer_index: number; time_limit: number }) => ({
-            id: q.id,
-            text: q.question_text,
-            options: q.options,
-            correctAnswer: q.correct_answer_index,
-            timeLimit: q.time_limit || 15
-          })),
-          createdAt: new Date(quizData.created_at)
-        };
-        
-        console.log('Setting current quiz:', loadedQuiz.id);
-        setCurrentQuiz(loadedQuiz);
-        setIsLoadingFromUrl(false);
-      } catch (err) {
-        console.error('Error loading quiz from URL:', err);
-        setIsLoadingFromUrl(false);
-      }
-    };
-    
-    loadQuizFromUrl();
-  }, [searchParams, quiz, supabase, setCurrentQuiz]);
-  
-  // Check if current player is the creator
-  useEffect(() => {
-    const checkCreator = async () => {
-      if (!gameSessionId) return;
-      
-      const { data } = await supabase
-        .from('game_sessions')
-        .select('creator_session_id')
-        .eq('id', gameSessionId)
-        .single();
-      
-      const currentPlayerId = localStorage.getItem("quizPlayerId");
-      if (data && currentPlayerId) {
-        setIsCreator(data.creator_session_id === currentPlayerId);
-      }
-    };
-    
-    checkCreator();
-  }, [gameSessionId, supabase]);
-  
-  // Subscribe to real-time answer updates for creator view
-  useEffect(() => {
-    if (!isCreator || !gameSessionId || !currentGame) return;
-    
-    // Subscribe to real-time answer updates
-    const answersChannel = supabase
-      .channel(`answers:${gameSessionId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'answers',
-          filter: `player_session_id=in.(${currentGame.players.map(p => p.id).join(',')})`
-        },
-        (payload) => {
-          const answer = payload.new as any;
-          setPlayerResponses(prev => ({
-            ...prev,
-            [answer.player_session_id]: {
-              answered: true,
-              isCorrect: answer.is_correct
-            }
-          }));
-        }
-      )
-      .subscribe();
-    
-    return () => {
-      supabase.removeChannel(answersChannel);
-    };
-  }, [isCreator, gameSessionId, currentGame, supabase]);
-  
-  // Redirect if no game is active
-  useEffect(() => {
-    if (isLoadingFromUrl) return; // Wait for URL loading to complete
-    
-    if (!currentGame) {
-      router.push("/quiz");
-      return;
-    }
-    
-    if (currentGame.status === "finished") {
-      router.push("/quiz/results");
-      return;
-    }
-    
-    // Aggiorna l'indice della domanda corrente
-    setCurrentQuestionIndex(currentGame.currentQuestionIndex);
-    console.log("Current question index updated:", currentGame.currentQuestionIndex);
-  }, [currentGame, router, isLoadingFromUrl]);
-  
-  // Reset states when question changes
-  useEffect(() => {
-    if (!currentGame || !quiz) return;
 
-    // Pulisci il timer precedente se esiste
+  // Calculate points using the same logic as backend
+  const calculatePoints = (isCorrect: boolean, timeTakenMs: number, timeLimitSeconds: number): number => {
+    if (!isCorrect) {
+      return 0;
+    }
+    
+    // Same constants as backend
+    const BASE_POINTS = 100;
+    const TIME_BONUS_MULTIPLIER = 10.5;
+    
+    const timeLimitMs = timeLimitSeconds * 1000;
+    const remainingTimeSeconds = Math.max(0, timeLimitMs - timeTakenMs) / 1000;
+    const timeBonus = remainingTimeSeconds * TIME_BONUS_MULTIPLIER;
+    
+    return Math.floor(BASE_POINTS + timeBonus);
+  };
+
+  // Mock backend call - simulates the real submit-answer endpoint
+  // TODO: Replace with real API call to /api/submit-answer when integrating
+  const mockSubmitAnswerToBackend = async (playerId: string, questionId: string, answerIndex: number, timeTaken: number) => {
+    const question = mockQuiz.questions[currentQuestionIndex];
+    const isCorrect = answerIndex === question.correctAnswer;
+    
+    // Calculate points using backend logic
+    const pointsEarned = calculatePoints(isCorrect, timeTaken, question.timeLimit);
+    
+    // Simulate backend response
+    const mockResponse = {
+      success: true,
+      is_correct: isCorrect,
+      points_earned: pointsEarned,
+      new_total_score: pointsEarned, // In real app, this would be cumulative
+      answer_id: `mock-answer-${Date.now()}`
+    };
+    
+    console.log('Mock backend response:', mockResponse);
+    
+    // Show points banner for all answers (correct or incorrect)
+    setEarnedPoints(pointsEarned);
+    setShowPointsBanner(true);
+    
+    // Show confetti for correct answers
+    if (isCorrect) {
+      setShowConfetti(true);
+      setTimeout(() => {
+        setShowConfetti(false);
+      }, 3000);
+    }
+    
+    // Hide banner after 3 seconds and advance to next question for players
+    setTimeout(() => {
+      setShowPointsBanner(false);
+      
+      // Auto-advance to next question for non-creators after showing results
+      if (!isCreator) {
+        setTimeout(() => {
+          mockNextQuestion();
+        }, 2000); // Wait 2 more seconds after banner disappears
+      }
+    }, 3000);
+    
+    return mockResponse;
+  };
+
+  // Mock functions
+  const mockSubmitAnswer = async (playerId: string, questionId: string, answerIndex: number, timeTaken: number) => {
+    console.log('Mock submit answer:', { playerId, questionId, answerIndex, timeTaken });
+    
+    // Call mock backend
+    const response = await mockSubmitAnswerToBackend(playerId, questionId, answerIndex, timeTaken);
+    
+    // Update player responses for creator view
+    setPlayerResponses(prev => ({
+      ...prev,
+      [playerId]: {
+        answered: true,
+        isCorrect: response.is_correct
+      }
+    }));
+  };
+
+  const mockNextQuestion = () => {
+    console.log('Mock next question from:', currentQuestionIndex);
+    
     if (timerRef.current) {
       clearInterval(timerRef.current);
+      timerRef.current = null;
     }
     
-    // Reset states FIRST - this must run every time the question changes
-    setSelectedAnswer(null);
-    setIsAnswered(false);
-    setShowingResults(false);
-    setPlayerResponses({});
-    setShowPointsBanner(false);
-    setShowConfetti(false);
-    timePercentageRef.current = 100;
-    
-    // Get server start time for synchronized timing
-    const questionStartTimeFromServer = currentGame.questionStartTime;
-    if (questionStartTimeFromServer) {
-      setServerStartTime(questionStartTimeFromServer);
+    if (currentQuestionIndex < mockQuiz.questions.length - 1) {
+      setCurrentQuestionIndex(prev => prev + 1);
+      setShowingResults(false);
+      setIsAnswered(false);
+      setSelectedAnswer(null);
+      setPlayerResponses({});
+      setShowPointsBanner(false);
+      setShowConfetti(false);
       
-      // Calculate elapsed time since question started
-      const now = Date.now();
-      const currentQuestion = quiz?.questions[currentQuestionIndex];
-      const questionTimeLimit = currentQuestion?.timeLimit || 10;
-      const elapsed = Math.floor((now - questionStartTimeFromServer) / 1000);
-      const remaining = Math.max(0, questionTimeLimit - elapsed);
-      
-      setTimeLeft(remaining);
-      setInitialTime(questionTimeLimit);
-      
-      if (remaining > 0) {
-        setStartTime(questionStartTimeFromServer);
-        startTimer();
-      } else {
-        // Question already timed out
-        handleTimeUp();
-      }
-    } else {
-      // Fallback if no server time
-      const currentQuestion = quiz?.questions[currentQuestionIndex];
-      const questionTimeLimit = currentQuestion?.timeLimit || 10;
-      setTimeLeft(questionTimeLimit);
-      setInitialTime(questionTimeLimit);
+      // Reset timer for new question
+      const newQuestion = mockQuiz.questions[currentQuestionIndex + 1];
+      setTimeLeft(newQuestion.timeLimit);
+      setInitialTime(newQuestion.timeLimit);
       setStartTime(Date.now());
       startTimer();
+    } else {
+      // Quiz finished
+      console.log('Quiz finished!');
+      alert('Quiz completed! This is just a mock - no real data was saved.');
     }
-    
-    console.log("Question reset for index:", currentQuestionIndex);
-    
-    // Cleanup function
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, [currentQuestionIndex, quiz, currentGame]);
-  
-  // Funzione per avviare il timer
+  };
+
+  // Timer functions
   const startTimer = () => {
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         const newTime = prev <= 1 ? 0 : prev - 1;
         
-        // Aggiorna la percentuale del tempo rimanente
         timePercentageRef.current = (newTime / initialTime) * 100;
         
         if (newTime === 0) {
@@ -257,44 +228,31 @@ function PlayQuizContent() {
       });
     }, 1000);
   };
-  
-  const handleTimeUp = async () => {
+
+  const handleTimeUp = () => {
     // Only handle timeout if no answer was given and not already showing results
     if (!isAnswered && !showingResults && selectedAnswer === null) {
       setIsAnswered(true);
       
-      // Show timeout banner
-      setEarnedPoints(0);
-      setShowPointsBanner(true);
-      setTimeout(() => {
-        setShowPointsBanner(false);
-      }, 3000);
-      
-      // Auto-submit -1 for no answer (only for non-creators, since creators don't answer)
+      // Auto-submit -1 for no answer (only for non-creators)
       if (!isCreator) {
-        const playerId = localStorage.getItem("quizPlayerId");
-        if (playerId && quiz && currentGame) {
-          const question = quiz.questions[currentQuestionIndex];
-          if (question) {
-            const maxTime = question.timeLimit * 1000; // Convert to milliseconds
-            try {
-              await submitAnswer(playerId, question.id, -1, maxTime);
-            } catch (error) {
-              console.error('Error submitting timeout answer:', error);
-            }
-          }
-        }
+        const playerId = "mock-player-123";
+        const question = mockQuiz.questions[currentQuestionIndex];
+        mockSubmitAnswer(playerId, question.id, -1, 10000);
+      } else {
+        // For creator mode, show timeout banner
+        setEarnedPoints(0);
+        setShowPointsBanner(true);
+        setTimeout(() => {
+          setShowPointsBanner(false);
+        }, 3000);
       }
       
-      // Show results
       setShowingResults(true);
-      
-      // Creator has manual control via "Next Question" button, no automatic advancement
-      // Non-creators wait for creator to advance
     }
   };
-  
-  const handleAnswerSelect = async (answerIndex: number) => {
+
+  const handleAnswerSelect = (answerIndex: number) => {
     console.log("Answer selected:", answerIndex, "for question:", currentQuestionIndex);
     if (isAnswered || showingResults) {
       console.log("Already answered or showing results");
@@ -312,70 +270,26 @@ function PlayQuizContent() {
     
     // Calculate time taken
     const endTime = Date.now();
-    const question = quiz?.questions[currentQuestionIndex];
-    const maxTime = question?.timeLimit ? question.timeLimit * 1000 : 10000;
-    const timeTaken = startTime ? endTime - startTime : maxTime;
+    const timeTaken = startTime ? endTime - startTime : 10000;
     
-    // Submit answer and get points from backend
-    const playerId = localStorage.getItem("quizPlayerId");
-    if (playerId && quiz && currentGame && question) {
-      try {
-        // Call submitAnswer which returns the backend response
-        await submitAnswer(playerId, question.id, answerIndex, timeTaken);
-        
-        // Get the updated player data from the game state
-        const updatedPlayer = currentGame.players.find(p => p.id === playerId);
-        if (updatedPlayer) {
-          // Get the last answer to extract points
-          const lastAnswer = updatedPlayer.answers[updatedPlayer.answers.length - 1];
-          if (lastAnswer) {
-            const points = lastAnswer.isCorrect ? lastAnswer.pointsEarned || 0 : 0;
-            
-            setEarnedPoints(points);
-            setShowPointsBanner(true);
-            
-            // Show confetti for correct answers
-            if (lastAnswer.isCorrect) {
-              setShowConfetti(true);
-              setTimeout(() => {
-                setShowConfetti(false);
-              }, 3000);
-            }
-            
-            // Hide banner after 3 seconds
-            setTimeout(() => {
-              setShowPointsBanner(false);
-            }, 3000);
-          }
-        }
-      } catch (error) {
-        console.error('Error submitting answer:', error);
-        // Fallback to showing 0 points
-        setEarnedPoints(0);
-        setShowPointsBanner(true);
-        setTimeout(() => {
-          setShowPointsBanner(false);
-        }, 3000);
-      }
-    }
+    // Submit answer
+    const playerId = "mock-player-123";
+    const question = mockQuiz.questions[currentQuestionIndex];
+    mockSubmitAnswer(playerId, question.id, answerIndex, timeTaken);
     
-    // Show results
     setShowingResults(true);
-    
-    // Creator has manual control via "Next Question" button
-    // Non-creators wait for creator to advance via realtime update
   };
-  
+
   const handleNextQuestion = () => {
-    console.log("Moving to next question from:", currentQuestionIndex);
-    
-    // Ferma il timer prima di passare alla prossima domanda
+    mockNextQuestion();
+  };
+
+  // Initialize timer when component mounts or question changes
+  useEffect(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
-      timerRef.current = null;
     }
     
-    // Reset timer states
     setSelectedAnswer(null);
     setIsAnswered(false);
     setShowingResults(false);
@@ -384,51 +298,29 @@ function PlayQuizContent() {
     setShowConfetti(false);
     timePercentageRef.current = 100;
     
-    // Only creator can advance questions
-    if (isCreator) {
-      console.log("Creator advancing to next question");
-      nextQuestion();
-    } else {
-      console.log("Non-creator waiting for question advance from host");
-    }
-  };
-  
-  // Debug logging
-  useEffect(() => {
-    console.log('Play page - currentGame:', currentGame);
-    console.log('Play page - quiz:', quiz);
-    console.log('Play page - isLoadingFromUrl:', isLoadingFromUrl);
-    if (currentGame) {
-      console.log('Play page - currentGame.quizId:', currentGame.quizId);
-      console.log('Play page - Looking for quiz with ID:', currentGame.quizId);
-    }
-  }, [currentGame, quiz, isLoadingFromUrl]);
+    const question = mockQuiz.questions[currentQuestionIndex];
+    setTimeLeft(question.timeLimit);
+    setStartTime(Date.now());
+    startTimer();
+    
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [currentQuestionIndex]);
 
-  if (isLoadingFromUrl || !currentGame || !quiz) {
-    return (
-      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-pulse text-2xl font-bold mb-4">Loading...</div>
-          <div className="text-sm text-gray-400">
-            {isLoadingFromUrl && <p>Loading quiz data from server...</p>}
-            {!isLoadingFromUrl && !currentGame && <p>Waiting for game state...</p>}
-            {!isLoadingFromUrl && !quiz && <p>Waiting for quiz data...</p>}
-            {currentGame && (
-              <>
-                <p>Game ID: {currentGame.quizId || 'EMPTY'}</p>
-                <p>Game Status: {currentGame.status}</p>
-                <p>Players: {currentGame.players.length}</p>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-  
-  // Verifica che l'indice della domanda sia valido
-  if (currentQuestionIndex >= quiz.questions.length) {
-    console.error("Invalid question index:", currentQuestionIndex, "max:", quiz.questions.length - 1);
+  // Check if current player is the creator (mock)
+  useEffect(() => {
+    // Simulate creator mode - you can toggle this for testing
+    const urlParams = new URLSearchParams(window.location.search);
+    const creatorMode = urlParams.get('creator') === 'true';
+    setIsCreator(creatorMode);
+  }, []);
+
+  // Verify question index is valid
+  if (currentQuestionIndex >= mockQuiz.questions.length) {
+    console.error("Invalid question index:", currentQuestionIndex, "max:", mockQuiz.questions.length - 1);
     return (
       <div className="min-h-screen w-full bg-black text-white relative overflow-hidden flex items-center justify-center">
         <div className="text-2xl font-bold">Quiz error: Invalid question index</div>
@@ -436,7 +328,7 @@ function PlayQuizContent() {
     );
   }
   
-  const currentQuestion = quiz.questions[currentQuestionIndex];
+  const currentQuestion = mockQuiz.questions[currentQuestionIndex];
   if (!currentQuestion) {
     console.error("Question not found at index:", currentQuestionIndex);
     return (
@@ -485,6 +377,13 @@ function PlayQuizContent() {
           className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
           onClick={() => router.push('/')}
         />
+      </div>
+
+      {/* Mock indicator */}
+      <div className="absolute top-4 right-4 z-20">
+        <div className="bg-yellow-500 text-black px-3 py-1 rounded-full text-sm font-bold">
+          MOCK MODE
+        </div>
       </div>
 
       {/* Fireworks Animation */}
@@ -562,7 +461,6 @@ function PlayQuizContent() {
           </div>
         </div>
         
-        
         {/* Question with animated border timer */}
         <div className="relative mb-8 w-full max-w-2xl" style={{ width: '600px', maxWidth: '90vw' }}>
           {/* Question box with animated border */}
@@ -578,7 +476,7 @@ function PlayQuizContent() {
             }}
           >
             {/* Timer number indicator */}
-            <div className={`absolute -top-6 -right-6 text-white rounded-full w-16 h-16 flex items-center justify-center text-xl font-bold shadow-lg z-20 transition-colors duration-300 ${
+            <div className={`absolute -top-10 -right-6 text-white rounded-full w-16 h-16 flex items-center justify-center text-xl font-bold shadow-lg z-20 transition-colors duration-300 ${
               isAnswered 
                 ? 'bg-gray-500' 
                 : timeLeft <= 5 
@@ -611,11 +509,11 @@ function PlayQuizContent() {
           <div className="w-full max-w-md">
             <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6 mb-4">
               <h3 className="text-xl font-semibold mb-4 text-purple-200 text-center">
-                Player Responses ({Object.keys(playerResponses).length}/{currentGame.players.length - 1})
+                Player Responses ({Object.keys(playerResponses).length}/{mockGame.players.length - 1})
               </h3>
               <div className="space-y-2">
-                {currentGame.players
-                  .filter(p => p.id !== localStorage.getItem("quizPlayerId")) // Exclude creator
+                {mockGame.players
+                  .filter(p => p.id !== "mock-player-123") // Exclude creator
                   .map(player => {
                     const response = playerResponses[player.id];
                     return (
@@ -674,18 +572,18 @@ function PlayQuizContent() {
               const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
               const baseColor = colors[index % colors.length];
               
-              let backgroundColor = `${baseColor}40`; // Sfondo trasparente come admin
-              let borderColor = baseColor; // Bordo colorato
+              let backgroundColor = `${baseColor}40`;
+              let borderColor = baseColor;
               
               if (isAnswered) {
                 if (index === correctAnswerIndex) {
-                  backgroundColor = "#22c55e40"; // green-500 con trasparenza
+                  backgroundColor = "#22c55e40";
                   borderColor = "#22c55e";
                 } else if (index === selectedAnswer && index !== correctAnswerIndex) {
-                  backgroundColor = "#dc262640"; // red-600 con trasparenza
+                  backgroundColor = "#dc262640";
                   borderColor = "#dc2626";
                 } else {
-                  backgroundColor = "#37415140"; // gray-700 con trasparenza
+                  backgroundColor = "#37415140";
                   borderColor = "#374151";
                 }
               }
@@ -695,14 +593,14 @@ function PlayQuizContent() {
                   key={index}
                   className="rounded p-4 text-white relative border-2 cursor-pointer hover:opacity-80 transition-opacity"
                   style={{ 
-                    backgroundColor: backgroundColor, // Sfondo colorato pieno
-                    borderColor: borderColor, // Bordo dello stesso colore
+                    backgroundColor: backgroundColor,
+                    borderColor: borderColor,
                     borderWidth: '2px',
                     opacity: isAnswered || showingResults ? (index === selectedAnswer || index === correctAnswerIndex ? 1 : 0.7) : 1,
                   }}
                   onClick={() => handleAnswerSelect(index)}
                 >
-                  {/* Indicatore di risposta corretta */}
+                  {/* Correct answer indicator */}
                   {isAnswered && index === correctAnswerIndex && (
                     <div className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center bg-white">
                       <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -749,28 +647,34 @@ function PlayQuizContent() {
           </div>
         )}
         
-        
         {/* Debug info */}
-        {process.env.NODE_ENV !== "production" && (
-          <div className="mt-8 text-xs text-gray-500 text-center">
-            <p>Question Index: {currentQuestionIndex}</p>
-            <p>Game Status: {currentGame.status}</p>
-            <p>Is Answered: {isAnswered ? "Yes" : "No"}</p>
-            <p>Showing Results: {showingResults ? "Yes" : "No"}</p>
-            <p>Time Left: {timeLeft}s</p>
-            <p>Time Percentage: {timePercentageRef.current.toFixed(1)}%</p>
+        <div className="mt-8 text-xs text-gray-500 text-center">
+          <p>Question Index: {currentQuestionIndex}</p>
+          <p>Game Status: {mockGame.status}</p>
+          <p>Is Answered: {isAnswered ? "Yes" : "No"}</p>
+          <p>Showing Results: {showingResults ? "Yes" : "No"}</p>
+          <p>Time Left: {timeLeft}s</p>
+          <p>Time Percentage: {timePercentageRef.current.toFixed(1)}%</p>
+          <p>Mode: {isCreator ? "Creator" : "Player"}</p>
+          <div className="mt-2">
+            <a 
+              href={isCreator ? "/quiz/play-mock" : "/quiz/play-mock?creator=true"} 
+              className="text-blue-400 hover:text-blue-300 underline"
+            >
+              Switch to {isCreator ? "Player" : "Creator"} mode
+            </a>
           </div>
-        )}
+        </div>
       </div>
       </div>
     </>
   );
 }
 
-export default function PlayQuizPage() {
+export default function MockPlayQuizPage() {
   return (
     <Suspense fallback={<div className="min-h-screen w-full bg-black text-white flex items-center justify-center">Loading...</div>}>
-      <PlayQuizContent />
+      <MockPlayQuizContent />
     </Suspense>
   );
 }

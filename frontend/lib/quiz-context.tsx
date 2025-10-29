@@ -379,6 +379,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
               selectedAnswer: answer,
               timeToAnswer,
               isCorrect: response.is_correct,
+              pointsEarned: response.points_earned,
             }
 
             return {

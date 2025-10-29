@@ -11,7 +11,10 @@ import ShareBox from "@/components/ShareBox";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { useAuth } from "@/lib/use-auth";
 
-
+// Character limits for quiz content
+const MAX_QUESTION_LENGTH = 500;
+const MAX_ANSWER_LENGTH = 200;
+const MAX_QUIZ_TITLE_LENGTH = 100;
 
 interface QuestionOption {
   text: string;
@@ -205,6 +208,22 @@ export default function AdminPage() {
       });
     }
   }, [currentQuestionIndex, questions]);
+
+  // Auto-scroll to current question when it changes
+  useEffect(() => {
+    const scrollContainer = document.querySelector('.overflow-x-auto');
+    if (scrollContainer) {
+      // Find the current question element
+      const currentQuestionElement = scrollContainer.querySelector('.border-white');
+      if (currentQuestionElement) {
+        currentQuestionElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'nearest', 
+          inline: 'center' 
+        });
+      }
+    }
+  }, [currentQuestionIndex]);
 
   const handleOptionChange = (index: number, value: string) => {
     const newOptions = [...currentQuestion.options];
@@ -499,15 +518,23 @@ export default function AdminPage() {
         })),
         createdAt: new Date()
       };
-      const userFid = (await (sdk.context)).user.fid;
+      // Get user FID for testing (fallback to 12345 if not in Farcaster)
+      let userFid;
+      try {
+        const context = await sdk.context;
+        userFid = context?.user?.fid || 12345; // Use test FID if not in Farcaster
+      } catch (error) {
+        console.log("⚠️ Not in Farcaster context, using test FID");
+        userFid = 12345; // Test FID for development
+      }
       
       // Create quiz in backend (no contract info yet)
       const backendQuizId = await createQuizOnBackend(
         quiz,
         undefined, // Contract address (will be set later if bounty is added)
-        chain?.id , // network id (use Base Sepolia as default)
+        chain?.id || 84532, // network id (use Base Sepolia as default)
         userFid?.toString(), // user fid (not available in this context)
-        address , // user address (use dummy if not connected)
+        address || "0x0000000000000000000000000000000000000000", // user address (use zero address if not connected)
         0, // prize amount (will be updated later for bounty quizzes)
         undefined // prize token (will be updated later for bounty quizzes)
       );
@@ -519,7 +546,7 @@ export default function AdminPage() {
       const generatedRoomCode = await startGame(backendQuizId);
       
       // Auto-join as the creator
-      const creatorPlayerId = await joinGameContext("Creator", address, generatedRoomCode);
+      const creatorPlayerId = await joinGameContext("Creator", address || "0x0000000000000000000000000000000000000000", generatedRoomCode);
       
       // Update game session with creator in one call
         await supabase
@@ -571,11 +598,11 @@ export default function AdminPage() {
       />
       
       {/* Logo centered */}
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20">
+      <div className="absolute top-0.1 left-1/2 transform -translate-x-1/2 z-20">
         <img 
           src="/Logo.png" 
           alt="Hoot Logo" 
-          className="h-20 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+          className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
           onClick={() => router.push('/')}
         />
       </div>
@@ -640,15 +667,22 @@ export default function AdminPage() {
         )}
 
         {/* Top navigation */}
-        <div className="w-full max-w-md flex justify-center items-center mb-1">
+        <div className="w-full max-w-md flex justify-center items-center mb-1 relative">
           <input
             type="text"
             value={quizTitle}
             onChange={(e) => setQuizTitle(e.target.value)}
             onFocus={(e) => e.target.select()}
             placeholder="Quiz Title"
+            maxLength={MAX_QUIZ_TITLE_LENGTH}
             className="px-4 py-2 mb-3 text- rounded bg-black text-white border border-white w-full"
           />
+          {/* Character counter for quiz title - only show when limit reached */}
+          {quizTitle.length >= MAX_QUIZ_TITLE_LENGTH && (
+            <div className="absolute bottom-0 right-2 text-xs text-red-400 bg-red-900/50 px-1 rounded">
+              {quizTitle.length}/{MAX_QUIZ_TITLE_LENGTH}
+            </div>
+          )}
         </div>
         
         {/* Question input */}
@@ -667,6 +701,7 @@ export default function AdminPage() {
                 }
               }}
               placeholder="Enter your question here"
+              maxLength={MAX_QUESTION_LENGTH}
               className="quiz-input question-text w-full h-full bg-transparent text-center resize-none focus:outline-none absolute inset-0 flex items-center justify-center text-sm"
               style={{ 
                 display: 'flex', 
@@ -676,6 +711,12 @@ export default function AdminPage() {
                 padding: '1rem'
               }}
             />
+            {/* Character counter for question - only show when limit reached */}
+            {currentQuestion.text.length >= MAX_QUESTION_LENGTH && (
+              <div className="absolute bottom-1 right-1 text-xs text-red-500 bg-red-100 px-1 rounded">
+                {currentQuestion.text.length}/{MAX_QUESTION_LENGTH}
+              </div>
+            )}
           </div>
         </div>
         
@@ -715,74 +756,91 @@ export default function AdminPage() {
                 </div>
                 
                 
-                <input
-                  type="text"
-                  value={option.text}
-                  onChange={(e) => handleOptionChange(index, e.target.value)}
-                  placeholder={`add reply ${index + 1}`}
-                  className="quiz-input w-full bg-transparent focus:outline-none pr-12"
-                  onClick={(e) => e.stopPropagation()}
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={option.text}
+                    onChange={(e) => handleOptionChange(index, e.target.value)}
+                    placeholder={`add reply ${index + 1}`}
+                    maxLength={MAX_ANSWER_LENGTH}
+                    className="quiz-input w-full bg-transparent focus:outline-none pr-12"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  {/* Character counter for answer - only show when limit reached */}
+                  {option.text.length >= MAX_ANSWER_LENGTH && (
+                    <div className="absolute bottom-0 right-12 text-xs text-red-300 bg-red-900/50 px-1 rounded">
+                      {option.text.length}/{MAX_ANSWER_LENGTH}
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
         
         {/* Question navigation */}
-        <div className="w-full max-w-md flex items-center space-x-4 pb-2 overflow-x-auto px-2 scrollbar-hide">
-          {questions.map((question, index) => (
-            <div 
-              key={index}
-              className={`bg-black border ${currentQuestionIndex === index ? 'border-white' : 'border-white/30'} rounded px-4 py-2 text-sm cursor-pointer hover:border-white transition-colors flex-shrink-0 relative`}
-              onClick={() => handleQuestionClick(index)}
-            >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteQuestion(index);
-                }}
-                className="absolute top-0 right-0 text-white hover:text-gray-300 p-1"
-                title="Delete question"
+        <div className="w-full max-w-md relative">
+          {/* Container with horizontal scroll */}
+          <div className="flex items-center space-x-4 pb-2 overflow-x-auto px-2 scrollbar-hide" 
+               style={{ 
+                 scrollBehavior: 'smooth',
+                 scrollPaddingLeft: '50%',
+                 scrollPaddingRight: '50%'
+               }}>
+            {questions.map((question, index) => (
+              <div 
+                key={index}
+                className={`bg-black border ${currentQuestionIndex === index ? 'border-white' : 'border-white/30'} rounded px-4 py-2 text-sm cursor-pointer hover:border-white transition-colors flex-shrink-0 relative`}
+                onClick={() => handleQuestionClick(index)}
               >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteQuestion(index);
+                  }}
+                  className="absolute top-0 right-0 text-white hover:text-gray-300 p-1"
+                  title="Delete question"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                <div>
+                  Question {index + 1}
+                </div>
+              </div>
+            ))}
+            
+            {/* Current question button (if it's a new question) */}
+            {currentQuestionIndex === questions.length && (
+              <div 
+                className="bg-black border border-white rounded px-4 py-2 text-sm flex-shrink-0"
+              >
+                Question {displayQuestionNumber}<br/>
+                {currentQuestion.text ? getQuestionSummary(currentQuestion) : ""}
+              </div>
+            )}
+            
+            {/* Add question button - always visible on the right */}
+            <div className="flex flex-col items-center relative flex-shrink-0">
+              <button 
+                className="bg-black border border-white/30 rounded px-4 py-2 text-2xl hover:border-white transition-colors"
+                onClick={handleAddQuestion}
+              >
+                +
               </button>
-              <div>
-                Question {index + 1}
-              </div>
+              {addQuestionError && (
+                <div className="mt-2 text-xs text-red-400 text-center max-w-48">
+                  {addQuestionError}
+                </div>
+              )}
+              {showTooltip && (
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-gray-300 text-black text-xs px-2 py-1 rounded shadow-lg z-50 whitespace-nowrap">
+                  Complete the current question
+                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-300"></div>
+                </div>
+              )}
             </div>
-          ))}
-          
-          {/* Current question button (if it's a new question) */}
-          {currentQuestionIndex === questions.length && (
-            <div 
-              className="bg-black border border-white rounded px-4 py-2 text-sm flex-shrink-0"
-            >
-              Question {displayQuestionNumber}<br/>
-              {currentQuestion.text ? getQuestionSummary(currentQuestion) : ""}
-            </div>
-          )}
-          
-          {/* Add question button */}
-          <div className="flex flex-col items-center relative">
-            <button 
-              className="bg-black border border-white/30 rounded px-4 py-2 text-2xl flex-shrink-0 hover:border-white transition-colors"
-              onClick={handleAddQuestion}
-            >
-              +
-            </button>
-            {addQuestionError && (
-              <div className="mt-2 text-xs text-red-400 text-center max-w-48">
-                {addQuestionError}
-              </div>
-            )}
-            {showTooltip && (
-              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-gray-300 text-black text-xs px-2 py-1 rounded shadow-lg z-50 whitespace-nowrap">
-                Complete the current question
-                <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-300"></div>
-              </div>
-            )}
           </div>
         </div>
         
@@ -950,6 +1008,7 @@ export default function AdminPage() {
                       value={customTokenAddress}
                       onChange={(e) => setCustomTokenAddress(e.target.value)}
                       placeholder="0x..."
+                      maxLength={42}
                       className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded text-white focus:outline-none focus:border-purple-500"
                     />
                     <div className="text-xs text-gray-400 mt-1">
