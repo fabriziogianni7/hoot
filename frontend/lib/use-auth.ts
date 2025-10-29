@@ -3,14 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { sdk } from "@farcaster/miniapp-sdk";
 
-
 import { supabase } from "./supabase-client";
-import {
-  useAccount,
-  useConnections,
-  useSignMessage,
-  useEnsName,
-} from "wagmi";
+import { useAccount, useConnections, useSignMessage, useEnsName } from "wagmi";
 import type { Session, AuthError, User } from "@supabase/supabase-js";
 import { base, mainnet } from "viem/chains";
 import { toCoinType } from "viem";
@@ -123,7 +117,6 @@ export function useAuth(): UseAuthReturn {
 
       // let signature = await signMessageAsync({ message });
       let signature;
-      let debugSig;
 
       console.log("📝 Requesting signature...", signature);
 
@@ -132,68 +125,49 @@ export function useAuth(): UseAuthReturn {
       let response = null;
 
       const context = await sdk.context;
-      if (context?.client?.clientFid === 309857) {
-        // For this specific client, use SIWE verification API route
-        console.log("🔐 Using SIWE verification for FID 309857");
-        
-        // Generate signature
-        signature = await signMessageAsync({ message });
-        
-        // Send to SIWE verification API route
-        const apiResponse = await fetch('/api/auth/siwe-verify', {
-          method: 'POST',
-          body: JSON.stringify({ 
-            message, 
-            signature, 
-            address,
-            fid: context.user.fid ? context.user.fid : null,
-            username: context.user.username ? context.user.username : null,
-          }),
-          headers: { 'Content-Type': 'application/json' },
-        });
 
-        const apiData = await apiResponse.json();
-        
-        if (!apiResponse.ok || apiData.error) {
-          throw new Error(apiData.error || 'SIWE verification failed');
-        }
+      // Generate signature
+      signature = await signMessageAsync({ message });
 
-        const { access_token, refresh_token } = apiData;
-        
-        if (!access_token || !refresh_token) {
-          throw new Error('Missing tokens in API response');
-        }
-
-        // Set Supabase session with the returned tokens
-        const { data, error: sessionError } = await supabase.auth.setSession({
-          access_token,
-          refresh_token,
-        });
-
-        if (sessionError || !data.session) {
-          throw sessionError || new Error('Failed to create session');
-        }
-
-        console.log("✅ SIWE authentication successful");
-        
-        // Set response to continue with normal flow
-        response = { data, error: null };
-      } else {
-        signature = await signMessageAsync({ message });
-        response = await supabase.auth.signInWithWeb3({
-          chain: "ethereum",
+      // Send to SIWE verification API route
+      const apiResponse = await fetch("/api/auth/siwe-verify", {
+        method: "POST",
+        body: JSON.stringify({
           message,
-          signature: signature as `0x${string}`,
-          options: {
-            signInWithEthereum: {
-              address,
-              chainId,
-            },
-          },
-        });
+          signature,
+          address,
+          fid: context.user.fid ? context.user.fid : null,
+          username: context.user.username ? context.user.username : null,
+        }),
+        headers: { "Content-Type": "application/json" },
+      });
+
+      const apiData = await apiResponse.json();
+
+      if (!apiResponse.ok || apiData.error) {
+        throw new Error(apiData.error || "SIWE verification failed");
       }
 
-      
+      const { access_token, refresh_token } = apiData;
+
+      if (!access_token || !refresh_token) {
+        throw new Error("Missing tokens in API response");
+      }
+
+      // Set Supabase session with the returned tokens
+      const { data, error: sessionError } = await supabase.auth.setSession({
+        access_token,
+        refresh_token,
+      });
+
+      if (sessionError || !data.session) {
+        throw sessionError || new Error("Failed to create session");
+      }
+
+      console.log("✅ SIWE authentication successful");
+
+      // Set response to continue with normal flow
+      response = { data, error: null };
 
       if (response?.error) {
         throw `error signin in:${response.error}`;
