@@ -116,16 +116,15 @@ export function useAuth(): UseAuthReturn {
       }).prepareMessage();
 
 
-      console.log("📝 Requesting signature...", signature);
-
-      console.log("✅ Signature received, signing in...");
+      
 
       let response = null;
-
+      
       const context = await sdk.context;
-
+      
       // Generate signature
-     const signature = await signMessageAsync({ message });
+      const signature = await signMessageAsync({ message });
+
 
       // Send to SIWE verification API route
       const apiResponse = await fetch("/api/auth/siwe-verify", {
@@ -162,7 +161,6 @@ export function useAuth(): UseAuthReturn {
         throw sessionError || new Error("Failed to create session");
       }
 
-      console.log("✅ SIWE authentication successful");
 
       // Set response to continue with normal flow
       response = { data, error: null };
