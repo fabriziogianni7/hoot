@@ -525,7 +525,7 @@ export default function AdminPage() {
         quiz,
         undefined, // Contract address (will be set later if bounty is added)
         chain?.id, // network id
-        userFid.toString(), // user fid
+        userFid?.toString() || '', // user fid
         address, // user address
         0, // prize amount (will be updated later for bounty quizzes)
         undefined // prize token (will be updated later for bounty quizzes)
