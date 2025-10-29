@@ -10,6 +10,7 @@ import { useAccount } from "wagmi";
 import { useSupabase } from "@/lib/supabase-context";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import Link from "next/link";
+import { useAuth } from "@/lib/use-auth";
 
 function LobbyContent() {
   const router = useRouter();
@@ -18,6 +19,7 @@ function LobbyContent() {
   const { address } = useAccount();
   const { supabase } = useSupabase();
   const { isFrameReady, setFrameReady } = useMiniKit();
+  const { loggedUser, isAuthLoading, authError, triggerAuth } = useAuth();
   const [countdown, setCountdown] = useState<number | null>(null);
   const [playerName, setPlayerName] = useState("");
   const [joined, setJoined] = useState(false);
@@ -214,9 +216,24 @@ function LobbyContent() {
       setError("");
       
       try {
+        // Check if user is authenticated, if not trigger authentication
+        if (!loggedUser?.isAuthenticated || !loggedUser?.session) {
+          console.log('User not authenticated, triggering auth...');
+          await triggerAuth();
+          
+          // After triggerAuth completes, check again if user is now authenticated
+          // If still not authenticated, the auth flow was cancelled or failed
+          if (!loggedUser?.isAuthenticated) {
+            setError('Authentication required to join the game.');
+            setIsJoining(false);
+            return;
+          }
+        }
+        
         const roomCodeToUse = roomCodeFromUrl || contextRoomCode;
         if (!roomCodeToUse) {
           setError('No room code available');
+          setIsJoining(false);
           return;
         }
         
@@ -334,6 +351,11 @@ function LobbyContent() {
                     {error}
                   </div>
                 )}
+                {authError && (
+                  <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+                    Authentication Error: {authError}
+                  </div>
+                )}
                 <div className="mb-4">
                   <input
                     type="text"
@@ -347,7 +369,7 @@ function LobbyContent() {
                 </div>
                 <button
                   type="submit"
-                  disabled={isJoining}
+                  disabled={isJoining || isAuthLoading}
                   data-testid="join-quiz-button"
                   style={{
                     width: "100%",
@@ -355,25 +377,28 @@ function LobbyContent() {
                     borderRadius: "0.375rem",
                     color: "white",
                     fontWeight: "500",
-                    backgroundColor: isJoining ? "#4a5568" : "#795AFF",
+                    backgroundColor: (isJoining || isAuthLoading) ? "#4a5568" : "#795AFF",
                     border: "none",
-                    cursor: isJoining ? "not-allowed" : "pointer",
-                    opacity: isJoining ? 0.5 : 1,
+                    cursor: (isJoining || isAuthLoading) ? "not-allowed" : "pointer",
+                    opacity: (isJoining || isAuthLoading) ? 0.5 : 1,
                     transition: "background-color 0.2s ease",
-                    background: isJoining ? "#4a5568" : "#795AFF"
+                    background: (isJoining || isAuthLoading) ? "#4a5568" : "#795AFF"
                   }}
                   onMouseEnter={(e) => {
-                    if (!isJoining) {
+                    if (!isJoining && !isAuthLoading) {
                       e.currentTarget.style.backgroundColor = "#6B46C1";
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!isJoining) {
+                    if (!isJoining && !isAuthLoading) {
                       e.currentTarget.style.backgroundColor = "#795AFF";
                     }
                   }}
                 >
-                  {isJoining ? 'Joining...' : 'Join Quiz'}
+                  {isAuthLoading ? 'Loading...' : 
+                   isJoining ? 'Joining...' : 
+                   (!loggedUser?.isAuthenticated || !loggedUser?.session) ? 'Connect Wallet to Join' : 
+                   'Join Quiz'}
                 </button>
               </form>
             ) : (
