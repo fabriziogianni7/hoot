@@ -9,6 +9,7 @@ import { HOOT_QUIZ_MANAGER_ABI, ZERO_ADDRESS, USDC_ADDRESSES, ERC20_ABI } from "
 import { parseEther, parseUnits } from "viem";
 import ShareBox from "@/components/ShareBox";
 import { sdk } from "@farcaster/miniapp-sdk";
+import { useAuth } from "@/lib/use-auth";
 
 
 
@@ -30,7 +31,8 @@ export default function AdminPage() {
   const { chains: _chains, switchChain } = useSwitchChain()
   const publicClient = usePublicClient();
   const { supabase } = useSupabase();
-  const { data: ethBalance } = useBalance({address});
+  const { data: ethBalance } = useBalance({address});
+  const { loggedUser, isAuthLoading, authError: authErrorMessage, triggerAuth } = useAuth();
 
 
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -786,6 +788,19 @@ export default function AdminPage() {
         
         {/* Action buttons */}
         <div className="mt-6 flex flex-col gap-4 w-full max-w-md">
+          {isAuthLoading ? (
+            // Show loading state while checking authentication
+            <button
+              disabled
+              className="px-8 py-4 rounded text-white font-bold opacity-50 cursor-not-allowed"
+              style={{
+                backgroundColor: "#666"
+              }}
+            >
+              Loading...
+            </button>
+          ) : loggedUser?.isAuthenticated && loggedUser?.session ? (
+            // User is authenticated - show Create Quiz button
             <button
               onClick={() => setShowQuizOptions(true)}
               disabled={isCreating}
@@ -796,6 +811,18 @@ export default function AdminPage() {
             >
               {isCreating ? 'Creating...' : 'Create Quiz'}
             </button>
+          ) : (
+            // User is not authenticated - show Connect Wallet button
+            <button
+              onClick={triggerAuth}
+              className="px-8 py-4 rounded text-white font-bold"
+              style={{
+                backgroundColor: "#795AFF"
+              }}
+            >
+              Connect Wallet to Create Quiz
+            </button>
+          )}
           
           {/* AI Agent button */}
           
