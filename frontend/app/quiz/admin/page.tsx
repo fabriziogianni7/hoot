@@ -518,23 +518,29 @@ export default function AdminPage() {
         })),
         createdAt: new Date()
       };
-      // Get user FID for testing (fallback to 12345 if not in Farcaster)
-      let userFid;
-      try {
-        const context = await sdk.context;
-        userFid = context?.user?.fid || 12345; // Use test FID if not in Farcaster
-      } catch (error) {
-        console.log("⚠️ Not in Farcaster context, using test FID");
-        userFid = 12345; // Test FID for development
+      // Get user FID from Farcaster context
+      const context = await sdk.context;
+      const userFid = context?.user?.fid;
+      
+      if (!userFid) {
+        setError("Please open this app in Farcaster to create a quiz");
+        setIsCreating(false);
+        return null;
+      }
+      
+      if (!address) {
+        setError("Please connect your wallet to create a quiz");
+        setIsCreating(false);
+        return null;
       }
       
       // Create quiz in backend (no contract info yet)
       const backendQuizId = await createQuizOnBackend(
         quiz,
         undefined, // Contract address (will be set later if bounty is added)
-        chain?.id || 84532, // network id (use Base Sepolia as default)
-        userFid?.toString(), // user fid (not available in this context)
-        address || "0x0000000000000000000000000000000000000000", // user address (use zero address if not connected)
+        chain?.id, // network id
+        userFid.toString(), // user fid
+        address, // user address
         0, // prize amount (will be updated later for bounty quizzes)
         undefined // prize token (will be updated later for bounty quizzes)
       );
@@ -546,7 +552,7 @@ export default function AdminPage() {
       const generatedRoomCode = await startGame(backendQuizId);
       
       // Auto-join as the creator
-      const creatorPlayerId = await joinGameContext("Creator", address || "0x0000000000000000000000000000000000000000", generatedRoomCode);
+      const creatorPlayerId = await joinGameContext("Creator", address, generatedRoomCode);
       
       // Update game session with creator in one call
         await supabase
