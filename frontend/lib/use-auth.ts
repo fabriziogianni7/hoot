@@ -107,7 +107,7 @@ export function useAuth(): UseAuthReturn {
       const message = new SiweMessage({
         domain,
         address,
-        statement: "Sign in to ib Hoot!",
+        statement: "Sign in Hoot!",
         uri: origin,
         version: "1",
         chainId: 8453,
@@ -115,19 +115,16 @@ export function useAuth(): UseAuthReturn {
         issuedAt: issuedAt,
       }).prepareMessage();
 
-      // let signature = await signMessageAsync({ message });
-      let signature;
 
-      console.log("📝 Requesting signature...", signature);
-
-      console.log("✅ Signature received, signing in...");
+      
 
       let response = null;
-
+      
       const context = await sdk.context;
-
+      
       // Generate signature
-      signature = await signMessageAsync({ message });
+      const signature = await signMessageAsync({ message });
+
 
       // Send to SIWE verification API route
       const apiResponse = await fetch("/api/auth/siwe-verify", {
@@ -164,7 +161,6 @@ export function useAuth(): UseAuthReturn {
         throw sessionError || new Error("Failed to create session");
       }
 
-      console.log("✅ SIWE authentication successful");
 
       // Set response to continue with normal flow
       response = { data, error: null };
