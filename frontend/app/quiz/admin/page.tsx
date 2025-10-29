@@ -518,21 +518,7 @@ export default function AdminPage() {
         })),
         createdAt: new Date()
       };
-      // Get user FID from Farcaster context
-      const context = await sdk.context;
-      const userFid = context?.user?.fid;
-      
-      if (!userFid) {
-        setError("Please open this app in Farcaster to create a quiz");
-        setIsCreating(false);
-        return null;
-      }
-      
-      if (!address) {
-        setError("Please connect your wallet to create a quiz");
-        setIsCreating(false);
-        return null;
-      }
+      const userFid = (await (sdk.context))?.user?.fid;
       
       // Create quiz in backend (no contract info yet)
       const backendQuizId = await createQuizOnBackend(
