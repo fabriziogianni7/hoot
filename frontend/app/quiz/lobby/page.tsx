@@ -369,7 +369,7 @@ function LobbyContent() {
                 </div>
                 <button
                   type="submit"
-                  disabled={isJoining}
+                  disabled={isJoining || isAuthLoading}
                   data-testid="join-quiz-button"
                   style={{
                     width: "100%",
@@ -377,25 +377,28 @@ function LobbyContent() {
                     borderRadius: "0.375rem",
                     color: "white",
                     fontWeight: "500",
-                    backgroundColor: isJoining ? "#4a5568" : "#795AFF",
+                    backgroundColor: (isJoining || isAuthLoading) ? "#4a5568" : "#795AFF",
                     border: "none",
-                    cursor: isJoining ? "not-allowed" : "pointer",
-                    opacity: isJoining ? 0.5 : 1,
+                    cursor: (isJoining || isAuthLoading) ? "not-allowed" : "pointer",
+                    opacity: (isJoining || isAuthLoading) ? 0.5 : 1,
                     transition: "background-color 0.2s ease",
-                    background: isJoining ? "#4a5568" : "#795AFF"
+                    background: (isJoining || isAuthLoading) ? "#4a5568" : "#795AFF"
                   }}
                   onMouseEnter={(e) => {
-                    if (!isJoining) {
+                    if (!isJoining && !isAuthLoading) {
                       e.currentTarget.style.backgroundColor = "#6B46C1";
                     }
                   }}
                   onMouseLeave={(e) => {
-                    if (!isJoining) {
+                    if (!isJoining && !isAuthLoading) {
                       e.currentTarget.style.backgroundColor = "#795AFF";
                     }
                   }}
                 >
-                  {isJoining ? 'Joining...' : 'Join Quiz'}
+                  {isAuthLoading ? 'Loading...' : 
+                   isJoining ? 'Joining...' : 
+                   (!loggedUser?.isAuthenticated || !loggedUser?.session) ? 'Connect Wallet to Join' : 
+                   'Join Quiz'}
                 </button>
               </form>
             ) : (
