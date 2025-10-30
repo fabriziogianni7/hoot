@@ -35,7 +35,7 @@ export default function AdminPage() {
   const publicClient = usePublicClient();
   const { supabase } = useSupabase();
   const { data: ethBalance } = useBalance({address});
-  const { loggedUser, isAuthLoading, authError: authErrorMessage, triggerAuth } = useAuth();
+  const { loggedUser, isAuthLoading, triggerAuth } = useAuth();
 
 
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
@@ -140,23 +140,6 @@ export default function AdminPage() {
       return txHash;
   };
 
-  // CSS per forzare i colori degli input
-  const placeholderStyle = `
-    .quiz-input::placeholder {
-      color: #D1D5DB !important;
-      opacity: 1 !important;
-    }
-    .quiz-input {
-      color: white !important;
-    }
-    .quiz-input.question-text {
-      color: black !important;
-    }
-    .quiz-input.question-text::placeholder {
-      color: #6B7280 !important;
-    }
-  `;
-  
   const [currentQuestion, setCurrentQuestion] = useState<QuizQuestion>({
     text: "",
     options: [
@@ -578,7 +561,6 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
-      <style dangerouslySetInnerHTML={{ __html: placeholderStyle }} />
       {/* Background network effect */}
       <div 
         className="absolute inset-0 z-0 opacity-40"
@@ -755,7 +737,7 @@ export default function AdminPage() {
                     onChange={(e) => handleOptionChange(index, e.target.value)}
                     placeholder={`add reply ${index + 1}`}
                     maxLength={MAX_ANSWER_LENGTH}
-                    className="quiz-input w-full bg-transparent focus:outline-none pr-12"
+                    className="quiz-input w-full bg-transparent text-white placeholder:text-gray-300 focus:outline-none pr-12"
                     onClick={(e) => e.stopPropagation()}
                   />
                   {/* Character counter for answer - only show when limit reached */}
