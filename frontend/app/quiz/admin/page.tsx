@@ -742,7 +742,7 @@ export default function AdminPage() {
               }}
               placeholder="Enter your question here"
               maxLength={MAX_QUESTION_LENGTH}
-              className="quiz-input question-text w-full h-full bg-transparent text-center resize-none focus:outline-none absolute inset-0 flex items-center justify-center text-sm"
+              className="quiz-input question-text w-full h-full bg-transparent text-center resize-none focus:outline-none absolute inset-0 flex items-center justify-center text-sm font-bold text-black"
               style={{ 
                 display: 'flex', 
                 marginTop: '16px',
