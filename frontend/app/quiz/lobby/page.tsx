@@ -64,6 +64,15 @@ function LobbyContent() {
     createdAt: Date;
   } | null>(null);
   const [isCreator, setIsCreator] = useState(false);
+  type PlayerSession = {
+    id: string;
+    player_name: string;
+    wallet_address?: string | null;
+    total_score: number;
+    joined_at: string;
+  };
+
+  const [players, setPlayers] = useState<PlayerSession[]>([]);
 
   const quiz = getCurrentQuiz() || quizData;
 
@@ -159,10 +168,10 @@ function LobbyContent() {
 
   // Check if player is already joined and if they're the creator
   useEffect(() => {
-    const savedPlayerId = localStorage.getItem("quizPlayerId");
-    if (savedPlayerId && currentGame) {
+    const playerSessionId = localStorage.getItem("playerSessionId");
+    if (playerSessionId && currentGame) {
       const playerExists = currentGame.players.some(
-        (p) => p.id === savedPlayerId
+        (p) => p.id === playerSessionId
       );
       if (playerExists) {
         setJoined(true);
@@ -170,8 +179,8 @@ function LobbyContent() {
     }
 
     // Check if this player is the creator
-    if (savedPlayerId && gameData?.creator_session_id) {
-      setIsCreator(savedPlayerId === gameData.creator_session_id);
+    if (playerSessionId && gameData?.creator_session_id) {
+      setIsCreator(playerSessionId === gameData.creator_session_id);
     }
   }, [currentGame, gameData]);
 
@@ -181,6 +190,7 @@ function LobbyContent() {
   const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
+    // Real-time game status tracking
   useEffect(() => {
     if (!gameSessionId) return;
 
@@ -296,6 +306,119 @@ function LobbyContent() {
     };
   }, [gameSessionId, supabase, countdown]);
 
+  // Real-time player sessions tracking
+  useEffect(() => {
+    if (!gameSessionId || !supabase) return;
+
+    let isSubscribed = true;
+
+    // Fetch initial players
+    const fetchPlayers = async () => {
+      const { data, error } = await supabase
+        .from('player_sessions')
+        .select('id, player_name, wallet_address, total_score, joined_at')
+        .eq('game_session_id', gameSessionId)
+        .order('joined_at', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching players:', error);
+        return;
+      }
+
+      if (isSubscribed && data) {
+        console.log('Initial players loaded:', data);
+        setPlayers(data);
+      }
+    };
+
+    fetchPlayers();
+
+    // Subscribe to player_sessions changes
+    const playerChannel = supabase
+      .channel(`lobby_players:${gameSessionId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'player_sessions',
+          filter: `game_session_id=eq.${gameSessionId}`,
+        },
+        (payload) => {
+          console.log('🎮 New player joined:', payload.new);
+          if (isSubscribed) {
+            const newPlayer = payload.new as PlayerSession;
+            setPlayers((prev) => {
+              // Check if player already exists (avoid duplicates)
+              if (prev.some(p => p.id === newPlayer.id)) {
+                return prev;
+              }
+              return [...prev, newPlayer].sort((a, b) => 
+                new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime()
+              );
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'player_sessions',
+          filter: `game_session_id=eq.${gameSessionId}`,
+        },
+        (payload) => {
+          console.log('👋 Player left:', payload.old);
+          if (isSubscribed) {
+            setPlayers((prev) => prev.filter((p) => p.id !== payload.old.id));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'player_sessions',
+          filter: `game_session_id=eq.${gameSessionId}`,
+        },
+        (payload) => {
+          console.log('🔄 Player updated (score changed):', payload.new);
+          if (isSubscribed) {
+            const updatedPlayer = payload.new as PlayerSession;
+            setPlayers((prev) =>
+              prev.map((p) => (p.id === updatedPlayer.id ? updatedPlayer : p))
+            );
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        console.log('Player channel subscription status:', status);
+        if (err) {
+          console.error('Player channel error:', err);
+        }
+        
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Player channel connected successfully');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Player channel failed to connect');
+          console.error('Possible causes:');
+          console.error('1. player_sessions table not in realtime publication');
+          console.error('2. RLS policies blocking subscription');
+          console.error('3. Invalid filter or table name');
+        } else if (status === 'CLOSED') {
+          console.log('Player channel closed');
+        }
+      });
+
+    return () => {
+      console.log('Cleaning up player channel');
+      isSubscribed = false;
+      supabase.removeChannel(playerChannel);
+    };
+  }, [gameSessionId, supabase]);
+
   // Handle countdown
   useEffect(() => {
     if (countdown === null || countdown <= 0) return;
@@ -384,7 +507,10 @@ function LobbyContent() {
         );
         setJoined(true);
         // Store player ID in localStorage for persistence
-        localStorage.setItem("quizPlayerId", playerId);
+        localStorage.setItem("playerSessionId", playerId);
+        
+        // Note: The player will be automatically added to the list via realtime subscription
+        // No need to manually update local state here
       } catch (err) {
         console.error("Error joining game:", err);
         setError("Error joining game. Please try again.");
@@ -415,6 +541,38 @@ function LobbyContent() {
     } catch (err) {
       console.error("Error starting quiz:", err);
       setError("Failed to start quiz. Please try again.");
+    }
+  };
+
+  const handleLeaveLobby = async () => {
+    console.log('Leaving lobby...');
+    try {
+      const savedPlayerId = localStorage.getItem("playerSessionId");
+      if (savedPlayerId && gameSessionId) {
+        // Delete the player session from the database
+        const { error } = await supabase
+          .from("player_sessions")
+          .delete()
+          .eq("id", savedPlayerId)
+          .eq("game_session_id", gameSessionId);
+        
+        if (error) {
+          console.error("Error leaving lobby:", error);
+        }
+        
+        // Clear local storage
+        localStorage.removeItem("playerSessionId");
+        
+        // Reset joined state
+        setJoined(false);
+      }
+      
+      // Navigate home
+      router.push("/");
+    } catch (err) {
+      console.error("Error leaving lobby:", err);
+      // Navigate home anyway
+      router.push("/");
     }
   };
 
@@ -521,20 +679,33 @@ function LobbyContent() {
             </div>
 
             <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
-              <h2 className="text-xl font-semibold mb-4 text-purple-200">
-                Players ({currentGame?.players?.length || 0})
+              <h2 className="text-xl font-semibold mb-4 text-purple-200 flex items-center justify-between">
+                <span>Players ({players.length})</span>
+                {players.length > 0 && (
+                  <span className="text-sm text-green-400 flex items-center gap-1">
+                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                    Live
+                  </span>
+                )}
               </h2>
 
-              {!currentGame?.players || currentGame.players.length === 0 ? (
+              {players.length === 0 ? (
                 <p className="text-gray-400">Waiting for players to join...</p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {currentGame.players.map((player) => (
+                  {players.map((player) => (
                     <div
                       key={player.id}
-                      className="bg-purple-700/30 border border-purple-500/30 p-2 rounded text-center text-purple-100"
+                      className="bg-purple-700/30 border border-purple-500/30 p-3 rounded text-center text-purple-100 relative group hover:bg-purple-700/50 transition-colors"
                     >
-                      {player.name}
+                      <div className="font-medium truncate" title={player.player_name}>
+                        {player.player_name}
+                      </div>
+                      {player.total_score > 0 && (
+                        <div className="text-xs text-purple-300 mt-1">
+                          {player.total_score} pts
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -629,7 +800,7 @@ function LobbyContent() {
                 </div>
 
                 {/* Only show Start Quiz button to the creator */}
-                {isCreator && currentGame && currentGame.players.length > 0 && (
+                {isCreator && players.length > 0 && (
                   <button
                     onClick={handleStartQuiz}
                     className="w-full py-2 rounded text-white font-medium transition-colors"
@@ -643,16 +814,16 @@ function LobbyContent() {
                       e.currentTarget.style.backgroundColor = "#22c55e"; // green-500 normal state
                     }}
                   >
-                    Start Quiz
+                    Start Quiz ({players.length} {players.length === 1 ? 'player' : 'players'})
                   </button>
                 )}
 
-                <Link
-                  href="/"
+                <button
+                  onClick={handleLeaveLobby}
                   className="w-full py-2 bg-purple-800/50 border border-purple-600/50 hover:bg-purple-700/50 rounded text-purple-100 font-medium text-center transition-colors"
                 >
                   Leave Lobby
-                </Link>
+                </button>
               </div>
             )}
           </>

@@ -29,3 +29,5 @@ CREATE POLICY "Users can delete their own player sessions" ON player_sessions
         user_id IS NULL -- Allow deleting player sessions without a user_id (legacy/anonymous)
     );
 
+-- Set replica identity to full for player_sessions table
+ALTER TABLE public.player_sessions REPLICA IDENTITY FULL;
