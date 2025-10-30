@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { useAuth } from "@/lib/use-auth";
-import { SimpleConnectWallet } from "./SimpleConnectWallet";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -19,7 +18,7 @@ export default function Home() {
   const [isPinFocused, setIsPinFocused] = useState(false);
 
   // Use the shared authentication hook
-  const { loggedUser, isAuthLoading, authError, triggerAuth, isInMiniApp, needsWalletConnection } = useAuth();
+  const { loggedUser, isAuthLoading, authError, triggerAuth } = useAuth();
 
   // Badge text state
   const [badgeText, setBadgeText] = useState<{
@@ -46,9 +45,9 @@ export default function Home() {
     const initializeFarcasterSDK = async () => {
       try {
         await sdk.actions.ready();
-        console.log("âœ… Farcaster SDK ready - splash screen hidden");
+        console.log("✅ Farcaster SDK ready - splash screen hidden");
       } catch (error) {
-        console.error("âŒ Error initializing Farcaster SDK:", error);
+        console.error("❌ Error initializing Farcaster SDK:", error);
       }
     };
 
@@ -85,7 +84,7 @@ export default function Home() {
   // Effect 3: Handle authenticated user data
   useEffect(() => {
     if (loggedUser?.isAuthenticated) {
-      // â† Add the isAuthenticated check
+      // ← Add the isAuthenticated check
       let primary = "Connected";
       let secondary: string | null = null;
       let statusColor = "#4ade80"; // Green for connected
@@ -107,7 +106,7 @@ export default function Home() {
           6
         )}...${loggedUser.address.slice(-4)}`;
         if (secondary) {
-          secondary = `${secondary} â€¢ ${walletInfo}`;
+          secondary = `${secondary} • ${walletInfo}`;
         } else {
           secondary = walletInfo;
         }
@@ -237,13 +236,6 @@ export default function Home() {
               )}
           </div>
         </div>
-
-        {/* Connect Wallet button - only show for web context when not connected */}
-        {needsWalletConnection && (
-          <div style={{ fontSize: "0.875rem", marginTop: "0.5rem" }}>
-            <SimpleConnectWallet />
-          </div>
-        )}
       </div>
 
       {/* Logo and description */}

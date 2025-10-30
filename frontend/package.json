@@ -18,7 +18,7 @@
     "@farcaster/miniapp-sdk": "^0.2.1",
     "@farcaster/miniapp-wagmi-connector": "^1.1.0",
     "@radix-ui/react-slot": "^1.2.3",
-    "@supabase/supabase-js": "^2.75.1",
+    "@supabase/supabase-js": "^2.77.0",
     "@tanstack/react-query": "^5.90.5",
     "@wagmi/core": "^2.22.1",
     "autoprefixer": "^10.4.14",

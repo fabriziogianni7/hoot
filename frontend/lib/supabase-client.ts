@@ -22,7 +22,7 @@ export async function callEdgeFunction<TRequest, TResponse>(
   body: TRequest
 ): Promise<TResponse> {
   const response = await supabase.functions.invoke(functionName, {
-    body
+    body: body as any
   })
 
   if (response.error) {

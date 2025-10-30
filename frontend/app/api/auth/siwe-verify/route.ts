@@ -5,17 +5,14 @@ import { SiweMessage } from "siwe";
 import { NextResponse } from "next/server";
 
 
-// Create Supabase admin client for user management
-const supabaseAdmin = createClient(
-  "https://auuxbsnzmmnlgyxxojcr.supabase.co",
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  }
-);
+// TEMPORANEO - PER DEBUG
+console.log("🔍 ENV CHECK:", {
+  hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+  hasAnon: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  hasService: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+});
+
+// Supabase clients are created inside the handler after validating env vars
 
 // // Create public client for signature verification (supports both EOA and smart accounts)
 const viemClient = createPublicClient({
@@ -25,6 +22,35 @@ const viemClient = createPublicClient({
 
 export async function POST(request: Request) {
   try {
+    // Strict env validation
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const SUPABASE_SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!SUPABASE_URL || !SUPABASE_ANON || !SUPABASE_SERVICE) {
+      console.error("Missing Supabase envs:", {
+        hasUrl: !!SUPABASE_URL,
+        hasAnon: !!SUPABASE_ANON,
+        hasService: !!SUPABASE_SERVICE,
+      });
+      return NextResponse.json(
+        { error: "Server misconfigured: missing Supabase environment variables" },
+        { status: 500 }
+      );
+    }
+
+    // Create Supabase admin client for user management (no fallbacks)
+    const supabaseAdmin = createClient(
+      SUPABASE_URL,
+      SUPABASE_SERVICE,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    );
+
     const { message, signature, address, fid, username } = await request.json();
 
     // Validate required fields
@@ -249,8 +275,8 @@ export async function POST(request: Request) {
 
       // Create a regular Supabase client (with anon key) to verify the token and get session tokens
       const supabase = createClient(
-        process.env.SUPABASE_URL || "https://auuxbsnzmmnlgyxxojcr.supabase.co",
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // Use public anon key here
+        SUPABASE_URL,
+        SUPABASE_ANON // Use public anon key here
       );
 
       // Verify the token to create a full session (simulates "exchanging" the code)
