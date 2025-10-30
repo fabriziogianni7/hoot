@@ -66,7 +66,8 @@ async function createPlayerSession(
   supabase,
   gameSessionId,
   playerName,
-  walletAddress
+  walletAddress,
+  userId
 ) {
   const { data, error } = await supabase
     .from("player_sessions")
@@ -74,6 +75,7 @@ async function createPlayerSession(
       game_session_id: gameSessionId,
       player_name: playerName,
       wallet_address: walletAddress || null,
+      user_id: userId || null,
       total_score: 0,
     })
     .select()
@@ -116,6 +118,19 @@ serve(async (req) => {
   try {
     const supabase = initSupabaseClient(req);
     const { room_code, player_name, wallet_address } = await req.json();
+    
+    // Get authenticated user from the session (if available)
+    let userId = null;
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (user && !authError) {
+        userId = user.id;
+        console.log('Player joining with authenticated user:', userId);
+      }
+    } catch (authError) {
+      console.warn('Could not get authenticated user:', authError);
+      // Continue without user_id - allow anonymous players
+    }
     // Validate required fields
     const validationError = validateRequired({
       room_code,
@@ -216,7 +231,8 @@ serve(async (req) => {
       supabase,
       gameSession.id,
       player_name,
-      wallet_address
+      wallet_address,
+      userId
     );
     // Update creator session if applicable
     const playerIsCreator = isCreator(
