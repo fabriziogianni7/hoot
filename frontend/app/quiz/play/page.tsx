@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 export const dynamic = 'force-dynamic';
 import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
+import { useAnswersRealtime } from "@/lib/use-realtime-hooks";
 
 function PlayQuizContent() {
   const router = useRouter();
@@ -21,11 +22,16 @@ function PlayQuizContent() {
   const [showingResults, setShowingResults] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState<number>(0);
   const [isCreator, setIsCreator] = useState(false);
-  const [serverStartTime, setServerStartTime] = useState<number | null>(null);
-  const [playerResponses, setPlayerResponses] = useState<Record<string, { answered: boolean; isCorrect?: boolean }>>({});
   const [showPointsBanner, setShowPointsBanner] = useState(false);
   const [earnedPoints, setEarnedPoints] = useState(0);
   const [showConfetti, setShowConfetti] = useState(false);
+  
+  // Use realtime hook for answers (creator only)
+  const { playerResponses } = useAnswersRealtime(
+    gameSessionId,
+    currentGame?.players.map(p => p.id) || [],
+    isCreator
+  );
   
   // Utilizziamo useRef per mantenere lo stato del timer tra i render
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -116,47 +122,14 @@ function PlayQuizContent() {
         .eq('id', gameSessionId)
         .single();
       
-      const currentPlayerId = localStorage.getItem("quizPlayerId");
-      if (data && currentPlayerId) {
-        setIsCreator(data.creator_session_id === currentPlayerId);
+      const playerSessionId = localStorage.getItem("playerSessionId");
+      if (data && playerSessionId) {
+        setIsCreator(data.creator_session_id === playerSessionId);
       }
     };
     
     checkCreator();
   }, [gameSessionId, supabase]);
-  
-  // Subscribe to real-time answer updates for creator view
-  useEffect(() => {
-    if (!isCreator || !gameSessionId || !currentGame) return;
-    
-    // Subscribe to real-time answer updates
-    const answersChannel = supabase
-      .channel(`answers:${gameSessionId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'answers',
-          filter: `player_session_id=in.(${currentGame.players.map(p => p.id).join(',')})`
-        },
-        (payload) => {
-          const answer = payload.new as any;
-          setPlayerResponses(prev => ({
-            ...prev,
-            [answer.player_session_id]: {
-              answered: true,
-              isCorrect: answer.is_correct
-            }
-          }));
-        }
-      )
-      .subscribe();
-    
-    return () => {
-      supabase.removeChannel(answersChannel);
-    };
-  }, [isCreator, gameSessionId, currentGame, supabase]);
   
   // Redirect if no game is active
   useEffect(() => {
@@ -190,7 +163,6 @@ function PlayQuizContent() {
     setSelectedAnswer(null);
     setIsAnswered(false);
     setShowingResults(false);
-    setPlayerResponses({});
     setShowPointsBanner(false);
     setShowConfetti(false);
     timePercentageRef.current = 100;
@@ -198,8 +170,6 @@ function PlayQuizContent() {
     // Get server start time for synchronized timing
     const questionStartTimeFromServer = currentGame.questionStartTime;
     if (questionStartTimeFromServer) {
-      setServerStartTime(questionStartTimeFromServer);
-      
       // Calculate elapsed time since question started
       const now = Date.now();
       const currentQuestion = quiz?.questions[currentQuestionIndex];
@@ -272,13 +242,13 @@ function PlayQuizContent() {
       
       // Auto-submit -1 for no answer (only for non-creators, since creators don't answer)
       if (!isCreator) {
-        const playerId = localStorage.getItem("quizPlayerId");
-        if (playerId && quiz && currentGame) {
+        const playerSessionId = localStorage.getItem("playerSessionId");
+        if (playerSessionId && quiz && currentGame) {
           const question = quiz.questions[currentQuestionIndex];
           if (question) {
             const maxTime = question.timeLimit * 1000; // Convert to milliseconds
             try {
-              await submitAnswer(playerId, question.id, -1, maxTime);
+              await submitAnswer(playerSessionId, question.id, -1, maxTime);
             } catch (error) {
               console.error('Error submitting timeout answer:', error);
             }
@@ -317,14 +287,14 @@ function PlayQuizContent() {
     const timeTaken = startTime ? endTime - startTime : maxTime;
     
     // Submit answer and get points from backend
-    const playerId = localStorage.getItem("quizPlayerId");
-    if (playerId && quiz && currentGame && question) {
+    const playerSessionId = localStorage.getItem("playerSessionId");
+    if (playerSessionId && quiz && currentGame && question) {
       try {
         // Call submitAnswer which returns the backend response
-        await submitAnswer(playerId, question.id, answerIndex, timeTaken);
+        await submitAnswer(playerSessionId, question.id, answerIndex, timeTaken);
         
         // Get the updated player data from the game state
-        const updatedPlayer = currentGame.players.find(p => p.id === playerId);
+        const updatedPlayer = currentGame.players.find(p => p.id === playerSessionId);
         if (updatedPlayer) {
           // Get the last answer to extract points
           const lastAnswer = updatedPlayer.answers[updatedPlayer.answers.length - 1];
@@ -379,7 +349,6 @@ function PlayQuizContent() {
     setSelectedAnswer(null);
     setIsAnswered(false);
     setShowingResults(false);
-    setPlayerResponses({});
     setShowPointsBanner(false);
     setShowConfetti(false);
     timePercentageRef.current = 100;
@@ -615,7 +584,7 @@ function PlayQuizContent() {
               </h3>
               <div className="space-y-2">
                 {currentGame.players
-                  .filter(p => p.id !== localStorage.getItem("quizPlayerId")) // Exclude creator
+                  .filter(p => p.id !== localStorage.getItem("playerSessionId")) // Exclude creator
                   .map(player => {
                     const response = playerResponses[player.id];
                     return (

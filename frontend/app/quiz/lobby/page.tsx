@@ -11,6 +11,7 @@ import { useSupabase } from "@/lib/supabase-context";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import Link from "next/link";
 import { useAuth } from "@/lib/use-auth";
+import { usePlayerSessionsRealtime } from "@/lib/use-realtime-hooks";
 
 function LobbyContent() {
   const router = useRouter();
@@ -32,9 +33,6 @@ function LobbyContent() {
   const [joined, setJoined] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState("");
-  const [isRealtimeConnected, setIsRealtimeConnected] = useState(true);
-  const [reconnectAttempts, setReconnectAttempts] = useState(0);
-  const [isReconnecting, setIsReconnecting] = useState(false);
 
   const roomCodeFromUrl = searchParams?.get("room");
   const [isLoadingGame, setIsLoadingGame] = useState(true);
@@ -64,15 +62,17 @@ function LobbyContent() {
     createdAt: Date;
   } | null>(null);
   const [isCreator, setIsCreator] = useState(false);
-  type PlayerSession = {
-    id: string;
-    player_name: string;
-    wallet_address?: string | null;
-    total_score: number;
-    joined_at: string;
-  };
 
-  const [players, setPlayers] = useState<PlayerSession[]>([]);
+  // Use realtime hook for player sessions
+  const { 
+    players, 
+    isConnected: isRealtimeConnected, 
+    reconnectAttempts, 
+    isReconnecting 
+  } = usePlayerSessionsRealtime(gameSessionId, { 
+    initialFetch: true, 
+    sortBy: 'joined_at' 
+  });
 
   const quiz = getCurrentQuiz() || quizData;
 
@@ -185,10 +185,10 @@ function LobbyContent() {
   }, [currentGame, gameData]);
 
   // Listen for game status changes via realtime with auto-reconnection
-  const reconnectAttemptsRef = useRef(0);
-  const isReconnectingRef = useRef(false);
-  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const gameStatusReconnectAttemptsRef = useRef(0);
+  const gameStatusIsReconnectingRef = useRef(false);
+  const gameStatusReconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const gameStatusChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
     // Real-time game status tracking
   useEffect(() => {
@@ -204,16 +204,16 @@ function LobbyContent() {
       }
 
       // Clean up existing channel if any
-      if (channelRef.current) {
-        console.log("Removing existing channel before reconnecting");
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
+      if (gameStatusChannelRef.current) {
+        console.log("Removing existing game status channel before reconnecting");
+        supabase.removeChannel(gameStatusChannelRef.current);
+        gameStatusChannelRef.current = null;
       }
 
-      const attemptNumber = reconnectAttemptsRef.current + 1;
-      console.log(`Setting up realtime channel (attempt ${attemptNumber})`);
+      const attemptNumber = gameStatusReconnectAttemptsRef.current + 1;
+      console.log(`Setting up game status realtime channel (attempt ${attemptNumber})`);
 
-      channelRef.current = supabase
+      gameStatusChannelRef.current = supabase
         .channel(`game_status:${gameSessionId}`)
         .on(
           "postgres_changes",
@@ -238,30 +238,23 @@ function LobbyContent() {
           console.log("Realtime connection status:", status);
 
           if (status === "SUBSCRIBED") {
-            console.log("Successfully connected to realtime");
+            console.log("Successfully connected to game status realtime");
             isSubscribed = true;
-            reconnectAttemptsRef.current = 0;
-            isReconnectingRef.current = false;
-            setIsRealtimeConnected(true);
-            setIsReconnecting(false);
-            setReconnectAttempts(0);
+            gameStatusReconnectAttemptsRef.current = 0;
+            gameStatusIsReconnectingRef.current = false;
           } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            console.error("Realtime connection error:", status, err);
+            console.error("Game status realtime connection error:", status, err);
             isSubscribed = false;
 
             // Only handle reconnection if not already reconnecting
-            if (!isReconnectingRef.current) {
-              setIsRealtimeConnected(false);
-
+            if (!gameStatusIsReconnectingRef.current) {
               // Auto-reconnect with exponential backoff
               const maxAttempts = 10;
-              const currentAttempt = reconnectAttemptsRef.current + 1;
+              const currentAttempt = gameStatusReconnectAttemptsRef.current + 1;
 
               if (currentAttempt <= maxAttempts) {
-                isReconnectingRef.current = true;
-                reconnectAttemptsRef.current = currentAttempt;
-                setIsReconnecting(true);
-                setReconnectAttempts(currentAttempt);
+                gameStatusIsReconnectingRef.current = true;
+                gameStatusReconnectAttemptsRef.current = currentAttempt;
 
                 // Exponential backoff: 1s, 2s, 4s, 8s, up to max 30s
                 const delay = Math.min(
@@ -270,21 +263,20 @@ function LobbyContent() {
                 );
 
                 console.log(
-                  `Will retry connection in ${delay}ms (attempt ${currentAttempt}/${maxAttempts})`
+                  `Will retry game status connection in ${delay}ms (attempt ${currentAttempt}/${maxAttempts})`
                 );
 
-                reconnectTimerRef.current = setTimeout(() => {
-                  isReconnectingRef.current = false;
+                gameStatusReconnectTimerRef.current = setTimeout(() => {
+                  gameStatusIsReconnectingRef.current = false;
                   setupChannel(); // Recursive call to retry
                 }, delay);
               } else {
-                console.error("Max reconnection attempts reached");
-                isReconnectingRef.current = false;
-                setIsReconnecting(false);
+                console.error("Max game status reconnection attempts reached");
+                gameStatusIsReconnectingRef.current = false;
               }
             }
           } else if (status === "CLOSED") {
-            console.log("Channel closed");
+            console.log("Game status channel closed");
             isSubscribed = false;
           }
         });
@@ -293,131 +285,18 @@ function LobbyContent() {
     setupChannel();
 
     return () => {
-      console.log("Cleaning up realtime channel");
+      console.log("Cleaning up game status realtime channel");
       isSubscribed = false;
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
+      if (gameStatusReconnectTimerRef.current) {
+        clearTimeout(gameStatusReconnectTimerRef.current);
+        gameStatusReconnectTimerRef.current = null;
       }
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
-        channelRef.current = null;
+      if (gameStatusChannelRef.current) {
+        supabase.removeChannel(gameStatusChannelRef.current);
+        gameStatusChannelRef.current = null;
       }
     };
   }, [gameSessionId, supabase, countdown]);
-
-  // Real-time player sessions tracking
-  useEffect(() => {
-    if (!gameSessionId || !supabase) return;
-
-    let isSubscribed = true;
-
-    // Fetch initial players
-    const fetchPlayers = async () => {
-      const { data, error } = await supabase
-        .from('player_sessions')
-        .select('id, player_name, wallet_address, total_score, joined_at')
-        .eq('game_session_id', gameSessionId)
-        .order('joined_at', { ascending: true });
-
-      if (error) {
-        console.error('Error fetching players:', error);
-        return;
-      }
-
-      if (isSubscribed && data) {
-        console.log('Initial players loaded:', data);
-        setPlayers(data);
-      }
-    };
-
-    fetchPlayers();
-
-    // Subscribe to player_sessions changes
-    const playerChannel = supabase
-      .channel(`lobby_players:${gameSessionId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'player_sessions',
-          filter: `game_session_id=eq.${gameSessionId}`,
-        },
-        (payload) => {
-          console.log('🎮 New player joined:', payload.new);
-          if (isSubscribed) {
-            const newPlayer = payload.new as PlayerSession;
-            setPlayers((prev) => {
-              // Check if player already exists (avoid duplicates)
-              if (prev.some(p => p.id === newPlayer.id)) {
-                return prev;
-              }
-              return [...prev, newPlayer].sort((a, b) => 
-                new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime()
-              );
-            });
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'DELETE',
-          schema: 'public',
-          table: 'player_sessions',
-          filter: `game_session_id=eq.${gameSessionId}`,
-        },
-        (payload) => {
-          console.log('👋 Player left:', payload.old);
-          if (isSubscribed) {
-            setPlayers((prev) => prev.filter((p) => p.id !== payload.old.id));
-          }
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'player_sessions',
-          filter: `game_session_id=eq.${gameSessionId}`,
-        },
-        (payload) => {
-          console.log('🔄 Player updated (score changed):', payload.new);
-          if (isSubscribed) {
-            const updatedPlayer = payload.new as PlayerSession;
-            setPlayers((prev) =>
-              prev.map((p) => (p.id === updatedPlayer.id ? updatedPlayer : p))
-            );
-          }
-        }
-      )
-      .subscribe((status, err) => {
-        console.log('Player channel subscription status:', status);
-        if (err) {
-          console.error('Player channel error:', err);
-        }
-        
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Player channel connected successfully');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Player channel failed to connect');
-          console.error('Possible causes:');
-          console.error('1. player_sessions table not in realtime publication');
-          console.error('2. RLS policies blocking subscription');
-          console.error('3. Invalid filter or table name');
-        } else if (status === 'CLOSED') {
-          console.log('Player channel closed');
-        }
-      });
-
-    return () => {
-      console.log('Cleaning up player channel');
-      isSubscribed = false;
-      supabase.removeChannel(playerChannel);
-    };
-  }, [gameSessionId, supabase]);
 
   // Handle countdown
   useEffect(() => {
@@ -463,10 +342,8 @@ function LobbyContent() {
 
   const handleManualReconnect = () => {
     console.log("Manual reconnect triggered");
-    reconnectAttemptsRef.current = 0;
-    isReconnectingRef.current = false;
-    setReconnectAttempts(0);
-    setIsReconnecting(false);
+    gameStatusReconnectAttemptsRef.current = 0;
+    gameStatusIsReconnectingRef.current = false;
     // Reload the page to reset connection
     window.location.reload();
   };
