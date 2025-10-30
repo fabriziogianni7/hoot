@@ -32,7 +32,7 @@ export interface GameSession {
   id: string
   quiz_id: string
   room_code: string
-  status: 'waiting' | 'in_progress' | 'completed'
+  status: 'waiting' | 'starting' | 'in_progress' | 'completed'
   current_question_index: number
   creator_session_id: string | null
   question_started_at?: string | null

@@ -131,6 +131,41 @@ function PlayQuizContent() {
     checkCreator();
   }, [gameSessionId, supabase]);
   
+  // Start the game when play page loads (only if coming from "starting" status)
+  // This ensures the question timer starts only when players are actually on the play page
+  useEffect(() => {
+    const startGameIfReady = async () => {
+      if (!gameSessionId || !currentGame || !isCreator) return;
+      
+      // Check if game is in "starting" status (just came from lobby countdown)
+      const { data: gameSession } = await supabase
+        .from('game_sessions')
+        .select('status, current_question_index')
+        .eq('id', gameSessionId)
+        .single();
+      
+      if (gameSession?.status === 'starting' && gameSession.current_question_index === 0) {
+        console.log('Play page loaded, starting game now (setting in_progress)');
+        
+        // Now set status to in_progress and start the question timer
+        await supabase
+          .from('game_sessions')
+          .update({
+            status: 'in_progress',
+            question_started_at: new Date().toISOString(),
+          })
+          .eq('id', gameSessionId);
+        
+        console.log('Game status updated to in_progress with question timer started');
+      }
+    };
+    
+    // Only run once when the component mounts and we know if we're the creator
+    if (isCreator && !isLoadingFromUrl) {
+      startGameIfReady();
+    }
+  }, [gameSessionId, isCreator, isLoadingFromUrl, currentGame, supabase]);
+  
   // Redirect if no game is active
   useEffect(() => {
     if (isLoadingFromUrl) return; // Wait for URL loading to complete

@@ -294,6 +294,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
         ...prev,
               quizId: prev.quizId || updated.quiz_id, // Preserve or set quizId from backend
               status: updated.status === 'waiting' ? 'waiting' : 
+                      updated.status === 'starting' ? 'waiting' : // Treat 'starting' as waiting (countdown phase)
                       updated.status === 'in_progress' ? 'question' : 'finished',
               currentQuestionIndex: updated.current_question_index,
               questionStartTime: updated.question_started_at ? 

@@ -227,9 +227,12 @@ function LobbyContent() {
             console.log("Game session updated:", payload.new);
             const updatedSession = payload.new as { status: string };
 
-            // When game starts, trigger countdown for all players
-            if (updatedSession.status === "in_progress" && countdown === null) {
-              console.log("Game started! Starting countdown...");
+            // Update local gameData state to reflect the new status
+            setGameData((prev) => prev ? { ...prev, status: updatedSession.status } : null);
+
+            // When game enters "starting" status, trigger countdown
+            if (updatedSession.status === "starting" && countdown === null) {
+              console.log("Game starting! Beginning countdown...");
               setCountdown(3);
             }
           }
@@ -306,13 +309,14 @@ function LobbyContent() {
       setCountdown(countdown - 1);
 
       if (countdown === 1) {
-        // Start the quiz when countdown reaches 0
-        // Only navigate if the player has joined
+        // Countdown finished - navigate to play page
+        // The play page will set status to "in_progress" when it's loaded and ready
+        console.log("Countdown finished, navigating to play page");
+        
         if (joined && currentGame) {
           const roomCodeToUse = contextRoomCode || roomCodeFromUrl;
           const quizId = currentGame.quizId || gameData?.quiz_id;
 
-          console.log("Countdown finished, redirecting to play page");
           console.log("Room code:", roomCodeToUse, "Quiz ID:", quizId);
 
           // Pass room code and quiz ID via URL parameters
@@ -401,20 +405,20 @@ function LobbyContent() {
     try {
       if (!gameSessionId) return;
 
-      console.log("Starting quiz - updating game status");
+      console.log("Starting quiz - updating game status to 'starting'");
 
-      // Update game status to in_progress immediately
-      // All clients will receive this via realtime and start countdown
+      // Update game status to "starting" for countdown phase
+      // Don't set question_started_at yet - it will be set after countdown
       await supabase
         .from("game_sessions")
         .update({
-          status: "in_progress",
+          status: "starting",
           started_at: new Date().toISOString(),
-          question_started_at: new Date().toISOString(),
+          // Don't set question_started_at here!
         })
         .eq("id", gameSessionId);
 
-      console.log("Game status updated to in_progress");
+      console.log("Game status updated to 'starting' - countdown will begin");
     } catch (err) {
       console.error("Error starting quiz:", err);
       setError("Failed to start quiz. Please try again.");
