@@ -163,7 +163,7 @@ function PlayQuizContent() {
     if (isLoadingFromUrl) return; // Wait for URL loading to complete
     
     if (!currentGame) {
-      router.push("/quiz");
+      router.push("/");
       return;
     }
     
