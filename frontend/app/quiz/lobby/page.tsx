@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 // Disable pre-rendering for this page
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic";
 import { useQuiz } from "@/lib/quiz-context";
 import { useAccount } from "wagmi";
 import { useSupabase } from "@/lib/supabase-context";
@@ -15,7 +15,14 @@ import { useAuth } from "@/lib/use-auth";
 function LobbyContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { currentGame, getCurrentQuiz, joinGame: joinGameContext, roomCode: contextRoomCode, gameSessionId, setCurrentQuiz } = useQuiz();
+  const {
+    currentGame,
+    getCurrentQuiz,
+    joinGame: joinGameContext,
+    roomCode: contextRoomCode,
+    gameSessionId,
+    setCurrentQuiz,
+  } = useQuiz();
   const { address } = useAccount();
   const { supabase } = useSupabase();
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -25,25 +32,48 @@ function LobbyContent() {
   const [joined, setJoined] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState("");
-  
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState(true);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+
   const roomCodeFromUrl = searchParams?.get("room");
   const [isLoadingGame, setIsLoadingGame] = useState(true);
-  const [gameData, setGameData] = useState<{ id: string; creator_session_id?: string; status?: string; quiz_id?: string; quizzes?: { id: string; title: string; description: string; created_at: string } } | null>(null);
-  const [quizData, setQuizData] = useState<{ id: string; title: string; description: string; questions: Array<{ id: string; text: string; options: string[]; correctAnswer: number; timeLimit: number }>; createdAt: Date } | null>(null);
+  const [gameData, setGameData] = useState<{
+    id: string;
+    creator_session_id?: string;
+    status?: string;
+    quiz_id?: string;
+    quizzes?: {
+      id: string;
+      title: string;
+      description: string;
+      created_at: string;
+    };
+  } | null>(null);
+  const [quizData, setQuizData] = useState<{
+    id: string;
+    title: string;
+    description: string;
+    questions: Array<{
+      id: string;
+      text: string;
+      options: string[];
+      correctAnswer: number;
+      timeLimit: number;
+    }>;
+    createdAt: Date;
+  } | null>(null);
   const [isCreator, setIsCreator] = useState(false);
-  
+
   const quiz = getCurrentQuiz() || quizData;
 
   // Initialize the miniapp
   useEffect(() => {
-    console.log('isFrameReady', isFrameReady);
     if (!isFrameReady) {
-      console.log('setting frame ready');
       setFrameReady();
     }
   }, [setFrameReady, isFrameReady]);
-  console.log('isFrameReady', isFrameReady);
-  
+
   // Load game session if room code is provided
   useEffect(() => {
     const loadGameSession = async () => {
@@ -52,39 +82,30 @@ function LobbyContent() {
         return;
       }
 
-
-
-
-      console.log('roomCodeFromUrl', roomCodeFromUrl);
       try {
-        console.log('Loading game session for room code:', roomCodeFromUrl);
-        
         // Fetch game session from backend
         const { data: gameSession, error: gameError } = await supabase
-          .from('game_sessions')
-          .select(`
-            *,
-            quizzes (*)
-          `)
-          .eq('room_code', roomCodeFromUrl)
+          .from("game_sessions")
+          .select(`*, quizzes (*)`)
+          .eq("room_code", roomCodeFromUrl)
           .single();
 
         if (gameError || !gameSession) {
-          console.error('Game session not found:', gameError);
+          console.error("Game session not found:", gameError);
           setError(`Game with PIN "${roomCodeFromUrl}" not found.`);
           setIsLoadingGame(false);
           return;
         }
 
-        console.log('Game session loaded:', gameSession);
+        console.log("Game session loaded:", gameSession);
         setGameData(gameSession);
 
         // Load quiz questions
         const { data: questionsData, error: questionsError } = await supabase
-          .from('questions')
-          .select('*')
-          .eq('quiz_id', gameSession.quiz_id)
-          .order('order_index', { ascending: true });
+          .from("questions")
+          .select("*")
+          .eq("quiz_id", gameSession.quiz_id)
+          .order("order_index", { ascending: true });
 
         if (!questionsError && questionsData) {
           // Convert to frontend quiz format
@@ -92,17 +113,25 @@ function LobbyContent() {
             id: gameSession.quizzes.id,
             title: gameSession.quizzes.title,
             description: gameSession.quizzes.description || "",
-            questions: questionsData.map((q: { id: string; question_text: string; options: string[]; correct_answer_index: number; time_limit: number }) => ({
-              id: q.id,
-              text: q.question_text,
-              options: q.options,
-              correctAnswer: q.correct_answer_index,
-              timeLimit: q.time_limit || 15
-            })),
-            createdAt: new Date(gameSession.quizzes.created_at)
+            questions: questionsData.map(
+              (q: {
+                id: string;
+                question_text: string;
+                options: string[];
+                correct_answer_index: number;
+                time_limit: number;
+              }) => ({
+                id: q.id,
+                text: q.question_text,
+                options: q.options,
+                correctAnswer: q.correct_answer_index,
+                timeLimit: q.time_limit || 15,
+              })
+            ),
+            createdAt: new Date(gameSession.quizzes.created_at),
           };
           setQuizData(quiz);
-          
+
           // Important: Set quiz as current quiz so it's available on the play page
           // This is needed because the play page relies on getCurrentQuiz()
           setCurrentQuiz(quiz);
@@ -110,17 +139,17 @@ function LobbyContent() {
 
         // Load existing players
         const { data: playersData } = await supabase
-          .from('player_sessions')
-          .select('*')
-          .eq('game_session_id', gameSession.id)
-          .order('joined_at', { ascending: true });
+          .from("player_sessions")
+          .select("*")
+          .eq("game_session_id", gameSession.id)
+          .order("joined_at", { ascending: true });
 
-        console.log('Existing players:', playersData);
+        console.log("Existing players:", playersData);
 
         setIsLoadingGame(false);
       } catch (err) {
-        console.error('Error loading game session:', err);
-        setError('Failed to load game session');
+        console.error("Error loading game session:", err);
+        setError("Failed to load game session");
         setIsLoadingGame(false);
       }
     };
@@ -132,148 +161,263 @@ function LobbyContent() {
   useEffect(() => {
     const savedPlayerId = localStorage.getItem("quizPlayerId");
     if (savedPlayerId && currentGame) {
-      const playerExists = currentGame.players.some(p => p.id === savedPlayerId);
+      const playerExists = currentGame.players.some(
+        (p) => p.id === savedPlayerId
+      );
       if (playerExists) {
         setJoined(true);
       }
     }
-    
+
     // Check if this player is the creator
     if (savedPlayerId && gameData?.creator_session_id) {
       setIsCreator(savedPlayerId === gameData.creator_session_id);
     }
   }, [currentGame, gameData]);
 
-  // Listen for game status changes via realtime
+  // Listen for game status changes via realtime with auto-reconnection
+  const reconnectAttemptsRef = useRef(0);
+  const isReconnectingRef = useRef(false);
+  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
   useEffect(() => {
     if (!gameSessionId) return;
 
-    const channel = supabase
-      .channel(`game_status:${gameSessionId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'game_sessions',
-          filter: `id=eq.${gameSessionId}`
-        },
-        (payload) => {
-          console.log('Game session updated:', payload.new);
-          const updatedSession = payload.new as { status: string };
-          
-          // When game starts, trigger countdown for all players
-          if (updatedSession.status === 'in_progress' && countdown === null) {
-            console.log('Game started! Starting countdown...');
-            setCountdown(3);
+    let isSubscribed = false;
+
+    const setupChannel = () => {
+      // Prevent duplicate subscriptions
+      if (isSubscribed) {
+        console.log("Already subscribed, skipping...");
+        return;
+      }
+
+      // Clean up existing channel if any
+      if (channelRef.current) {
+        console.log("Removing existing channel before reconnecting");
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+
+      const attemptNumber = reconnectAttemptsRef.current + 1;
+      console.log(`Setting up realtime channel (attempt ${attemptNumber})`);
+
+      channelRef.current = supabase
+        .channel(`game_status:${gameSessionId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "game_sessions",
+            filter: `id=eq.${gameSessionId}`,
+          },
+          (payload) => {
+            console.log("Game session updated:", payload.new);
+            const updatedSession = payload.new as { status: string };
+
+            // When game starts, trigger countdown for all players
+            if (updatedSession.status === "in_progress" && countdown === null) {
+              console.log("Game started! Starting countdown...");
+              setCountdown(3);
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe((status, err) => {
+          console.log("Realtime connection status:", status);
+
+          if (status === "SUBSCRIBED") {
+            console.log("Successfully connected to realtime");
+            isSubscribed = true;
+            reconnectAttemptsRef.current = 0;
+            isReconnectingRef.current = false;
+            setIsRealtimeConnected(true);
+            setIsReconnecting(false);
+            setReconnectAttempts(0);
+          } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            console.error("Realtime connection error:", status, err);
+            isSubscribed = false;
+
+            // Only handle reconnection if not already reconnecting
+            if (!isReconnectingRef.current) {
+              setIsRealtimeConnected(false);
+
+              // Auto-reconnect with exponential backoff
+              const maxAttempts = 10;
+              const currentAttempt = reconnectAttemptsRef.current + 1;
+
+              if (currentAttempt <= maxAttempts) {
+                isReconnectingRef.current = true;
+                reconnectAttemptsRef.current = currentAttempt;
+                setIsReconnecting(true);
+                setReconnectAttempts(currentAttempt);
+
+                // Exponential backoff: 1s, 2s, 4s, 8s, up to max 30s
+                const delay = Math.min(
+                  1000 * Math.pow(2, currentAttempt - 1),
+                  30000
+                );
+
+                console.log(
+                  `Will retry connection in ${delay}ms (attempt ${currentAttempt}/${maxAttempts})`
+                );
+
+                reconnectTimerRef.current = setTimeout(() => {
+                  isReconnectingRef.current = false;
+                  setupChannel(); // Recursive call to retry
+                }, delay);
+              } else {
+                console.error("Max reconnection attempts reached");
+                isReconnectingRef.current = false;
+                setIsReconnecting(false);
+              }
+            }
+          } else if (status === "CLOSED") {
+            console.log("Channel closed");
+            isSubscribed = false;
+          }
+        });
+    };
+
+    setupChannel();
 
     return () => {
-      supabase.removeChannel(channel);
+      console.log("Cleaning up realtime channel");
+      isSubscribed = false;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [gameSessionId, supabase, countdown]);
 
   // Handle countdown
   useEffect(() => {
     if (countdown === null || countdown <= 0) return;
-    
+
     const timer = setTimeout(() => {
       setCountdown(countdown - 1);
-      
+
       if (countdown === 1) {
         // Start the quiz when countdown reaches 0
         // Only navigate if the player has joined
         if (joined && currentGame) {
           const roomCodeToUse = contextRoomCode || roomCodeFromUrl;
           const quizId = currentGame.quizId || gameData?.quiz_id;
-          
-          console.log('Countdown finished, redirecting to play page');
-          console.log('Room code:', roomCodeToUse, 'Quiz ID:', quizId);
-          
+
+          console.log("Countdown finished, redirecting to play page");
+          console.log("Room code:", roomCodeToUse, "Quiz ID:", quizId);
+
           // Pass room code and quiz ID via URL parameters
           const params = new URLSearchParams();
-          if (roomCodeToUse) params.set('room', roomCodeToUse);
-          if (quizId) params.set('quizId', quizId);
-          
+          if (roomCodeToUse) params.set("room", roomCodeToUse);
+          if (quizId) params.set("quizId", quizId);
+
           router.push(`/quiz/play?${params.toString()}`);
         } else {
-          console.warn('Cannot navigate to play page: player not joined or game not ready');
+          console.warn(
+            "Cannot navigate to play page: player not joined or game not ready"
+          );
         }
       }
     }, 1000);
-    
+
     return () => clearTimeout(timer);
-  }, [countdown, router, joined, currentGame, contextRoomCode, roomCodeFromUrl, gameData]);
-  
+  }, [
+    countdown,
+    router,
+    joined,
+    currentGame,
+    contextRoomCode,
+    roomCodeFromUrl,
+    gameData,
+  ]);
+
+  const handleManualReconnect = () => {
+    console.log("Manual reconnect triggered");
+    reconnectAttemptsRef.current = 0;
+    isReconnectingRef.current = false;
+    setReconnectAttempts(0);
+    setIsReconnecting(false);
+    // Reload the page to reset connection
+    window.location.reload();
+  };
+
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (playerName.trim() && !isJoining) {
       setIsJoining(true);
       setError("");
-      
+
       try {
         // Check if user is authenticated, if not trigger authentication
         if (!loggedUser?.isAuthenticated || !loggedUser?.session) {
-          console.log('User not authenticated, triggering auth...');
+          console.log("User not authenticated, triggering auth...");
           await triggerAuth();
-          
+
           // After triggerAuth completes, check again if user is now authenticated
           // If still not authenticated, the auth flow was cancelled or failed
           if (!loggedUser?.isAuthenticated) {
-            setError('Authentication required to join the game.');
+            setError("Authentication required to join the game.");
             setIsJoining(false);
             return;
           }
         }
-        
+
         const roomCodeToUse = roomCodeFromUrl || contextRoomCode;
         if (!roomCodeToUse) {
-          setError('No room code available');
+          setError("No room code available");
           setIsJoining(false);
           return;
         }
-        
-        const playerId = await joinGameContext(playerName, address || undefined, roomCodeToUse);
+
+        const playerId = await joinGameContext(
+          playerName,
+          address || undefined,
+          roomCodeToUse
+        );
         setJoined(true);
         // Store player ID in localStorage for persistence
         localStorage.setItem("quizPlayerId", playerId);
       } catch (err) {
-        console.error('Error joining game:', err);
-        setError('Error joining game. Please try again.');
+        console.error("Error joining game:", err);
+        setError("Error joining game. Please try again.");
       } finally {
         setIsJoining(false);
       }
     }
   };
-  
+
   const handleStartQuiz = async () => {
     try {
       if (!gameSessionId) return;
-      
-      console.log('Starting quiz - updating game status');
-      
+
+      console.log("Starting quiz - updating game status");
+
       // Update game status to in_progress immediately
       // All clients will receive this via realtime and start countdown
       await supabase
-        .from('game_sessions')
-        .update({ 
-          status: 'in_progress',
+        .from("game_sessions")
+        .update({
+          status: "in_progress",
           started_at: new Date().toISOString(),
-          question_started_at: new Date().toISOString()
+          question_started_at: new Date().toISOString(),
         })
-        .eq('id', gameSessionId);
-        
-      console.log('Game status updated to in_progress');
+        .eq("id", gameSessionId);
+
+      console.log("Game status updated to in_progress");
     } catch (err) {
-      console.error('Error starting quiz:', err);
-      setError('Failed to start quiz. Please try again.');
+      console.error("Error starting quiz:", err);
+      setError("Failed to start quiz. Please try again.");
     }
   };
-  
+
   if (isLoadingGame) {
     return (
       <div className="min-h-screen w-full bg-black text-white relative overflow-hidden flex items-center justify-center">
@@ -287,63 +431,116 @@ function LobbyContent() {
       <div className="min-h-screen w-full bg-black text-white relative overflow-hidden flex items-center justify-center">
         <div className="text-center">
           <div className="text-2xl font-bold mb-4">Game not found</div>
-          <Link href="/" className="text-blue-400 hover:underline">Go back home</Link>
+          <Link href="/" className="text-blue-400 hover:underline">
+            Go back home
+          </Link>
         </div>
       </div>
     );
   }
-  
+
   return (
     <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
       {/* Background network effect */}
-      <div 
+      <div
         className="absolute inset-0 z-0 opacity-40"
         style={{
           backgroundImage: "url('/network-bg.svg')",
           backgroundSize: "cover",
-          backgroundPosition: "center"
+          backgroundPosition: "center",
         }}
       />
-      
-      
+
       <div className="relative z-10 container mx-auto py-8 px-4 flex flex-col items-center">
-        <h1 className="text-3xl font-bold mb-8">{quiz?.title || 'Quiz Lobby'}</h1>
-        
+        {/* Connection Status Indicator */}
+        {!isRealtimeConnected && (
+          <div className="fixed top-4 right-4 z-50 bg-red-600/95 backdrop-blur-sm border border-red-400 rounded-lg p-4 shadow-2xl max-w-xs">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0">
+                {isReconnecting ? (
+                  <div className="w-4 h-4 border-2 border-red-300 border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <div className="w-4 h-4 bg-red-400 rounded-full animate-pulse"></div>
+                )}
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-sm mb-1">
+                  {isReconnecting ? "Reconnecting..." : "Connection Lost"}
+                </p>
+                <p className="text-xs text-red-200">
+                  {isReconnecting
+                    ? `Attempt ${reconnectAttempts}/10`
+                    : reconnectAttempts >= 10
+                    ? "Max retries reached"
+                    : "Real-time updates paused"}
+                </p>
+                {reconnectAttempts >= 10 && (
+                  <button
+                    onClick={handleManualReconnect}
+                    className="mt-2 w-full px-3 py-1.5 bg-red-700 hover:bg-red-800 rounded text-xs font-medium transition-colors"
+                  >
+                    Reload Page
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <h1 className="text-3xl font-bold mb-8">
+          {quiz?.title || "Quiz Lobby"}
+        </h1>
+
         {countdown !== null && (
           <div className="mb-8 text-center">
             <div className="text-6xl font-bold mb-4">{countdown}</div>
             <p className="text-xl">Quiz starting soon...</p>
           </div>
         )}
-        
+
         {countdown === null && (
           <>
             <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6 mb-8 w-full max-w-md">
-              <h2 className="text-xl font-semibold mb-4 text-purple-200">Quiz Details</h2>
+              <h2 className="text-xl font-semibold mb-4 text-purple-200">
+                Quiz Details
+              </h2>
               <ul className="space-y-2">
-                <li>Game PIN: <span className="font-mono font-bold text-2xl">{contextRoomCode || roomCodeFromUrl || 'N/A'}</span></li>
-                <li>Status: <span className="capitalize">{currentGame?.status || gameData?.status || 'waiting'}</span></li>
+                <li>
+                  Game PIN:{" "}
+                  <span className="font-mono font-bold text-2xl">
+                    {contextRoomCode || roomCodeFromUrl || "N/A"}
+                  </span>
+                </li>
+                <li>
+                  Status:{" "}
+                  <span className="capitalize">
+                    {currentGame?.status || gameData?.status || "waiting"}
+                  </span>
+                </li>
               </ul>
             </div>
-            
+
             <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
               <h2 className="text-xl font-semibold mb-4 text-purple-200">
                 Players ({currentGame?.players?.length || 0})
               </h2>
-              
+
               {!currentGame?.players || currentGame.players.length === 0 ? (
                 <p className="text-gray-400">Waiting for players to join...</p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {currentGame.players.map((player) => (
-                    <div key={player.id} className="bg-purple-700/30 border border-purple-500/30 p-2 rounded text-center text-purple-100">
+                    <div
+                      key={player.id}
+                      className="bg-purple-700/30 border border-purple-500/30 p-2 rounded text-center text-purple-100"
+                    >
                       {player.name}
                     </div>
                   ))}
                 </div>
               )}
             </div>
-            
+
             {!joined ? (
               <form onSubmit={handleJoin} className="w-full max-w-md">
                 {error && (
@@ -377,12 +574,15 @@ function LobbyContent() {
                     borderRadius: "0.375rem",
                     color: "white",
                     fontWeight: "500",
-                    backgroundColor: (isJoining || isAuthLoading) ? "#4a5568" : "#795AFF",
+                    backgroundColor:
+                      isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
                     border: "none",
-                    cursor: (isJoining || isAuthLoading) ? "not-allowed" : "pointer",
-                    opacity: (isJoining || isAuthLoading) ? 0.5 : 1,
+                    cursor:
+                      isJoining || isAuthLoading ? "not-allowed" : "pointer",
+                    opacity: isJoining || isAuthLoading ? 0.5 : 1,
                     transition: "background-color 0.2s ease",
-                    background: (isJoining || isAuthLoading) ? "#4a5568" : "#795AFF"
+                    background:
+                      isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
                   }}
                   onMouseEnter={(e) => {
                     if (!isJoining && !isAuthLoading) {
@@ -395,23 +595,39 @@ function LobbyContent() {
                     }
                   }}
                 >
-                  {isAuthLoading ? 'Loading...' : 
-                   isJoining ? 'Joining...' : 
-                   (!loggedUser?.isAuthenticated || !loggedUser?.session) ? 'Connect Wallet to Join' : 
-                   'Join Quiz'}
+                  {isAuthLoading
+                    ? "Loading..."
+                    : isJoining
+                    ? "Joining..."
+                    : !loggedUser?.isAuthenticated || !loggedUser?.session
+                    ? "Connect Wallet to Join"
+                    : "Join Quiz"}
                 </button>
               </form>
             ) : (
               <div className="w-full max-w-md flex flex-col gap-4">
-                <div className="bg-purple-600/20 border border-purple-500 rounded-lg p-4 text-center">
-                  <p>You&apos;ve joined as <strong>{playerName}</strong></p>
+                <div className="relative bg-purple-600/20 border border-purple-500 rounded-lg p-4 text-center">
+                  {/* Connection Status Indicator - Green Dot */}
+                  {isRealtimeConnected && (
+                    <div
+                      className="absolute top-2 right-2 w-3 h-3 bg-green-400 rounded-full animate-pulse shadow-lg"
+                      title="Connected to realtime updates"
+                    ></div>
+                  )}
+                  <p>
+                    You&apos;ve joined as <strong>{playerName}</strong>
+                  </p>
                   {isCreator ? (
-                    <p className="text-sm text-yellow-300 font-semibold">👑 You are the quiz creator</p>
+                    <p className="text-sm text-yellow-300 font-semibold">
+                      👑 You are the quiz creator
+                    </p>
                   ) : (
-                    <p className="text-sm text-gray-300">Waiting for the quiz creator to start...</p>
+                    <p className="text-sm text-gray-300">
+                      Waiting for the quiz creator to start...
+                    </p>
                   )}
                 </div>
-                
+
                 {/* Only show Start Quiz button to the creator */}
                 {isCreator && currentGame && currentGame.players.length > 0 && (
                   <button
@@ -430,8 +646,8 @@ function LobbyContent() {
                     Start Quiz
                   </button>
                 )}
-                
-                <Link 
+
+                <Link
                   href="/"
                   className="w-full py-2 bg-purple-800/50 border border-purple-600/50 hover:bg-purple-700/50 rounded text-purple-100 font-medium text-center transition-colors"
                 >
@@ -448,7 +664,13 @@ function LobbyContent() {
 
 export default function LobbyPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen w-full bg-black text-white flex items-center justify-center">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen w-full bg-black text-white flex items-center justify-center">
+          Loading...
+        </div>
+      }
+    >
       <LobbyContent />
     </Suspense>
   );
