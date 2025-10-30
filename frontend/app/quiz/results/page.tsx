@@ -19,6 +19,7 @@ export default function ResultsPage() {
   const [distributionStatus, setDistributionStatus] = useState("");
   const [distributionError, setDistributionError] = useState("");
   const [txHash, setTxHash] = useState("");
+
   const [quizData, setQuizData] = useState<{
     id: string;
     prize_amount: number;
@@ -26,6 +27,7 @@ export default function ResultsPage() {
     status: string;
     contract_tx_hash?: string;
   } | null>(null);
+
   const [isCreator, setIsCreator] = useState(false);
   
   const quiz = getCurrentQuiz();
@@ -145,7 +147,7 @@ export default function ResultsPage() {
     };
     
     loadQuizData();
-  }, [currentGame, quiz, address, supabase]);
+  }, [currentGame, quiz, address, supabase, setCurrentGame]);
   
   // Redirect if no game is active
   useEffect(() => {
@@ -290,7 +292,7 @@ export default function ResultsPage() {
         </div>
         
         {/* Prize Distribution Section - Only show for paid quizzes (>= 0.01 ETH) */}
-        {quizData && quizData.prize_amount >= 0.01 && quizData.status !== 'completed' && (
+        {quizData && quizData.prize_amount> 0 && quizData.status !== 'completed' && (
           <div className="bg-purple-600/20 border border-purple-500 rounded-lg p-6 mb-8 w-full max-w-md">
             <h3 className="text-xl font-semibold mb-4 text-center text-purple-200">Prize Distribution</h3>
             
