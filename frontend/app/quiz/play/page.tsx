@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useState, useRef, Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 // Disable pre-rendering for this page
@@ -25,6 +25,7 @@ function PlayQuizContent() {
   const [showPointsBanner, setShowPointsBanner] = useState(false);
   const [earnedPoints, setEarnedPoints] = useState(0);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [creatorSessionId, setCreatorSessionId] = useState<string | null>(null);
   
   // Use realtime hook for answers (creator only)
   const { playerResponses } = useAnswersRealtime(
@@ -36,6 +37,7 @@ function PlayQuizContent() {
   // Utilizziamo useRef per mantenere lo stato del timer tra i render
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const timePercentageRef = useRef<number>(100);
+  const hasAnsweredRef = useRef<boolean>(false); // Track if answer was submitted
   
   const [isLoadingFromUrl, setIsLoadingFromUrl] = useState(true);
   
@@ -124,6 +126,7 @@ function PlayQuizContent() {
       
       const playerSessionId = localStorage.getItem("playerSessionId");
       if (data && playerSessionId) {
+        setCreatorSessionId(data.creator_session_id);
         setIsCreator(data.creator_session_id === playerSessionId);
       }
     };
@@ -185,6 +188,84 @@ function PlayQuizContent() {
     console.log("Current question index updated:", currentGame.currentQuestionIndex);
   }, [currentGame, router, isLoadingFromUrl]);
   
+  // Funzione per gestire il timeout
+  const handleTimeUp = useCallback(async () => {
+    // Check ref first to avoid race conditions
+    if (hasAnsweredRef.current) {
+      console.log("Answer already submitted, ignoring timeout");
+      return;
+    }
+    
+    // Only handle timeout if no answer was given and not already showing results
+    if (!isAnswered && !showingResults && selectedAnswer === null) {
+      console.log("Handling timeout - no answer given");
+      hasAnsweredRef.current = true;
+      setIsAnswered(true);
+      setSelectedAnswer(-1); // Set to -1 to indicate timeout
+      
+      // Show timeout banner with 0 points (only for players, not creator)
+      if (!isCreator) {
+        setEarnedPoints(0);
+        setShowPointsBanner(true);
+        setTimeout(() => {
+          setShowPointsBanner(false);
+        }, 3000);
+      }
+      
+      // Auto-submit -1 for no answer (only for non-creators, since creators don't answer)
+      if (!isCreator) {
+        const playerSessionId = localStorage.getItem("playerSessionId");
+        if (playerSessionId && quiz && currentGame) {
+          const question = quiz.questions[currentQuestionIndex];
+          if (question) {
+            const maxTime = question.timeLimit * 1000; // Convert to milliseconds
+            try {
+              await submitAnswer(playerSessionId, question.id, -1, maxTime);
+            } catch (error) {
+              console.error('Error submitting timeout answer:', error);
+            }
+          }
+        }
+      }
+      
+      // Show results
+      setShowingResults(true);
+      
+      // Creator has manual control via "Next Question" button, no automatic advancement
+      // Non-creators wait for creator to advance
+    }
+  }, [isAnswered, showingResults, selectedAnswer, isCreator, quiz, currentGame, currentQuestionIndex, submitAnswer]);
+  
+  // Funzione per avviare il timer
+  const startTimer = useCallback(() => {
+    timerRef.current = setInterval(() => {
+      setTimeLeft((prev) => {
+        const newTime = prev <= 1 ? 0 : prev - 1;
+        
+        // Aggiorna la percentuale del tempo rimanente
+        timePercentageRef.current = (newTime / initialTime) * 100;
+        
+        if (newTime === 0 && timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+
+          console.log("calling handleTimeUp");
+          // Use a timeout to ensure state has updated
+          setTimeout(() => {
+            setIsAnswered(prev => {
+              if (!prev) {
+                handleTimeUp();
+              }
+              return prev;
+            });
+          }, 0);
+        }
+        
+        return newTime;
+      });
+    }, 1000);
+  }, [initialTime, handleTimeUp]);
+  
   // Reset states when question changes
   useEffect(() => {
     if (!currentGame || !quiz) return;
@@ -195,6 +276,7 @@ function PlayQuizContent() {
     }
     
     // Reset states FIRST - this must run every time the question changes
+    hasAnsweredRef.current = false; // Reset answer tracking ref
     setSelectedAnswer(null);
     setIsAnswered(false);
     setShowingResults(false);
@@ -240,127 +322,48 @@ function PlayQuizContent() {
         clearInterval(timerRef.current);
       }
     };
-  }, [currentQuestionIndex, quiz, currentGame]);
-  
-  // Funzione per avviare il timer
-  const startTimer = () => {
-    timerRef.current = setInterval(() => {
-      setTimeLeft((prev) => {
-        const newTime = prev <= 1 ? 0 : prev - 1;
-        
-        // Aggiorna la percentuale del tempo rimanente
-        timePercentageRef.current = (newTime / initialTime) * 100;
-        
-        if (newTime === 0) {
-          clearInterval(timerRef.current!);
-          if (!isAnswered && selectedAnswer === null) {
-            handleTimeUp();
-          }
-        }
-        
-        return newTime;
-      });
-    }, 1000);
-  };
-  
-  const handleTimeUp = async () => {
-    // Only handle timeout if no answer was given and not already showing results
-    if (!isAnswered && !showingResults && selectedAnswer === null) {
-      setIsAnswered(true);
-      
-      // Show timeout banner
-      setEarnedPoints(0);
-      setShowPointsBanner(true);
-      setTimeout(() => {
-        setShowPointsBanner(false);
-      }, 3000);
-      
-      // Auto-submit -1 for no answer (only for non-creators, since creators don't answer)
-      if (!isCreator) {
-        const playerSessionId = localStorage.getItem("playerSessionId");
-        if (playerSessionId && quiz && currentGame) {
-          const question = quiz.questions[currentQuestionIndex];
-          if (question) {
-            const maxTime = question.timeLimit * 1000; // Convert to milliseconds
-            try {
-              await submitAnswer(playerSessionId, question.id, -1, maxTime);
-            } catch (error) {
-              console.error('Error submitting timeout answer:', error);
-            }
-          }
-        }
-      }
-      
-      // Show results
-      setShowingResults(true);
-      
-      // Creator has manual control via "Next Question" button, no automatic advancement
-      // Non-creators wait for creator to advance
-    }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentQuestionIndex, quiz]);
   
   const handleAnswerSelect = async (answerIndex: number) => {
     console.log("Answer selected:", answerIndex, "for question:", currentQuestionIndex);
-    if (isAnswered || showingResults) {
+    if (isAnswered || showingResults || hasAnsweredRef.current) {
       console.log("Already answered or showing results");
       return;
     }
-    
-    // Stop the timer immediately when answer is selected
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
+  
     
     setSelectedAnswer(answerIndex);
     setIsAnswered(true);
     
-    // Calculate time taken
+    // // Calculate time taken
     const endTime = Date.now();
     const question = quiz?.questions[currentQuestionIndex];
     const maxTime = question?.timeLimit ? question.timeLimit * 1000 : 10000;
     const timeTaken = startTime ? endTime - startTime : maxTime;
     
-    // Submit answer and get points from backend
+    // Submit answer to backend
     const playerSessionId = localStorage.getItem("playerSessionId");
     if (playerSessionId && quiz && currentGame && question) {
       try {
-        // Call submitAnswer which returns the backend response
-        await submitAnswer(playerSessionId, question.id, answerIndex, timeTaken);
+        // Call submitAnswer which updates the backend and returns the response
+        const response = await submitAnswer(playerSessionId, question.id, answerIndex, timeTaken);
         
-        // Get the updated player data from the game state
-        const updatedPlayer = currentGame.players.find(p => p.id === playerSessionId);
-        if (updatedPlayer) {
-          // Get the last answer to extract points
-          const lastAnswer = updatedPlayer.answers[updatedPlayer.answers.length - 1];
-          if (lastAnswer) {
-            const points = lastAnswer.isCorrect ? lastAnswer.pointsEarned || 0 : 0;
-            
-            setEarnedPoints(points);
-            setShowPointsBanner(true);
-            
-            // Show confetti for correct answers
-            if (lastAnswer.isCorrect) {
-              setShowConfetti(true);
-              setTimeout(() => {
-                setShowConfetti(false);
-              }, 3000);
-            }
-            
-            // Hide banner after 3 seconds
-            setTimeout(() => {
-              setShowPointsBanner(false);
-            }, 3000);
-          }
+        // Use the response directly instead of waiting for state update
+        if (response) {
+          // Update with actual points from backend
+          setEarnedPoints(response.is_correct ? response.points_earned : 0);
+          
+          // Show confetti and points banner
+          setShowConfetti(response.is_correct);
+          setShowPointsBanner(isCreator ? false : true);
+          setTimeout(() => {
+            setShowPointsBanner(false);
+            setShowConfetti(false);
+          }, 3000);
         }
       } catch (error) {
         console.error('Error submitting answer:', error);
-        // Fallback to showing 0 points
-        setEarnedPoints(0);
-        setShowPointsBanner(true);
-        setTimeout(() => {
-          setShowPointsBanner(false);
-        }, 3000);
       }
     }
     
@@ -381,6 +384,7 @@ function PlayQuizContent() {
     }
     
     // Reset timer states
+    hasAnsweredRef.current = false; // Reset answer tracking ref
     setSelectedAnswer(null);
     setIsAnswered(false);
     setShowingResults(false);
@@ -482,7 +486,7 @@ function PlayQuizContent() {
       />
       
       {/* Logo centered at top */}
-      <div className="absolute top-1 left-1/2 transform -translate-x-1/2 z-20">
+      <div className="absolute top-1 left-1/2 transform -translate-x-1/2 z-10">
         <img 
           src="/Logo.png" 
           alt="Hoot Logo" 
@@ -546,7 +550,7 @@ function PlayQuizContent() {
           }`}>
             <div className="text-center">
               <div className="text-4xl font-bold mb-2">
-                {earnedPoints > 0 ? 'Correct!' : (selectedAnswer === null ? "Time's up!" : 'Wrong!')}
+                {earnedPoints > 0 ? 'Correct!' : (selectedAnswer === null && !isCreator ? "Time's up!" : 'Wrong!')}
               </div>
               <div className="text-2xl font-semibold">
                 {earnedPoints > 0 ? `+${earnedPoints} points` : '0 points'}
@@ -613,6 +617,13 @@ function PlayQuizContent() {
         {isCreator ? (
           // Creator view - Show player responses
           <div className="w-full max-w-md">
+            {/* Subtle time-up notification for creator */}
+            {timeLeft === 0 && (
+              <div className="mb-4 bg-blue-900/20 border border-blue-700/50 rounded-lg p-3 text-center">
+                <p className="text-sm text-blue-200">⏰ Time&apos;s up! You can advance when ready.</p>
+              </div>
+            )}
+            
             <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6 mb-4">
               <h3 className="text-xl font-semibold mb-4 text-purple-200 text-center">
                 Player Responses ({Object.keys(playerResponses).length}/{currentGame.players.length - 1})
@@ -657,18 +668,25 @@ function PlayQuizContent() {
             {/* Next Question button for creator */}
             <button
               onClick={handleNextQuestion}
-              className="w-full py-3 rounded text-white font-semibold transition-colors hover:opacity-90"
+              disabled={timeLeft > 0}
+              className="w-full py-3 rounded text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
-                backgroundColor: "#22c55e",
+                backgroundColor: timeLeft > 0 ? "#6b7280" : "#22c55e",
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#16a34a";
+                if (timeLeft === 0) {
+                  e.currentTarget.style.backgroundColor = "#16a34a";
+                }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "#22c55e";
+                if (timeLeft === 0) {
+                  e.currentTarget.style.backgroundColor = "#22c55e";
+                } else {
+                  e.currentTarget.style.backgroundColor = "#6b7280";
+                }
               }}
             >
-              Next Question →
+              {timeLeft > 0 ? `Wait ${timeLeft}s...` : 'Next Question →'}
             </button>
           </div>
         ) : (
@@ -697,14 +715,22 @@ function PlayQuizContent() {
               return (
                 <div 
                   key={index}
-                  className="rounded p-4 text-white relative border-2 cursor-pointer hover:opacity-80 transition-opacity"
+                  className={`rounded p-4 text-white relative border-2 transition-opacity ${
+                    isAnswered || showingResults ? 'cursor-not-allowed' : 'cursor-pointer hover:opacity-80'
+                  }`}
                   style={{ 
                     backgroundColor: backgroundColor, // Sfondo colorato pieno
                     borderColor: borderColor, // Bordo dello stesso colore
                     borderWidth: '2px',
                     opacity: isAnswered || showingResults ? (index === selectedAnswer || index === correctAnswerIndex ? 1 : 0.7) : 1,
+                    pointerEvents: isAnswered || showingResults ? 'none' : 'auto',
                   }}
-                  onClick={() => handleAnswerSelect(index)}
+                  onClick={() => {
+
+                    if (!isAnswered && !showingResults) {
+                      handleAnswerSelect(index);
+                    }
+                  }}
                 >
                   {/* Indicatore di risposta corretta */}
                   {isAnswered && index === correctAnswerIndex && (
@@ -737,18 +763,131 @@ function PlayQuizContent() {
           </div>
         )}
         
-        {/* Results info */}
-        {showingResults && (
-          <div className="mt-8 text-center">
-            {selectedAnswer === correctAnswerIndex ? (
-              <div className="text-green-400 text-2xl font-bold">Correct!</div>
-            ) : (
-              <div className="text-red-400 text-2xl font-bold">
-                {selectedAnswer !== null ? "Wrong answer!" : "Time's up!"}
+        {/* Intermediate Results Screen for Players */}
+        {showingResults && !isCreator && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-gradient-to-b from-purple-900/95 to-black/95 border-2 border-purple-500 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
+              {/* Question Review */}
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-center mb-4 text-purple-100">Question Review</h2>
+                <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-4 mb-4">
+                  <p className="text-lg text-white mb-3">{currentQuestion.text}</p>
+                  
+                  {/* Show timeout message if no answer was given */}
+                  {(selectedAnswer === null || selectedAnswer === -1) ? (
+                    <div className="space-y-2">
+                      <div className="p-3 rounded-lg border-2 bg-orange-900/40 border-orange-500">
+                        <div className="flex items-center justify-center">
+                          <span className="text-orange-200 font-bold">⏰ Time&apos;s up! No answer given</span>
+                        </div>
+                      </div>
+                      <div className="p-3 rounded-lg border-2 bg-green-900/40 border-green-500">
+                        <div className="flex items-center justify-between">
+                          <span className="text-white">{currentQuestion.options[correctAnswerIndex]}</span>
+                          <span className="text-green-400 font-bold">✓ Correct Answer</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Show only player's answer and correct answer */
+                    <div className="space-y-2">
+                      {currentQuestion.options.map((option, index) => {
+                        const isCorrect = index === correctAnswerIndex;
+                        const isUserAnswer = index === selectedAnswer;
+                        
+                        // Only show correct answer and user's answer (if different)
+                        if (!isCorrect && !isUserAnswer) {
+                          return null;
+                        }
+                        
+                        return (
+                          <div
+                            key={index}
+                            className={`p-3 rounded-lg border-2 ${
+                              isCorrect
+                                ? 'bg-green-900/40 border-green-500'
+                                : isUserAnswer
+                                ? 'bg-red-900/40 border-red-500'
+                                : 'bg-gray-800/40 border-gray-600'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="text-white">{option}</span>
+                              <div className="flex items-center gap-2">
+                                {isCorrect && isUserAnswer && (
+                                  <span className="text-green-400 font-bold">✓ Your Answer (Correct)</span>
+                                )}
+                                {isCorrect && !isUserAnswer && (
+                                  <span className="text-green-400 font-bold">✓ Correct Answer</span>
+                                )}
+                                {isUserAnswer && !isCorrect && (
+                                  <span className="text-red-400 font-bold">✗ Your Answer</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  
+                  {/* Points earned */}
+                  <div className="mt-4 text-center">
+                    <div className={`text-3xl font-bold ${earnedPoints > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {earnedPoints > 0 ? `+${earnedPoints} points` : '0 points'}
+                    </div>
+                  </div>
+                </div>
               </div>
-            )}
-            <div className="text-lg text-gray-300 mt-2">
-              {isCreator ? "Click 'Next Question' to continue" : "Next question in a moment..."}
+              
+              {/* Current Leaderboard */}
+              <div className="mb-4">
+                <h3 className="text-xl font-bold text-center mb-3 text-purple-100">Current Standings</h3>
+                <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-4">
+                  <div className="space-y-2">
+                    {[...currentGame.players]
+                      .filter(p => p.id !== creatorSessionId) // Exclude creator
+                      .sort((a, b) => b.score - a.score)
+                      .slice(0, 5) // Show top 5
+                      .map((player, index) => {
+                        const playerSessionId = localStorage.getItem("playerSessionId");
+                        const isCurrentPlayer = player.id === playerSessionId;
+                        
+                        return (
+                          <div
+                            key={player.id}
+                            className={`flex items-center justify-between p-3 rounded-lg ${
+                              isCurrentPlayer
+                                ? 'bg-purple-700/50 border-2 border-purple-400'
+                                : 'bg-purple-700/20 border border-purple-500/30'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                                index < 3 ? 'bg-yellow-500/30 text-yellow-300' : 'bg-gray-700 text-gray-300'
+                              }`}>
+                                {index === 0 && '🥇'}
+                                {index === 1 && '🥈'}
+                                {index === 2 && '🥉'}
+                                {index >= 3 && (index + 1)}
+                              </div>
+                              <span className={`font-medium ${isCurrentPlayer ? 'text-purple-100' : 'text-white'}`}>
+                                {player.name}
+                                {isCurrentPlayer && ' (You)'}
+                              </span>
+                            </div>
+                            <span className="font-bold text-purple-200">{player.score} pts</span>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Waiting message */}
+              <div className="text-center">
+                <p className="text-gray-300 animate-pulse">Waiting for next question...</p>
+              </div>
             </div>
           </div>
         )}

@@ -589,7 +589,7 @@ export default function AdminPage() {
         .eq("room_code", generatedRoomCode);
 
       // Store creator ID in localStorage
-      localStorage.setItem("quizPlayerId", creatorPlayerId);
+      localStorage.setItem("playerSessionId", creatorPlayerId);
 
       // Store room code
       setCreatedRoomCode(generatedRoomCode);
