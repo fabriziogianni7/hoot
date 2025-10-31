@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { sdk } from "@farcaster/miniapp-sdk";
 
 import { supabase } from "./supabase-client";
-import { useAccount, useConnections, useSignMessage, useEnsName } from "wagmi";
+import { useAccount, useConnections, useSignMessage, useEnsName, useConnect, Connector } from "wagmi";
 import type { Session, AuthError, User } from "@supabase/supabase-js";
 import { base, mainnet } from "viem/chains";
 import { toCoinType } from "viem";
@@ -25,6 +25,7 @@ interface UseAuthReturn {
   isAuthLoading: boolean;
   authError: string | null;
   triggerAuth: () => Promise<void>;
+  connectWallet: () => Promise<void>;
 }
 
 /**
@@ -43,8 +44,9 @@ export function useAuth(): UseAuthReturn {
 
   // Wagmi hooks
   const { signMessageAsync } = useSignMessage();
-  const { address, chainId } = useAccount();
+  const { address } = useAccount();
   const connections = useConnections();
+  const { connectAsync, connectors } = useConnect();
 
   const { data: ensName } = useEnsName({
     address,
@@ -58,6 +60,7 @@ export function useAuth(): UseAuthReturn {
   } | null>(null);
   const [sessionError, setSessionError] = useState<AuthError | null>(null);
   const [hasCheckedSession, setHasCheckedSession] = useState(false);
+
 
   // Function to create logged user with all metadata
   const createLoggedUser = useCallback(
@@ -91,6 +94,44 @@ export function useAuth(): UseAuthReturn {
     [address, ensName]
   );
 
+  // Function to connect wallet
+  const connectWallet = useCallback(async () => {
+    if (connections.length > 0) {
+      console.log("✅ Wallet already connected");
+      return;
+    }
+
+    try {
+      setAuthError(null);
+      console.log("🔌 Connecting wallet...");
+      
+
+      const isMiniapp = await sdk.isInMiniApp();
+      const context = await sdk.context;
+      let connector: Connector | undefined;
+      // const connector = isMiniapp ? context?.client?.clientFid === 9152 ? connectors
+      if (isMiniapp && context?.client?.clientFid === 9152) {
+        connector = connectors.find(connector => connector.id === "farcaster");
+      } else if (isMiniapp) {
+        connector = connectors.find(connector => connector.id === "baseAccount");
+      } else {
+        connector = connectors.find(connector => connector.id === "injected");
+      }
+      
+      if (!connector) {
+        throw new Error("No wallet connector available");
+      }
+
+      await connectAsync({ connector });
+      console.log("✅ Wallet connected");
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to connect wallet";
+      console.error("❌ Wallet connection error:", error);
+      setAuthError(errorMessage);
+      throw error;
+    }
+  }, [connectAsync, connectors, connections.length]);
+
   // Sign message and sign in with Web3
   const signMsgAndSignInWithWeb3 = useCallback(async (): Promise<void> => {
     if (!address || connections.length <= 0) {
@@ -115,8 +156,6 @@ export function useAuth(): UseAuthReturn {
         issuedAt: issuedAt,
       }).prepareMessage();
 
-      let response = null;
-      
       const context = await sdk.context;
       
       // Generate signature
@@ -153,62 +192,84 @@ export function useAuth(): UseAuthReturn {
         refresh_token,
       });
 
-      if (sessionError || !data.session) {
+      if (sessionError || !data.session || !data.user) {
         throw sessionError || new Error("Failed to create session");
       }
 
+      // Update user metadata in Supabase
+      const isMiniapp = await sdk.isInMiniApp();
 
-      // Set response to continue with normal flow
-      response = { data, error: null };
-
-      if (response?.error) {
-        throw `error signin in:${response.error}`;
+      if (isMiniapp && context?.user) {
+        // Update with Farcaster data
+        await supabase.auth.updateUser({
+          data: {
+            fid: context.user.fid,
+            username: context.user.username,
+            displayName: context.user.displayName,
+          },
+        });
+      } else if (ensName) {
+        // Update with ENS name
+        await supabase.auth.updateUser({
+          data: {
+            username: ensName,
+            display_name: ensName,
+          },
+        });
       }
+      
+      setSessionData({ session: data.session, user: data.user });
 
-      if (response?.data?.session) {
-        // Update user metadata in Supabase
-        const context = await sdk.context;
-        const isMiniapp = await sdk.isInMiniApp();
-
-        if (isMiniapp && context?.user) {
-          // Update with Farcaster data
-          await supabase.auth.updateUser({
-            data: {
-              fid: context.user.fid,
-              username: context.user.username,
-              displayName: context.user.displayName,
-            },
-          });
-        } else if (ensName) {
-          // Update with ENS name
-          await supabase.auth.updateUser({
-            data: {
-              username: ensName,
-              display_name: ensName,
-            },
-          });
-        }
-        setSessionData(response.data);
-      }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to sign in";
       console.error("❌ Sign in error:", error);
-      setAuthError(error.message || "Failed to sign in");
+      setAuthError(errorMessage);
       setSessionError(error as AuthError);
       setIsAuthLoading(false);
     }
-  }, [address, chainId, signMessageAsync, connections.length, ensName]);
+  }, [address, signMessageAsync, connections.length, ensName]);
 
   const triggerAuth = useCallback(async () => {
     if (connections.length === 0) {
-      console.log("⚠️ No wallet connected. Please connect wallet first.");
-      setAuthError("Please connect your wallet first");
-      return;
+      console.log("⚠️ No wallet connected. Attempting to connect...");
+      try {
+        await connectWallet();
+        // After successful connection, the useEffect will handle sign in
+      } catch {
+        setAuthError("Failed to connect wallet. Please try again.");
+        return;
+      }
     }
 
     if (!sessionData) {
       await signMsgAndSignInWithWeb3();
     }
-  }, [connections.length, sessionData, signMsgAndSignInWithWeb3]);
+  }, [connections.length, sessionData, signMsgAndSignInWithWeb3, connectWallet]);
+
+  // Effect: Detect wallet switch and re-authenticate
+  useEffect(() => {
+    // If we have an authenticated user but the address has changed
+    if (
+      loggedUser && 
+      address && 
+      address.toLowerCase() !== loggedUser?.address?.toLowerCase()
+    ) {
+      console.log("🔄 Wallet switch detected!");
+      console.log(`  Previous: ${loggedUser.address}`);
+      console.log(`  Current: ${address}`);
+      
+      // Clear current session
+      setLoggedUser(null);
+      setSessionData(null);
+      setHasCheckedSession(false); // This will trigger Effect 1 to re-run
+      setIsAuthLoading(true);
+      
+      // Sign out from Supabase
+      supabase.auth.signOut().then(() => {
+        console.log("🔐 Signed out. Effects will handle re-authentication...");
+      });
+    }
+  }, [address, loggedUser]); // Remove triggerAuth and authenticatedAddress from dependencies
 
   // Effect 1: Check for existing session when wallet connects
   useEffect(() => {
@@ -236,13 +297,14 @@ export function useAuth(): UseAuthReturn {
 
         if (data?.session) {
           console.log("✅ Found existing session");
-          setSessionData(data);
+          const user = data.session.user;
+          setSessionData({ session: data.session, user });
         } else {
           console.log("ℹ️ No existing session found");
         }
 
         setHasCheckedSession(true);
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error("❌ Session check failed:", error);
         setHasCheckedSession(true);
       }
@@ -253,11 +315,22 @@ export function useAuth(): UseAuthReturn {
 
   // Effect 2: If no session after check, initiate sign in
   useEffect(() => {
+    // Early return if basic conditions not met
     if (!hasCheckedSession || connections.length === 0) {
       return;
     }
 
-    if (!sessionData && !authError && !sessionError) {
+    // Don't return early if we have a logged user with a DIFFERENT address (wallet switch)
+    const isAddressMismatch = loggedUser && address && 
+      loggedUser.address?.toLowerCase() !== address.toLowerCase();
+
+    // Return early only if logged user exists AND address matches (already authenticated)
+    if (loggedUser && !isAddressMismatch) {
+      return;
+    }
+
+    // Trigger sign in if no session or if address changed
+    if ((!sessionData || isAddressMismatch) && !authError && !sessionError) {
       console.log("🔐 No session found, initiating sign in...");
       signMsgAndSignInWithWeb3();
     }
@@ -268,6 +341,8 @@ export function useAuth(): UseAuthReturn {
     sessionError,
     connections.length,
     signMsgAndSignInWithWeb3,
+    loggedUser,
+    address
   ]);
 
   // Effect 3: When we have session data, create logged user
@@ -284,15 +359,16 @@ export function useAuth(): UseAuthReturn {
         setLoggedUser(user);
         setIsAuthLoading(false);
         console.log("✅ User setup complete");
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : "Failed to setup user";
         console.error("❌ User setup error:", error);
-        setAuthError(error.message || "Failed to setup user");
+        setAuthError(errorMessage);
         setIsAuthLoading(false);
       }
     };
 
     setupUser();
-  }, [sessionData, connections.length, createLoggedUser]);
+  }, [sessionData, connections.length, createLoggedUser, address]);
 
   // Effect 4: Handle disconnection
   useEffect(() => {
@@ -309,5 +385,6 @@ export function useAuth(): UseAuthReturn {
     isAuthLoading,
     authError,
     triggerAuth,
+    connectWallet,
   };
 }
