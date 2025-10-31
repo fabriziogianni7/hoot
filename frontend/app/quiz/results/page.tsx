@@ -28,6 +28,7 @@ export default function ResultsPage() {
   } | null>(null);
 
   const [isCreator, setIsCreator] = useState(false);
+  const [creatorSessionId, setCreatorSessionId] = useState<string | null>(null);
   
   // Final player scores (static - no realtime)
   type PlayerSession = {
@@ -91,6 +92,19 @@ export default function ResultsPage() {
           // Check if current user is creator
           if (address && data.creator_address) {
             setIsCreator(address.toLowerCase() === data.creator_address.toLowerCase());
+          }
+        }
+
+        // Fetch creator session ID from game session
+        if (gameSessionId) {
+          const { data: gameSession } = await supabase
+            .from('game_sessions')
+            .select('creator_session_id')
+            .eq('id', gameSessionId)
+            .single();
+          
+          if (gameSession?.creator_session_id) {
+            setCreatorSessionId(gameSession.creator_session_id);
           }
         }
 
@@ -159,7 +173,7 @@ export default function ResultsPage() {
     
     loadQuizData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quiz, address, supabase]);
+  }, [quiz, address, supabase, gameSessionId]);
   
   // Fetch final player scores (one-time fetch, no realtime)
   useEffect(() => {
@@ -199,8 +213,8 @@ export default function ResultsPage() {
   }
   
   // Use final players if available, otherwise fallback to context players
-  // Map final players to match the expected format
-  const sortedPlayers = finalPlayers.length > 0
+  // Map final players to match the expected format and exclude creator
+  const sortedPlayers = (finalPlayers.length > 0
     ? finalPlayers.map(fp => {
         const contextPlayer = currentGame.players.find(p => p.id === fp.id);
         return {
@@ -210,10 +224,11 @@ export default function ResultsPage() {
           answers: contextPlayer?.answers || []
         };
       })
-    : [...currentGame.players].sort((a, b) => b.score - a.score);
+    : [...currentGame.players].sort((a, b) => b.score - a.score))
+    .filter(player => player.id !== creatorSessionId); // Exclude creator from leaderboard
   
   // Get current player
-  const currentPlayerId = localStorage.getItem("quizPlayerId");
+  const currentPlayerId = localStorage.getItem("playerSessionId");
   const currentPlayer = currentGame.players.find(p => p.id === currentPlayerId);
   
   const handleDistributePrizes = async () => {
@@ -330,7 +345,7 @@ export default function ResultsPage() {
                       <span className="text-gray-300 font-bold">{index + 1}</span>
                     </div>
                   )}
-                  <div>{player.name}</div>
+                  <span>{player.name}</span>
                 </div>
                 <div className="font-bold">{player.score}</div>
               </div>
