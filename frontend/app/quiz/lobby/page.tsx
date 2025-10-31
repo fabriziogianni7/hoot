@@ -363,7 +363,7 @@ function LobbyContent() {
         // Check if user is authenticated, if not trigger authentication
         if (!loggedUser?.isAuthenticated || !loggedUser?.session) {
           console.log("User not authenticated, triggering auth...");
-          await triggerAuth();
+          await triggerAuth(8453);
 
           // After triggerAuth completes, check again if user is now authenticated
           // If still not authenticated, the auth flow was cancelled or failed

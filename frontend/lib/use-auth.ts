@@ -24,8 +24,8 @@ interface UseAuthReturn {
   loggedUser: LoggedUser | null;
   isAuthLoading: boolean;
   authError: string | null;
-  triggerAuth: () => Promise<void>;
-  connectWallet: () => Promise<void>;
+  triggerAuth: (chainId?: number) => Promise<void>;
+  connectWallet: (chainId?: number) => Promise<void>;
 }
 
 /**
@@ -95,7 +95,7 @@ export function useAuth(): UseAuthReturn {
   );
 
   // Function to connect wallet
-  const connectWallet = useCallback(async () => {
+  const connectWallet = useCallback(async (chainId: number = 8453) => {
     if (connections.length > 0) {
       console.log("✅ Wallet already connected");
       return;
@@ -103,7 +103,7 @@ export function useAuth(): UseAuthReturn {
 
     try {
       setAuthError(null);
-      console.log("🔌 Connecting wallet...");
+      console.log(`🔌 Connecting wallet to chain ${chainId}...`);
       
 
       const isMiniapp = await sdk.isInMiniApp();
@@ -122,7 +122,7 @@ export function useAuth(): UseAuthReturn {
         throw new Error("No wallet connector available");
       }
 
-      await connectAsync({ connector });
+      await connectAsync({ connector, chainId });
       console.log("✅ Wallet connected");
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Failed to connect wallet";
@@ -229,11 +229,11 @@ export function useAuth(): UseAuthReturn {
     }
   }, [address, signMessageAsync, connections.length, ensName]);
 
-  const triggerAuth = useCallback(async () => {
+  const triggerAuth = useCallback(async (chainId: number = 8453) => {
     if (connections.length === 0) {
       console.log("⚠️ No wallet connected. Attempting to connect...");
       try {
-        await connectWallet();
+        await connectWallet(chainId);
         // After successful connection, the useEffect will handle sign in
       } catch {
         setAuthError("Failed to connect wallet. Please try again.");

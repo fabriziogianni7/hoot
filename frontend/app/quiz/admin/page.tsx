@@ -1176,7 +1176,7 @@ function AdminPageContent() {
           ) : (
             // User is not authenticated - show Connect Wallet button
             <button
-              onClick={triggerAuth}
+              onClick={() => triggerAuth(8453)}
               className="px-8 py-4 rounded text-white font-bold"
               style={{
                 backgroundColor: "#795AFF",
