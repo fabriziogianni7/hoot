@@ -156,7 +156,7 @@ export default function Home() {
 
   const handleAuthenticate = async () => {
     // Wallet already connected, just trigger auth
-    await triggerAuth();
+    await triggerAuth(8453);
   };
 
   return (
