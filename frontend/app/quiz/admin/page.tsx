@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
 import {
@@ -53,6 +53,7 @@ enum CreationStep {
 
 export default function AdminPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     startGame,
     createQuizOnBackend,
@@ -69,7 +70,7 @@ export default function AdminPage() {
   const publicClient = usePublicClient();
   const { supabase } = useSupabase();
   const { data: ethBalance } = useBalance({ address });
-  const { loggedUser, isAuthLoading, triggerAuth } = useAuth();
+  const { loggedUser, isAuthLoading, authError, triggerAuth } = useAuth();
 
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -90,6 +91,22 @@ export default function AdminPage() {
   const [_approvalTransaction, setApprovalTransaction] = useState<string>("");
   const [hootContractAddress, setHootContractAddress] = useState<string>("");
   const [creationStep, setCreationStep] = useState<CreationStep>(CreationStep.NONE);
+  const [hasMyQuizzes, setHasMyQuizzes] = useState(false);
+  const [isCheckingMyQuizzes, setIsCheckingMyQuizzes] = useState(false);
+  const [loadedFromReuseId, setLoadedFromReuseId] = useState<string | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  // Badge state for showing user handle (same behavior as Home page)
+  const [badgeText, setBadgeText] = useState<{
+    primary: string;
+    secondary: string | null;
+    statusColor?: string;
+  }>({
+    primary: "Connecting...",
+    secondary: null,
+    statusColor: "#fbbf24",
+  });
 
   // Wagmi hooks for transactions
   const {
@@ -100,6 +117,55 @@ export default function AdminPage() {
 
   const { isPending: _isSendPending, error: sendError } = useSendTransaction();
 
+  // Handle loading state
+  useEffect(() => {
+    if (isAuthLoading) {
+      setBadgeText({
+        primary: "Connecting...",
+        secondary: null,
+        statusColor: "#fbbf24",
+      });
+    }
+  }, [isAuthLoading]);
+
+  // Handle error state
+  useEffect(() => {
+    if (authError && !isAuthLoading) {
+      setBadgeText({
+        primary: "Not Connected",
+        secondary: null,
+        statusColor: "#ef4444",
+      });
+    }
+  }, [authError, isAuthLoading]);
+
+  // Handle authenticated user data
+  useEffect(() => {
+    if (loggedUser?.isAuthenticated) {
+      let primary = "Connected";
+      let secondary: string | null = null;
+      let statusColor = "#4ade80";
+
+      if (loggedUser.session?.user?.user_metadata?.display_name) {
+        primary = loggedUser.session.user.user_metadata.display_name;
+      }
+
+      if (loggedUser.fid || loggedUser.session?.user?.user_metadata?.fid) {
+        secondary = "Farcaster";
+      }
+
+      if (loggedUser.address) {
+        const walletInfo = `${loggedUser.address.slice(0, 6)}...${loggedUser.address.slice(-4)}`;
+        secondary = secondary ? `${secondary} • ${walletInfo}` : walletInfo;
+      } else if (!secondary) {
+        secondary = "No wallet connected";
+        statusColor = "#ef4444";
+      }
+
+      setBadgeText({ primary, secondary: secondary || null, statusColor });
+    }
+  }, [loggedUser]);
+
   useEffect(() => {
     const hootAddress =
       chain?.id === 8453
@@ -107,6 +173,91 @@ export default function AdminPage() {
         : (`0x573496a44ace1d713723f5d91fcde63bf3d82d3a` as `0x${string}`);
     setHootContractAddress(hootAddress);
   }, [chain]);
+
+  // Check if the current user has previously created quizzes
+  useEffect(() => {
+    let cancelled = false;
+    const checkMyQuizzes = async () => {
+      try {
+        setIsCheckingMyQuizzes(true);
+        if (!supabase) return;
+        const inMini = await sdk.isInMiniApp();
+        if (inMini) {
+          const ctx = await sdk.context;
+          const fid = loggedUser?.fid ?? ctx?.user?.fid;
+          if (!fid) {
+            if (!cancelled) setHasMyQuizzes(false);
+            return;
+          }
+          const { count } = await supabase
+            .from("quizzes")
+            .select("id", { count: "exact", head: true })
+            .eq("user_fid", String(fid));
+          if (!cancelled) setHasMyQuizzes((count ?? 0) > 0);
+        } else if (address) {
+          const { count } = await supabase
+            .from("quizzes")
+            .select("id", { count: "exact", head: true })
+            .eq("creator_address", address);
+          if (!cancelled) setHasMyQuizzes((count ?? 0) > 0);
+        } else {
+          if (!cancelled) setHasMyQuizzes(false);
+        }
+      } catch (e) {
+        console.error("Error checking user quizzes:", e);
+      } finally {
+        if (!cancelled) setIsCheckingMyQuizzes(false);
+      }
+    };
+    checkMyQuizzes();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, address, loggedUser?.fid]);
+
+  // Load quiz for reuse if query param is present
+  useEffect(() => {
+    const reuseId = searchParams?.get('reuse');
+    if (!reuseId || !supabase) return;
+    if (loadedFromReuseId === reuseId) return;
+
+    const loadForReuse = async () => {
+      try {
+        const { data: quizRow, error: quizErr } = await supabase
+          .from('quizzes')
+          .select('*')
+          .eq('id', reuseId)
+          .single();
+        if (quizErr || !quizRow) return;
+
+        const { data: qsRows } = await supabase
+          .from('questions')
+          .select('*')
+          .eq('quiz_id', reuseId)
+          .order('order_index', { ascending: true });
+
+        // Normalize to editor format
+        const normalized = (qsRows || []).map((qr: any) => {
+          const optionTexts: string[] = Array.isArray(qr.options) ? qr.options : [];
+          const four = [...optionTexts.slice(0, 4)];
+          while (four.length < 4) four.push('');
+          return {
+            text: qr.question_text || '',
+            options: four.map((t) => ({ text: t || '', color: 'hover:opacity-80' })),
+            correctAnswer: typeof qr.correct_answer_index === 'number' ? qr.correct_answer_index : 0,
+          } as QuizQuestion;
+        });
+
+        setQuizTitle(quizRow.title || 'Name your Quiz');
+        setQuestions(normalized);
+        setCurrentQuestionIndex(0);
+        setLoadedFromReuseId(reuseId);
+      } catch (e) {
+        console.error('Failed to load quiz for reuse:', e);
+      }
+    };
+    loadForReuse();
+  }, [searchParams, supabase, loadedFromReuseId]);
 
   // Determine ERC20 token address based on selected currency
   const getTokenAddress = (): `0x${string}` | undefined => {
@@ -240,7 +391,7 @@ export default function AdminPage() {
 
   // Auto-scroll to current question when it changes
   useEffect(() => {
-    const scrollContainer = document.querySelector('.overflow-x-auto');
+    const scrollContainer = scrollContainerRef.current || document.querySelector('.overflow-x-auto');
     if (scrollContainer) {
       // Find the current question element
       const currentQuestionElement = scrollContainer.querySelector('.border-white');
@@ -253,6 +404,16 @@ export default function AdminPage() {
       }
     }
   }, [currentQuestionIndex]);
+
+  // Keep the "+" button visible when questions grow
+  useEffect(() => {
+    if (addButtonRef.current) {
+      addButtonRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'end' });
+    } else if (scrollContainerRef.current) {
+      const el = scrollContainerRef.current;
+      el.scrollTo({ left: el.scrollWidth, behavior: 'smooth' });
+    }
+  }, [questions.length]);
 
   const handleOptionChange = (index: number, value: string) => {
     const newOptions = [...currentQuestion.options];
@@ -633,8 +794,96 @@ export default function AdminPage() {
         }}
       />
 
-      {/* Logo centered */}
-      <div className="absolute top-0.1 left-1/2 transform -translate-x-1/2 z-20">
+      {/* User badge (handle) top-right - FIXED: aligned with logo */}
+      <div
+        style={{
+          position: "absolute",
+          top: "1.2rem",
+          right: "1rem",
+          zIndex: 30,
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => router.push('/quiz/admin/my-quizzes')}
+          title="My Quizzes"
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+          style={{
+            backgroundColor: "#795AFF",
+            color: "white",
+            padding: "0.5rem 1rem",
+            borderRadius: "0.5rem",
+            fontSize: "0.875rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            cursor: "pointer",
+            border: "none",
+            outline: "none",
+          }}
+        >
+          <div
+            style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              backgroundColor: badgeText.statusColor || "#4ade80",
+            }}
+          ></div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.125rem",
+              flex: 1,
+              alignItems: "center",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ opacity: 0.9 }}
+                aria-hidden="true"
+              >
+                <path d="M3 10l9-7 9 7" />
+                <path d="M5 10v10h6v-6h2v6h6V10" />
+              </svg>
+            </div>
+            {(() => {
+              const secondaryText = badgeText.primary !== "Connected" ? badgeText.primary : badgeText.secondary;
+              return secondaryText && !secondaryText.includes("Farcaster") ? (
+                <div style={{ fontSize: "0.75rem", opacity: 0.8, textAlign: "center" }}>{secondaryText}</div>
+              ) : null;
+            })()}
+          </div>
+          {/* small chevron icon to indicate clickability */}
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ opacity: 0.85 }}
+            aria-hidden="true"
+          >
+            <path d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Logo - centered vertically with badge */}
+      <div className="absolute left-4 z-20 flex items-center" style={{ top: "1rem", height: "3.5rem" }}>
         <img 
           src="/Logo.png" 
           alt="Hoot Logo" 
@@ -835,7 +1084,7 @@ export default function AdminPage() {
         {/* Question navigation */}
         <div className="w-full max-w-md relative">
           {/* Container with horizontal scroll */}
-          <div className="flex items-center space-x-4 pb-2 overflow-x-auto px-2 scrollbar-hide" 
+          <div ref={scrollContainerRef} className="flex items-center space-x-4 pb-2 overflow-x-auto px-2 scrollbar-hide" 
                style={{ 
                  scrollBehavior: 'smooth',
                  scrollPaddingLeft: '50%',
@@ -878,6 +1127,7 @@ export default function AdminPage() {
             {/* Add question button - always visible on the right */}
             <div className="flex flex-col items-center relative flex-shrink-0">
               <button 
+                ref={addButtonRef}
                 className="bg-black border border-white/30 rounded px-4 py-2 text-2xl hover:border-white transition-colors"
                 onClick={handleAddQuestion}
               >
@@ -935,6 +1185,8 @@ export default function AdminPage() {
               Connect Wallet to Create Quiz
             </button>
           )}
+
+          
 
           {/* AI Agent button */}
         </div>
