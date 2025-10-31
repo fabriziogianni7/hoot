@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
@@ -51,7 +51,7 @@ enum CreationStep {
   CREATING_ON_CHAIN = "Creating quiz with bounty on-chain...",
 }
 
-export default function AdminPage() {
+function AdminPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const {
@@ -1408,5 +1408,21 @@ export default function AdminPage() {
         />
       )}
     </div>
+  );
+}
+
+// Wrap in Suspense to handle useSearchParams
+export default function AdminPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen w-full bg-black text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-xl font-semibold mb-2">Loading...</div>
+          <div className="text-gray-400">Please wait</div>
+        </div>
+      </div>
+    }>
+      <AdminPageContent />
+    </Suspense>
   );
 }
