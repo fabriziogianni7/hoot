@@ -26,7 +26,7 @@ interface QuizContextType {
   createQuizOnBackend: (quiz: Quiz, contractAddress?: string | undefined , networkId?: number | undefined, userFid?: string | undefined, userAddress?: string | undefined, prizeAmount?: number, prizeToken?: string | undefined ) => Promise<string>
   startGame: (quizId: string, customRoomCode?: string) => Promise<string>
   joinGame: (playerName: string, walletAddress?: string, providedRoomCode?: string) => Promise<string>
-  submitAnswer: (playerId: string, questionId: string, answer: number, timeToAnswer: number) => Promise<void>
+  submitAnswer: (playerId: string, questionId: string, answer: number, timeToAnswer: number) => Promise<SubmitAnswerResponse>
   nextQuestion: () => Promise<void>
   endGame: () => void
   getCurrentQuiz: () => Quiz | null
@@ -294,6 +294,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
         ...prev,
               quizId: prev.quizId || updated.quiz_id, // Preserve or set quizId from backend
               status: updated.status === 'waiting' ? 'waiting' : 
+                      updated.status === 'starting' ? 'waiting' : // Treat 'starting' as waiting (countdown phase)
                       updated.status === 'in_progress' ? 'question' : 'finished',
               currentQuestionIndex: updated.current_question_index,
               questionStartTime: updated.question_started_at ? 
@@ -351,7 +352,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
     questionId: string, 
     answer: number, 
     timeToAnswer: number
-  ): Promise<void> => {
+  ): Promise<SubmitAnswerResponse> => {
     try {
       const request: SubmitAnswerRequest = {
         player_session_id: playerId,
@@ -379,6 +380,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
               selectedAnswer: answer,
               timeToAnswer,
               isCorrect: response.is_correct,
+              pointsEarned: response.points_earned,
             }
 
             return {
@@ -389,6 +391,8 @@ export function QuizProvider({ children }: { children: ReactNode }) {
           }),
         }
       })
+      
+      return response
     } catch (error) {
       console.error('Error submitting answer:', error)
       throw error

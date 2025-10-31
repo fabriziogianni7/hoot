@@ -70,6 +70,7 @@ export interface PlayerSession {
   game_session_id: string
   player_name: string
   wallet_address: string | null
+  user_id: string | null
   total_score: number
   joined_at: string
 }
