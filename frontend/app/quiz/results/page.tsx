@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
-import type { GameState } from "@/lib/types";
 import { useSupabase } from "@/lib/supabase-context";
 import { useAccount } from "wagmi";
 import Link from "next/link";
@@ -19,6 +18,7 @@ export default function ResultsPage() {
   const [distributionStatus, setDistributionStatus] = useState("");
   const [distributionError, setDistributionError] = useState("");
   const [txHash, setTxHash] = useState("");
+
   const [quizData, setQuizData] = useState<{
     id: string;
     prize_amount: number;
@@ -26,7 +26,20 @@ export default function ResultsPage() {
     status: string;
     contract_tx_hash?: string;
   } | null>(null);
+
   const [isCreator, setIsCreator] = useState(false);
+  const [creatorSessionId, setCreatorSessionId] = useState<string | null>(null);
+  
+  // Final player scores (static - no realtime)
+  type PlayerSession = {
+    id: string;
+    player_name: string;
+    wallet_address?: string | null;
+    total_score: number;
+    joined_at: string;
+  };
+  
+  const [finalPlayers, setFinalPlayers] = useState<PlayerSession[]>([]);
   
   const quiz = getCurrentQuiz();
   
@@ -61,7 +74,7 @@ export default function ResultsPage() {
     }
   };
   
-  // Load quiz data and player answers from backend
+  // Load quiz data and player answers from backend (only once on mount)
   useEffect(() => {
     const loadQuizData = async () => {
       if (!currentGame || !quiz) return;
@@ -82,10 +95,23 @@ export default function ResultsPage() {
           }
         }
 
+        // Fetch creator session ID from game session
+        if (gameSessionId) {
+          const { data: gameSession } = await supabase
+            .from('game_sessions')
+            .select('creator_session_id')
+            .eq('id', gameSessionId)
+            .single();
+          
+          if (gameSession?.creator_session_id) {
+            setCreatorSessionId(gameSession.creator_session_id);
+          }
+        }
+
         // Load player answers from backend
-        const playerId = localStorage.getItem("quizPlayerId");
-        console.log('Player ID:', playerId);
-        if (playerId) {
+        const playerSessionId = localStorage.getItem("playerSessionId");
+        console.log('Player ID:', playerSessionId);
+        if (playerSessionId) {
           const { data: answersData, error: answersError } = await supabase
             .from('answers')
             .select(`
@@ -94,14 +120,14 @@ export default function ResultsPage() {
                 correct_answer_index
               )
             `)
-            .eq('player_session_id', playerId);
+            .eq('player_session_id', playerSessionId);
 
           if (!answersError && answersData) {
             
             // Update current player with correct answers
             if (currentGame) {
               const updatedPlayers = currentGame.players.map((player) => {
-                if (player.id !== playerId) return player;
+                if (player.id !== playerSessionId) return player;
                 
                 const backendAnswers = answersData.map(answer => {
                   // Calculate isCorrect by comparing selected answer with correct answer
@@ -116,12 +142,13 @@ export default function ResultsPage() {
                     calculatedIsCorrect: isCorrect
                   });
                   
-                  return {
-                    questionId: answer.question_id,
-                    selectedAnswer: answer.selected_answer_index,
-                    timeToAnswer: answer.time_taken,
-                    isCorrect: isCorrect // Use calculated value instead of backend
-                  };
+                return {
+                  questionId: answer.question_id,
+                  selectedAnswer: answer.selected_answer_index,
+                  timeToAnswer: answer.time_taken,
+                  isCorrect: isCorrect, // Use calculated value instead of backend
+                  pointsEarned: answer.points_earned || 0
+                };
                 });
                 
                 return {
@@ -145,7 +172,30 @@ export default function ResultsPage() {
     };
     
     loadQuizData();
-  }, [currentGame, quiz, address, supabase]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quiz, address, supabase, gameSessionId]);
+  
+  // Fetch final player scores (one-time fetch, no realtime)
+  useEffect(() => {
+    const fetchFinalScores = async () => {
+      if (!gameSessionId) return;
+      
+      const { data, error } = await supabase
+        .from('player_sessions')
+        .select('id, player_name, wallet_address, total_score, joined_at')
+        .eq('game_session_id', gameSessionId)
+        .order('total_score', { ascending: false });
+      
+      if (!error && data) {
+        console.log('🏆 Final player scores loaded:', data);
+        setFinalPlayers(data);
+      } else if (error) {
+        console.error('Error fetching final scores:', error);
+      }
+    };
+    
+    fetchFinalScores();
+  }, [gameSessionId, supabase]);
   
   // Redirect if no game is active
   useEffect(() => {
@@ -162,11 +212,23 @@ export default function ResultsPage() {
     );
   }
   
-  // Sort players by score
-  const sortedPlayers = [...currentGame.players].sort((a, b) => b.score - a.score);
+  // Use final players if available, otherwise fallback to context players
+  // Map final players to match the expected format and exclude creator
+  const sortedPlayers = (finalPlayers.length > 0
+    ? finalPlayers.map(fp => {
+        const contextPlayer = currentGame.players.find(p => p.id === fp.id);
+        return {
+          id: fp.id,
+          name: fp.player_name,
+          score: fp.total_score,
+          answers: contextPlayer?.answers || []
+        };
+      })
+    : [...currentGame.players].sort((a, b) => b.score - a.score))
+    .filter(player => player.id !== creatorSessionId); // Exclude creator from leaderboard
   
   // Get current player
-  const currentPlayerId = localStorage.getItem("quizPlayerId");
+  const currentPlayerId = localStorage.getItem("playerSessionId");
   const currentPlayer = currentGame.players.find(p => p.id === currentPlayerId);
   
   const handleDistributePrizes = async () => {
@@ -259,7 +321,9 @@ export default function ResultsPage() {
         )}
         
         <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
-          <h3 className="text-xl font-semibold mb-4 text-center text-purple-200">Leaderboard</h3>
+          <h3 className="text-xl font-semibold mb-4 text-center text-purple-200">
+            Leaderboard
+          </h3>
           
           <div className="space-y-3">
             {sortedPlayers.map((player, index) => (
@@ -281,7 +345,7 @@ export default function ResultsPage() {
                       <span className="text-gray-300 font-bold">{index + 1}</span>
                     </div>
                   )}
-                  <div>{player.name}</div>
+                  <span>{player.name}</span>
                 </div>
                 <div className="font-bold">{player.score}</div>
               </div>
@@ -290,7 +354,7 @@ export default function ResultsPage() {
         </div>
         
         {/* Prize Distribution Section - Only show for paid quizzes (>= 0.01 ETH) */}
-        {quizData && quizData.prize_amount >= 0.01 && quizData.status !== 'completed' && (
+        {quizData && quizData.prize_amount> 0 && quizData.status !== 'completed' && (
           <div className="bg-purple-600/20 border border-purple-500 rounded-lg p-6 mb-8 w-full max-w-md">
             <h3 className="text-xl font-semibold mb-4 text-center text-purple-200">Prize Distribution</h3>
             

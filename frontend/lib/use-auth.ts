@@ -115,16 +115,12 @@ export function useAuth(): UseAuthReturn {
         issuedAt: issuedAt,
       }).prepareMessage();
 
-
-      
-
       let response = null;
       
       const context = await sdk.context;
       
       // Generate signature
       const signature = await signMessageAsync({ message });
-
 
       // Send to SIWE verification API route
       const apiResponse = await fetch("/api/auth/siwe-verify", {

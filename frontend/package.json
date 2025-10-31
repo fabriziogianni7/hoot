@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:development": "ENV=development next dev",
-    "dev:production": "ENV=production next dev",
-    "build": "next build",
-    "build:testnet": "ENV=testnet next build",
-    "build:prod": "ENV=production next build",
+    "dev": "next dev --turbo",
+    "dev:development": "ENV=development next dev --turbo",
+    "dev:production": "ENV=production next dev --turbo",
+    "build": "next build --turbo",
+    "build:testnet": "ENV=testnet next build --turbo",
+    "build:prod": "ENV=production next build --turbo",
     "start": "next start",
     "lint": "next lint"
   },
@@ -27,10 +27,10 @@
     "ethers": "^6.15.0",
     "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.546.0",
-    "next": "15.3.4",
+    "next": "^16.0.1",
     "postcss": "^8.4.31",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
     "siwe": "^3.0.0",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^3.3.0",
@@ -40,13 +40,13 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@farcaster/quick-auth": "^0.0.7",
-    "@next/eslint-plugin-next": "^15.3.4",
+    "@next/eslint-plugin-next": "^16.0.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eruda": "^3.4.3",
     "eslint": "^9",
-    "eslint-config-next": "15.3.4",
+    "eslint-config-next": "^16.0.1",
     "typescript": "^5"
   }
 }

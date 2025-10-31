@@ -103,7 +103,7 @@ serve(async (req) => {
   }
 
   try {
-    const supabase = initSupabaseClient()
+    const supabase = initSupabaseClient(req)
     const { player_session_id, question_id, answer_index, time_taken }: SubmitAnswerRequest = await req.json()
 
     // Validate required fields
@@ -125,6 +125,18 @@ serve(async (req) => {
 
     // Check if answer is correct
     const isCorrect = answer_index === question.correct_answer_index
+
+    // Check for existing answer submission (prevent duplicates)
+    const { data: existingAnswer } = await supabase
+      .from('answers')
+      .select('id')
+      .eq('player_session_id', player_session_id)
+      .eq('question_id', question_id)
+      .maybeSingle()
+
+    if (existingAnswer) {
+      return errorResponse('Answer already submitted for this question', 400)
+    }
 
     // Calculate points
     const pointsEarned = calculatePoints(isCorrect, time_taken, question.time_limit)

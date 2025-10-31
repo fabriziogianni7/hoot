@@ -26,6 +26,7 @@ export interface PlayerAnswer {
   selectedAnswer: number
   timeToAnswer: number // in milliseconds
   isCorrect: boolean
+  pointsEarned: number
 }
 
 export interface GameState {
