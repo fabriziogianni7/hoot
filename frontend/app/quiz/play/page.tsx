@@ -549,9 +549,11 @@ function PlayQuizContent() {
               : 'bg-gradient-to-r from-red-500 to-red-600 border-red-300'
           }`}>
             <div className="text-center">
-              <div className="text-4xl font-bold mb-2">
-                {earnedPoints > 0 ? 'Correct!' : (selectedAnswer === null && !isCreator ? "Time's up!" : 'Wrong!')}
+              {
+               !isCreator && <div className="text-4xl font-bold mb-2">
+                {earnedPoints > 0 ? 'Correct!' : (selectedAnswer === null ? "Time's up!" :  'Wrong!')}
               </div>
+              }
               <div className="text-2xl font-semibold">
                 {earnedPoints > 0 ? `+${earnedPoints} points` : '0 points'}
               </div>
