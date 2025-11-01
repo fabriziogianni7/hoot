@@ -10,6 +10,7 @@ import {
   ZERO_ADDRESS,
   GAME_STATUS
 } from '../_shared/constants.ts'
+import { calculateProgressiveModePrizeDistribution } from '../_shared/prize-distribution.ts'
 import type { GameSession, PlayerSession } from '../_shared/types.ts'
 
 interface CompleteProgressiveGameRequest {
@@ -166,54 +167,6 @@ async function getTreasuryFeeSettings(
   }
 }
 
-/**
- * Calculate progressive question prize distribution
- * Each question gets: total_prize / num_questions
- * Split as: 40% 1st, 30% 2nd, 20% 3rd, 10% treasury
- */
-function calculateQuestionPrizeDistribution(
-  totalPrizeAmount: number,
-  totalQuestions: number,
-  winners: string[],
-  decimals: number,
-  treasuryFeePercent: bigint,
-  feePrecision: bigint
-): QuestionPrizeDistribution {
-  // Prize per question
-  const questionPrize = BigInt(Math.floor((totalPrizeAmount / totalQuestions) * Math.pow(10, decimals)))
-
-  // Progressive distribution ratios
-  const firstPlaceRatio = 400000n  // 40%
-  const secondPlaceRatio = 300000n // 30%
-  const thirdPlaceRatio = 200000n  // 20%
-  const treasuryRatio = 100000n    // 10%
-
-  const amounts: bigint[] = []
-  const scores: number[] = []
-
-  if (winners.length >= 1) {
-    amounts.push((questionPrize * firstPlaceRatio) / feePrecision)
-    scores.push(0) // We'll need to calculate actual scores
-  }
-  if (winners.length >= 2) {
-    amounts.push((questionPrize * secondPlaceRatio) / feePrecision)
-    scores.push(0)
-  }
-  if (winners.length >= 3) {
-    amounts.push((questionPrize * thirdPlaceRatio) / feePrecision)
-    scores.push(0)
-  }
-
-  const treasuryAmount = (questionPrize * treasuryRatio) / feePrecision
-
-  return {
-    questionIndex: 0, // Will be set by caller
-    winners,
-    scores,
-    amounts,
-    treasuryAmount
-  }
-}
 
 async function distributeQuestionPrizeOnChain(
   contractAddress: string,
@@ -397,7 +350,7 @@ serve(async (req) => {
       console.log('Fee precision:', feePrecision.toString())
 
       // Calculate question prize distribution
-      const distribution = calculateQuestionPrizeDistribution(
+      const distribution = calculateProgressiveModePrizeDistribution(
         prizeAmount,
         questions.length,
         winners,

@@ -54,7 +54,7 @@ export function calculatePrizeDistribution(
 /**
  * Calculate progressive question prize distribution
  */
-export function calculateQuestionPrizeDistribution(
+export function calculateProgressiveModePrizeDistribution(
   totalPrizeAmount: number,
   totalQuestions: number,
   winners: string[],
