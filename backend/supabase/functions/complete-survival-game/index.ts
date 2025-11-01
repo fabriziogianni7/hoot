@@ -83,53 +83,7 @@ interface PrizeDistribution {
 /**
  * Get token decimals from contract or return 18 for ETH
  */
-async function getTokenDecimals(
-  prizeToken: string | null,
-  rpcUrl: string
-): Promise<number> {
-  // ETH uses 18 decimals
-  if (!prizeToken || prizeToken === ZERO_ADDRESS) {
-    return 18
-  }
 
-  try {
-    const provider = new ethers.JsonRpcProvider(rpcUrl)
-    const tokenContract = new ethers.Contract(prizeToken, ERC20_ABI, provider)
-    const decimals = await tokenContract.decimals()
-    return Number(decimals)
-  } catch (error) {
-    console.warn('Failed to get token decimals, defaulting to 18:', error)
-    return 18
-  }
-}
-
-/**
- * Get treasury fee settings from contract
- */
-async function getTreasuryFeeSettings(
-  contractAddress: string,
-  rpcUrl: string
-): Promise<{ feePercent: bigint; feePrecision: bigint }> {
-  try {
-    const provider = new ethers.JsonRpcProvider(rpcUrl)
-    const contract = new ethers.Contract(contractAddress, HOOT_SURVIVAL_QUIZ_MANAGER_ABI, provider)
-
-    const feePercent = await contract.getTreasuryFeePercent()
-    const feePrecision = await contract.getFeePrecision()
-
-    return {
-      feePercent: BigInt(feePercent.toString()),
-      feePrecision: BigInt(feePrecision.toString())
-    }
-  } catch (error) {
-    console.warn('Failed to get treasury fee settings from contract, using defaults:', error)
-    // Default: 10% with precision of 1000000 (4 decimals)
-    return {
-      feePercent: 100000n,
-      feePrecision: 1000000n
-    }
-  }
-}
 
 /**
  * Calculate survival prize distribution
