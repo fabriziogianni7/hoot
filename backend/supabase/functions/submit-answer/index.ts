@@ -4,6 +4,7 @@ import { successResponse, errorResponse } from '../_shared/response.ts'
 import { validateRequired } from '../_shared/validation.ts'
 import { initSupabaseClient } from '../_shared/supabase.ts'
 import { BASE_POINTS, TIME_BONUS_MULTIPLIER } from '../_shared/constants.ts'
+import { calculatePoints, validateAnswerSubmission } from '../_shared/game-logic.ts'
 import type { SubmitAnswerRequest, Question } from '../_shared/types.ts'
 
 async function fetchQuestion(supabase: ReturnType<typeof initSupabaseClient>, questionId: string): Promise<Question | null> {
@@ -17,27 +18,6 @@ async function fetchQuestion(supabase: ReturnType<typeof initSupabaseClient>, qu
   return data
 }
 
-function validateAnswerSubmission(timeTakenMs: number, timeLimitSeconds: number): string | null {
-  const timeLimitMs = timeLimitSeconds * 1000
-  
-  if (timeTakenMs > timeLimitMs) {
-    return 'Answer submitted too late'
-  }
-  
-  return null
-}
-
-function calculatePoints(isCorrect: boolean, timeTakenMs: number, timeLimitSeconds: number): number {
-  if (!isCorrect) {
-    return 0
-  }
-  
-  const timeLimitMs = timeLimitSeconds * 1000
-  const remainingTimeSeconds = Math.max(0, timeLimitMs - timeTakenMs) / 1000
-  const timeBonus = remainingTimeSeconds * TIME_BONUS_MULTIPLIER
-  
-  return Math.floor(BASE_POINTS + timeBonus)
-}
 
 async function createAnswer(
   supabase: ReturnType<typeof initSupabaseClient>,
