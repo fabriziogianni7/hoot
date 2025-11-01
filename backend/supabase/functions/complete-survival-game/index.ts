@@ -11,6 +11,11 @@ import {
   GAME_STATUS,
   QUIZ_STATUS
 } from '../_shared/constants.ts'
+import { fetchGameSession, fetchPlayerSessions, fetchQuestions, validateGameCompletion, markGameAsCompleted, updateQuizWithTransaction } from '../_shared/database.ts'
+import { verifyCreatorAuthorization } from '../_shared/auth.ts'
+import { getTokenDecimals, getTreasuryFeeSettings, executeContractTransaction } from '../_shared/blockchain.ts'
+import { calculateTopPlayers } from '../_shared/game-logic.ts'
+import { calculatePrizeDistribution } from '../_shared/prize-distribution.ts'
 import type { CompleteGameRequest, GameSession, PlayerSession } from '../_shared/types.ts'
 
 async function fetchGameSession(supabase: ReturnType<typeof initSupabaseClient>, gameSessionId: string): Promise<GameSession | null> {

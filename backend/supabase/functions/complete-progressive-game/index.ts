@@ -10,6 +10,9 @@ import {
   ZERO_ADDRESS,
   GAME_STATUS
 } from '../_shared/constants.ts'
+import { fetchGameSession, fetchPlayerSessions, fetchQuestions, validateGameCompletion, markGameAsCompleted, updateQuizWithTransaction } from '../_shared/database.ts'
+import { verifyCreatorAuthorization } from '../_shared/auth.ts'
+import { getTokenDecimals, getTreasuryFeeSettings, executeContractTransaction } from '../_shared/blockchain.ts'
 import { calculateProgressiveModePrizeDistribution } from '../_shared/prize-distribution.ts'
 import type { GameSession, PlayerSession } from '../_shared/types.ts'
 
@@ -19,81 +22,6 @@ interface CompleteProgressiveGameRequest {
   creator_wallet_address: string
 }
 
-async function fetchGameSession(supabase: ReturnType<typeof initSupabaseClient>, gameSessionId: string): Promise<GameSession | null> {
-  const { data, error } = await supabase
-    .from('game_sessions')
-    .select(`
-      *,
-      quizzes (
-        id,
-        title,
-        prize_amount,
-        prize_token,
-        contract_address,
-        creator_address,
-        status,
-        mode
-      )
-    `)
-    .eq('id', gameSessionId)
-    .single()
-
-  if (error) return null
-  return data
-}
-
-function verifyCreatorAuthorization(gameSession: GameSession, creatorWalletAddress: string): string | null {
-  if (!gameSession.quizzes?.creator_address) {
-    return 'Quiz creator address not found in database'
-  }
-
-  if (!compareAddresses(gameSession.quizzes.creator_address, creatorWalletAddress)) {
-    return 'Unauthorized: Only the quiz creator can distribute prizes'
-  }
-
-  return null
-}
-
-async function fetchQuestions(supabase: ReturnType<typeof initSupabaseClient>, quizId: string) {
-  const { data, error } = await supabase
-    .from('questions')
-    .select('id, order_index')
-    .eq('quiz_id', quizId)
-    .order('order_index', { ascending: true })
-
-  if (error) throw new Error('Failed to fetch questions')
-  return data || []
-}
-
-async function fetchPlayerSessions(supabase: ReturnType<typeof initSupabaseClient>, gameSessionId: string): Promise<PlayerSession[]> {
-  const { data, error } = await supabase
-    .from('player_sessions')
-    .select('id, player_name, wallet_address, total_score')
-    .eq('game_session_id', gameSessionId)
-
-  if (error) throw new Error('Failed to fetch players')
-  return data || []
-}
-
-async function validateQuestionCompletion(
-  supabase: ReturnType<typeof initSupabaseClient>,
-  playerSessions: PlayerSession[],
-  questionId: string
-): Promise<boolean> {
-  for (const playerSession of playerSessions) {
-    const { data: answer, error } = await supabase
-      .from('answers')
-      .select('id')
-      .eq('player_session_id', playerSession.id)
-      .eq('question_id', questionId)
-      .single()
-
-    if (error || !answer) {
-      return false
-    }
-  }
-  return true
-}
 
 function calculateQuestionTopPlayers(
   playerSessions: PlayerSession[],
