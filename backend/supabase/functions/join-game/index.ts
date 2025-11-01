@@ -3,7 +3,9 @@ import { handleCorsPreFlight } from "../_shared/cors.ts";
 import { successResponse, errorResponse } from "../_shared/response.ts";
 import { validateRequired, compareAddresses } from "../_shared/validation.ts";
 import { initSupabaseClient } from "../_shared/supabase.ts";
-async function fetchGameSession(supabase, roomCode) {
+import { fetchGameSession, fetchPlayerSessions, isCreator } from "../_shared/database.ts";
+import { validateGameSession } from "../_shared/auth.ts";
+// fetchGameSession is now imported from shared module
   const { data, error } = await supabase
     .from("game_sessions")
     .select(
