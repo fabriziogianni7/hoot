@@ -611,4 +611,25 @@ export const ERC20_ABI = [
   }
 ] as const
 
+// Contract ABIs for new quiz managers (placeholder - to be filled with actual ABIs)
+export const HOOT_BONUS_QUIZ_MANAGER_ABI = [] as const
+export const HOOT_PROGRESSIVE_QUIZ_MANAGER_ABI = [] as const
+export const HOOT_SURVIVAL_QUIZ_MANAGER_ABI = [] as const
+
+// Contract addresses for new quiz managers - to be updated with actual deployed addresses
+export const HOOT_BONUS_QUIZ_MANAGER_ADDRESSES = {
+  baseSepolia: "0x0000000000000000000000000000000000000000",
+  base: "0x0000000000000000000000000000000000000000"
+} as const
+
+export const HOOT_PROGRESSIVE_QUIZ_MANAGER_ADDRESSES = {
+  baseSepolia: "0x0000000000000000000000000000000000000000",
+  base: "0x0000000000000000000000000000000000000000"
+} as const
+
+export const HOOT_SURVIVAL_QUIZ_MANAGER_ADDRESSES = {
+  baseSepolia: "0x0000000000000000000000000000000000000000",
+  base: "0x0000000000000000000000000000000000000000"
+} as const
+
 

@@ -16,6 +16,7 @@ export default function Home() {
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
   const [isPinFocused, setIsPinFocused] = useState(false);
+  const [showModeDropdown, setShowModeDropdown] = useState(false);
 
   // Use the shared authentication hook
   const { loggedUser, isAuthLoading, authError, triggerAuth } = useAuth();
@@ -417,8 +418,10 @@ export default function Home() {
           </div>
         ) : loggedUser?.isAuthenticated && loggedUser?.session ? (
           // User is authenticated - show clickable link
-          <Link
-            href="/quiz/admin"
+          <div className="relative w-full">
+            <div className="flex items-center gap-2">
+              <Link
+                href="/quiz/admin"
             style={{
               width: "100%",
               padding: "0.75rem",
@@ -441,6 +444,59 @@ export default function Home() {
           >
             Create Quiz
           </Link>
+          <button
+            onClick={() => setShowModeDropdown(!showModeDropdown)}
+            style={{
+              padding: "0.75rem",
+              backgroundColor:
+                gamePin.trim().length === 6
+                  ? "rgba(121, 90, 255, 0.3)"
+                  : "#795AFF",
+              color: "white",
+              border: "none",
+              borderRadius: "0.5rem",
+              cursor: "pointer",
+              opacity: gamePin.trim().length === 6 ? 0.7 : 1,
+              pointerEvents: gamePin.trim().length === 6 ? "none" : "auto",
+            }}
+          >
+            ▼
+          </button>
+        </div>
+
+        {showModeDropdown && (
+          <div className="absolute top-full left-0 right-0 mt-2 bg-black border border-white rounded-lg shadow-lg z-50">
+            <Link
+              href="/quiz/admin"
+              className="block px-4 py-3 text-white hover:bg-white/10 transition-colors border-b border-white/20"
+              onClick={() => setShowModeDropdown(false)}
+            >
+              Standard Quiz
+            </Link>
+            <Link
+              href="/quiz/bonus"
+              className="block px-4 py-3 text-white hover:bg-white/10 transition-colors border-b border-white/20"
+              onClick={() => setShowModeDropdown(false)}
+            >
+              Bonus Question Quiz
+            </Link>
+            <Link
+              href="/quiz/progressive"
+              className="block px-4 py-3 text-white hover:bg-white/10 transition-colors border-b border-white/20"
+              onClick={() => setShowModeDropdown(false)}
+            >
+              Progressive Quiz
+            </Link>
+            <Link
+              href="/quiz/survival"
+              className="block px-4 py-3 text-white hover:bg-white/10 transition-colors"
+              onClick={() => setShowModeDropdown(false)}
+            >
+              Survival Quiz
+            </Link>
+          </div>
+        )}
+      </div>
         ) : (
           // User is not authenticated - show disabled button or prompt to connect
           <button
