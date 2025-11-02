@@ -29,6 +29,7 @@ import QuizQuestionEditor from "@/components/QuizQuestionEditor";
 import QuizAnswerOptions from "@/components/QuizAnswerOptions";
 import QuizNavigationBar from "@/components/QuizNavigationBar";
 import BountyOptionsModal from "@/components/BountyOptionsModal";
+import { useMiniKit } from "@coinbase/onchainkit/minikit";
 
 // Character limits for quiz content
 const MAX_QUESTION_LENGTH = 500;

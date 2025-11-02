@@ -4,10 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbo",
-    "dev:development": "ENV=development next dev --turbo",
     "dev:production": "ENV=production next dev --turbo",
     "build": "next build --turbo",
-    "build:testnet": "ENV=testnet next build --turbo",
     "build:prod": "ENV=production next build --turbo",
     "start": "next start",
     "lint": "next lint"

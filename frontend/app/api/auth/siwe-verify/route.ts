@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 
 // Create Supabase admin client for user management
 const supabaseAdmin = createClient(
-  "https://auuxbsnzmmnlgyxxojcr.supabase.co",
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   {
     auth: {
@@ -248,8 +248,8 @@ export async function POST(request: Request) {
       const hashed_token = linkData.properties.hashed_token;
 
       // Create a regular Supabase client (with anon key) to verify the token and get session tokens
-      const supabase = createClient(
-        process.env.SUPABASE_URL || "https://auuxbsnzmmnlgyxxojcr.supabase.co",
+    const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // Use public anon key here
       );
 
