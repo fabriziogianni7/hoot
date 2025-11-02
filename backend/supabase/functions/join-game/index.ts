@@ -5,43 +5,7 @@ import { validateRequired, compareAddresses } from "../_shared/validation.ts";
 import { initSupabaseClient } from "../_shared/supabase.ts";
 import { fetchGameSession, fetchPlayerSessions, isCreator } from "../_shared/database.ts";
 import { validateGameSession } from "../_shared/auth.ts";
-// fetchGameSession is now imported from shared module
-  const { data, error } = await supabase
-    .from("game_sessions")
-    .select(
-      `
-      id,
-      quiz_id,
-      status,
-      current_question_index,
-      started_at,
-      ended_at,
-      creator_session_id,
-      quizzes (
-        id,
-        title,
-        description,
-        prize_amount,
-        prize_token,
-        creator_address,
-        status
-      )
-    `
-    )
-    .eq("room_code", roomCode)
-    .single();
-  if (error) return null;
-  return data;
-}
-function validateGameSession(gameSession) {
-  if (!gameSession) {
-    return "Game session not found";
-  }
-  //if (gameSession.status !== GAME_STATUS.WAITING) {
-  //  return 'Game is not accepting new players';
-  //}
-  return null;
-}
+
 async function checkExistingPlayerByWallet(
   supabase,
   gameSessionId,
@@ -55,6 +19,7 @@ async function checkExistingPlayerByWallet(
     .single();
   return data;
 }
+
 async function checkExistingPlayerByName(supabase, gameSessionId, playerName) {
   const { data } = await supabase
     .from("player_sessions")
@@ -64,6 +29,7 @@ async function checkExistingPlayerByName(supabase, gameSessionId, playerName) {
     .single();
   return data;
 }
+
 async function createPlayerSession(
   supabase,
   gameSessionId,
@@ -82,16 +48,16 @@ async function createPlayerSession(
     })
     .select()
     .single();
+
   if (error) {
-    if (error) {
-      console.error("Error creating player session:", error);
-      throw new Error(
-        `Failed to join game: ${error.message || JSON.stringify(error)}`
-      );
-    }
+    console.error("Error creating player session:", error);
+    throw new Error(
+      `Failed to join game: ${error.message || JSON.stringify(error)}`
+    );
   }
   return data;
 }
+
 async function updateCreatorSession(supabase, gameSessionId, playerSessionId) {
   await supabase
     .from("game_sessions")
@@ -99,19 +65,6 @@ async function updateCreatorSession(supabase, gameSessionId, playerSessionId) {
       creator_session_id: playerSessionId,
     })
     .eq("id", gameSessionId);
-}
-async function fetchAllPlayers(supabase, gameSessionId) {
-  const { data } = await supabase
-    .from("player_sessions")
-    .select("id, player_name, wallet_address, total_score, joined_at")
-    .eq("game_session_id", gameSessionId)
-    .order("joined_at", {
-      ascending: true,
-    });
-  return data || [];
-}
-function isCreator(creatorAddress, playerAddress) {
-  return compareAddresses(creatorAddress, playerAddress);
 }
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -162,7 +115,7 @@ serve(async (req) => {
           wallet_address
         );
         // Fetch all players for the response
-        const allPlayers = await fetchAllPlayers(supabase, gameSession.id);
+        const allPlayers = await fetchPlayerSessions(supabase, gameSession.id);
         return successResponse({
           success: true,
           player_session_id: existingPlayer.id,
@@ -208,7 +161,7 @@ serve(async (req) => {
         wallet_address
       );
       // Fetch all players for the response
-      const allPlayers = await fetchAllPlayers(supabase, gameSession.id);
+      const allPlayers = await fetchPlayerSessions(supabase, gameSession.id);
       return successResponse({
         success: true,
         player_session_id: existingPlayerByName.id,
@@ -245,7 +198,7 @@ serve(async (req) => {
       await updateCreatorSession(supabase, gameSession.id, playerSession.id);
     }
     // Fetch all players
-    const allPlayers = await fetchAllPlayers(supabase, gameSession.id);
+    const allPlayers = await fetchPlayerSessions(supabase, gameSession.id);
     return successResponse({
       success: true,
       player_session_id: playerSession.id,

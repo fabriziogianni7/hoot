@@ -62,6 +62,9 @@ export interface GameSession {
     user_fid: string | null
     user_id: string | null
     status: string
+    mode?: string
+    golden_question_ids?: string[]
+    extra_bounty_amount?: number
   }
 }
 

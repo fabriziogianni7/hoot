@@ -10,7 +10,7 @@ import {
   ZERO_ADDRESS,
   GAME_STATUS
 } from '../_shared/constants.ts'
-import { fetchGameSession, fetchPlayerSessions, fetchQuestions, validateGameCompletion, markGameAsCompleted, updateQuizWithTransaction } from '../_shared/database.ts'
+import { fetchGameSession, fetchPlayerSessions, fetchQuestions, validateGameCompletion, markGameAsCompleted, updateQuizWithTransaction, getQuestionIdByIndex } from '../_shared/database.ts'
 import { verifyCreatorAuthorization } from '../_shared/auth.ts'
 import { getTokenDecimals, getTreasuryFeeSettings, executeContractTransaction } from '../_shared/blockchain.ts'
 import { calculateProgressiveModePrizeDistribution } from '../_shared/prize-distribution.ts'
@@ -86,21 +86,6 @@ async function distributeQuestionPrizeOnChain(
   return tx.hash
 }
 
-async function getQuestionIdByIndex(
-  supabase: ReturnType<typeof initSupabaseClient>,
-  quizId: string,
-  questionIndex: number
-): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('questions')
-    .select('id')
-    .eq('quiz_id', quizId)
-    .eq('order_index', questionIndex)
-    .single()
-
-  if (error) return null
-  return data.id
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -226,7 +211,7 @@ serve(async (req) => {
 
       // Get treasury fee settings from contract
       console.log('?? Getting treasury fee settings from contract...')
-      const { feePercent, feePrecision } = await getTreasuryFeeSettings(contractAddress, rpcUrl)
+      const { feePercent, feePrecision } = await getTreasuryFeeSettings(contractAddress, HOOT_PROGRESSIVE_QUIZ_MANAGER_ABI, rpcUrl)
       console.log('? Treasury fee settings:')
       console.log('Fee percent:', feePercent.toString())
       console.log('Fee precision:', feePrecision.toString())

@@ -15,7 +15,7 @@ import { fetchGameSession, fetchPlayerSessions, fetchQuestions, validateGameComp
 import { verifyCreatorAuthorization } from '../_shared/auth.ts'
 import { getTokenDecimals, getTreasuryFeeSettings, executeContractTransaction } from '../_shared/blockchain.ts'
 import { calculateTopPlayers } from '../_shared/game-logic.ts'
-import { calculatePrizeDistribution } from '../_shared/prize-distribution.ts'
+import { calculateSurvivalPrizeDistribution, type PrizeDistribution } from '../_shared/prize-distribution.ts'
 import type { CompleteGameRequest, GameSession, PlayerSession } from '../_shared/types.ts'
 
 
@@ -59,81 +59,8 @@ async function identifySurvivors(
   return { survivors, eliminated }
 }
 
-async function markGameAsCompleted(supabase: ReturnType<typeof initSupabaseClient>, gameSessionId: string) {
-  const { error } = await supabase
-    .from('game_sessions')
-    .update({
-      status: GAME_STATUS.COMPLETED,
-      ended_at: new Date().toISOString()
-    })
-    .eq('id', gameSessionId)
-
-  if (error) throw new Error('Failed to update game session')
-}
-
-interface PrizeDistribution {
-  totalPrize: bigint
-  treasuryFee: bigint
-  distributedPrize: bigint
-  survivors: string[]
-  amounts: bigint[]
-  prizeBreakdown: bigint[]
-}
-
-/**
- * Get token decimals from contract or return 18 for ETH
- */
 
 
-/**
- * Calculate survival prize distribution
- * Prize is split equally among survivors
- */
-function calculatePrizeDistribution(
-  prizeAmount: number,
-  survivors: string[],
-  decimals: number,
-  treasuryFeePercent: bigint,
-  feePrecision: bigint
-): PrizeDistribution {
-  // Convert prize amount to token's native units
-  const totalPrize = BigInt(Math.floor(prizeAmount * Math.pow(10, decimals)))
-
-  // Calculate treasury fee
-  const treasuryFee = (totalPrize * treasuryFeePercent) / feePrecision
-
-  // Amount to distribute among survivors
-  const distributedPrize = totalPrize - treasuryFee
-
-  // Calculate prize per survivor
-  const amounts: bigint[] = []
-  const prizeBreakdown: bigint[] = []
-
-  if (survivors.length > 0) {
-    const prizePerSurvivor = distributedPrize / BigInt(survivors.length)
-
-    for (let i = 0; i < survivors.length; i++) {
-      amounts.push(prizePerSurvivor)
-      prizeBreakdown.push(prizePerSurvivor)
-    }
-
-    // Handle rounding - add remainder to first survivor
-    const totalCalculated = prizePerSurvivor * BigInt(survivors.length)
-    if (totalCalculated < distributedPrize) {
-      amounts[0] += (distributedPrize - totalCalculated)
-      prizeBreakdown[0] += (distributedPrize - totalCalculated)
-    }
-  }
-
-  return {
-    totalPrize,
-    treasuryFee,
-    distributedPrize,
-    survivors,
-    amounts,
-    prizeBreakdown
-  }
-}
 
 async function distributePrizesOnChain(
   contractAddress: string,
@@ -318,14 +245,14 @@ serve(async (req) => {
 
       // Get treasury fee settings from contract
       console.log('?? Getting treasury fee settings from contract...')
-      const { feePercent, feePrecision } = await getTreasuryFeeSettings(contractAddress, rpcUrl)
+      const { feePercent, feePrecision } = await getTreasuryFeeSettings(contractAddress, HOOT_SURVIVAL_QUIZ_MANAGER_ABI, rpcUrl)
       console.log('? Treasury fee settings:')
       console.log('Fee percent:', feePercent.toString())
       console.log('Fee precision:', feePrecision.toString())
       console.log('Effective fee rate:', Number(feePercent) / Number(feePrecision) * 100, '%')
 
       // Calculate prize distribution with survival logic
-      const distribution = calculatePrizeDistribution(
+      const distribution = calculateSurvivalPrizeDistribution(
         prizeAmount,
         survivors,
         decimals,

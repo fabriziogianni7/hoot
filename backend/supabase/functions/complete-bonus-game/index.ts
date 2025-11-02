@@ -15,116 +15,37 @@ import { fetchGameSession, fetchPlayerSessions, fetchQuestions, validateGameComp
 import { verifyCreatorAuthorization } from '../_shared/auth.ts'
 import { getTokenDecimals, getTreasuryFeeSettings, executeContractTransaction } from '../_shared/blockchain.ts'
 import { calculateTopPlayers } from '../_shared/game-logic.ts'
-import { calculatePrizeDistribution } from '../_shared/prize-distribution.ts'
+import { calculateBonusPrizeDistribution, type PrizeDistribution } from '../_shared/prize-distribution.ts'
 import type { CompleteGameRequest, GameSession, PlayerSession } from '../_shared/types.ts'
 
-
-interface PrizeDistribution {
-  totalPrize: bigint
-  treasuryFee: bigint
-  distributedPrize: bigint
-  winners: string[]
-  amounts: bigint[]
-  prizeBreakdown: bigint[]
-  extraBountyDistributed: boolean
-  extraBountyAmount: bigint
-  extraTreasuryAmount: bigint
-}
-
-/**
- * Get token decimals from contract or return 18 for ETH
- */
-
-
-/**
- * Calculate prize distribution with bonus logic
- */
-function calculatePrizeDistribution(
-  prizeAmount: number,
-  extraBountyAmount: number,
-  winners: string[],
-  goldenQuestionsCorrect: boolean,
-  decimals: number,
-  treasuryFeePercent: bigint,
-  feePrecision: bigint
-): PrizeDistribution {
-  // Convert amounts to token's native units
-  const totalPrize = BigInt(Math.floor(prizeAmount * Math.pow(10, decimals)))
-  const extraBounty = BigInt(Math.floor(extraBountyAmount * Math.pow(10, decimals)))
-
-  // Calculate treasury fee for base prize
-  const treasuryFee = (totalPrize * treasuryFeePercent) / feePrecision
-
-  // Amount to distribute among winners for base prize
-  const distributedPrize = totalPrize - treasuryFee
-
-  // Prize percentages based on number of winners (same as standard quiz)
-  const percentages = getPrizePercentages(winners.length)
-
-  // Calculate base prize amounts
-  const amounts: bigint[] = []
-  const prizeBreakdown: bigint[] = []
-
-  for (let i = 0; i < winners.length; i++) {
-    const amount = (distributedPrize * percentages[i]) / 100n
-    amounts.push(amount)
-    prizeBreakdown.push(amount)
+async function checkGoldenQuestionsCorrect(
+  supabase: ReturnType<typeof initSupabaseClient>,
+  playerSessions: PlayerSession[],
+  goldenQuestionIds: string[]
+): Promise<boolean> {
+  if (goldenQuestionIds.length === 0) {
+    return false
   }
 
-  let extraBountyDistributed = false
-  let extraTreasuryAmount = 0n
+  // Check if winners got all golden questions correct
+  for (const playerSession of playerSessions) {
+    if (!playerSession.wallet_address) continue
 
-  if (extraBounty > 0) {
-    if (goldenQuestionsCorrect && winners.length > 0) {
-      // Split extra bounty equally among winners
-      const extraPerWinner = extraBounty / BigInt(winners.length)
-      extraBountyDistributed = true
+    for (const questionId of goldenQuestionIds) {
+      const { data: answer, error } = await supabase
+        .from('answers')
+        .select('is_correct')
+        .eq('player_session_id', playerSession.id)
+        .eq('question_id', questionId)
+        .single()
 
-      // Add extra bounty to each winner's amount
-      for (let i = 0; i < winners.length; i++) {
-        amounts[i] += extraPerWinner
+      if (error || !answer || !answer.is_correct) {
+        return false
       }
-    } else {
-      // Send full extra bounty to treasury (no additional fee)
-      extraTreasuryAmount = extraBounty
     }
   }
 
-  return {
-    totalPrize,
-    treasuryFee,
-    distributedPrize,
-    winners,
-    amounts,
-    prizeBreakdown,
-    extraBountyDistributed,
-    extraBountyAmount: extraBounty,
-    extraTreasuryAmount
-  }
-}
-
-/**
- * Get prize distribution percentages based on number of winners
- * Returns array of percentages that sum to 100
- */
-function getPrizePercentages(winnerCount: number): bigint[] {
-  switch (winnerCount) {
-    case 1:
-      return [100n]
-    case 2:
-      return [60n, 40n]
-    case 3:
-      return [50n, 30n, 20n]
-    case 4:
-      return [40n, 30n, 20n, 10n]
-    case 5:
-      return [35n, 25n, 20n, 12n, 8n]
-    default: {
-      // Shouldn't happen, but fallback to equal distribution
-      const equal = 100n / BigInt(winnerCount)
-      return Array(winnerCount).fill(equal)
-    }
-  }
+  return true
 }
 
 async function distributePrizesOnChain(
@@ -163,19 +84,6 @@ async function distributePrizesOnChain(
   return tx.hash
 }
 
-async function updateQuizWithTransaction(
-  supabase: ReturnType<typeof initSupabaseClient>,
-  quizId: string,
-  txHash: string
-) {
-  await supabase
-    .from('quizzes')
-    .update({
-      status: QUIZ_STATUS.COMPLETED,
-      contract_tx_hash: txHash
-    })
-    .eq('id', quizId)
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -292,7 +200,7 @@ serve(async (req) => {
 
     // Calculate top players (up to 5 winners)
     console.log('?? Calculating top players...')
-    const { winners, scores } = calculateTopPlayers(playerSessions, gameSession.quizzes!.creator_address, 5)
+    const { winners, scores } = calculateTopPlayers(playerSessions, 5)
     console.log('? Top players calculated:')
     console.log('Winners:', winners)
     console.log('Scores:', scores)
@@ -323,14 +231,14 @@ serve(async (req) => {
 
       // Get treasury fee settings from contract
       console.log('?? Getting treasury fee settings from contract...')
-      const { feePercent, feePrecision } = await getTreasuryFeeSettings(contractAddress, rpcUrl)
+      const { feePercent, feePrecision } = await getTreasuryFeeSettings(contractAddress, HOOT_BONUS_QUIZ_MANAGER_ABI, rpcUrl)
       console.log('? Treasury fee settings:')
       console.log('Fee percent:', feePercent.toString())
       console.log('Fee precision:', feePrecision.toString())
       console.log('Effective fee rate:', Number(feePercent) / Number(feePrecision) * 100, '%')
 
       // Calculate prize distribution with bonus logic
-      const distribution = calculatePrizeDistribution(
+      const distribution = calculateBonusPrizeDistribution(
         prizeAmount,
         extraBountyAmount,
         winners,
@@ -344,8 +252,8 @@ serve(async (req) => {
       console.log('Treasury fee:', distribution.treasuryFee.toString())
       console.log('Distributed to winners:', distribution.distributedPrize.toString())
       console.log('Extra bounty distributed:', distribution.extraBountyDistributed)
-      console.log('Extra bounty amount:', distribution.extraBountyAmount.toString())
-      console.log('Extra treasury amount:', distribution.extraTreasuryAmount.toString())
+      console.log('Extra bounty amount:', distribution.extraBountyAmount?.toString())
+      console.log('Extra treasury amount:', distribution.extraTreasuryAmount?.toString())
       console.log('Number of winners:', distribution.winners.length)
       console.log('Winners array:', distribution.winners)
       console.log('Amounts array:', distribution.amounts.map(a => a.toString()))
