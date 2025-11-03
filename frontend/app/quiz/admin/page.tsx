@@ -1399,11 +1399,11 @@ function AdminPageContent() {
           onClose={() => {
             setShowShareBox(false);
             // Navigate to lobby after closing share box
-            router.push(`/quiz/lobby?room=${createdRoomCode}`);
+            router.push(`/quiz/lobby/${createdRoomCode}`);
           }}
           onGoToLobby={() => {
             setShowShareBox(false);
-            router.push(`/quiz/lobby?room=${createdRoomCode}`);
+            router.push(`/quiz/lobby/${createdRoomCode}`);
           }}
         />
       )}

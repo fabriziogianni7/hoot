@@ -13,7 +13,7 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
   const [copied, setCopied] = useState(false);
   const [pinCopied, setPinCopied] = useState(false);
   
-  const quizUrl = `${window.location.origin}/quiz/lobby?room=${roomCode}`;
+  const quizUrl = `${window.location.origin}/quiz/lobby/${roomCode}`;
   
   const handleCopyLink = async () => {
     try {
