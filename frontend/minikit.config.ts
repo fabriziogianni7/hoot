@@ -33,5 +33,9 @@ export const minikitConfig = {
     ogDescription: "",
     ogImageUrl: `${ROOT_URL}/hero_hoot_1.png`,
   },
+  baseBuilder: {
+    ownerAddress: "0xE9F1D4c702A0519Ed91D90bFc19a28B0D57192e4"
+  }
+
 } as const;
 
