@@ -9,7 +9,7 @@ const ROOT_URL =
  * @see {@link https://miniapps.farcaster.xyz/docs/guides/publishing}
  */
 export const minikitConfig = {
-  "accountAssociation": {
+  accountAssociation: {
     header: `${process.env.NEXT_PUBLIC_ACCOUNT_ASSOCIATION_HEADER}` || "eyJmaWQiOjEzODk3MjcsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHgyZjcyNjllQzBjRjJiRjhCNWQxNjJDN2M3NmY2Yzk0NzEwNDAyMUNkIn0",
     payload: `${process.env.NEXT_PUBLIC_ACCOUNT_ASSOCIATION_PAYLOAD}` || "eyJkb21haW4iOiI4NDYwNTIzMDE4ODAubmdyb2stZnJlZS5hcHAifQ",
     signature: `${process.env.NEXT_PUBLIC_ACCOUNT_ASSOCIATION_SIGNATURE}` || "3GmZxY02ZXpt9I57SmIfL21lh+JYmpfphzRSh59SN3kf+oe6VwFtpEPKFUmlFB2JkjoTBLmH6SI7n2jUbSMKxRw="
@@ -37,6 +37,5 @@ export const minikitConfig = {
   baseBuilder: {
     ownerAddress: "0xE9F1D4c702A0519Ed91D90bFc19a28B0D57192e4"
   }
-
 } as const;
 
