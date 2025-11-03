@@ -32,6 +32,7 @@ export const minikitConfig = {
     ogTitle: "",
     ogDescription: "",
     ogImageUrl: `${ROOT_URL}/hero_hoot_1.png`,
+    canonicalDomain: "hoot-five.vercel.app",      
   },
   baseBuilder: {
     ownerAddress: "0xE9F1D4c702A0519Ed91D90bFc19a28B0D57192e4"
