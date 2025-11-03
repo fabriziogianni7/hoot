@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LobbyPage() {
+function RedirectContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const roomCode = searchParams.get("room");
@@ -22,5 +22,19 @@ export default function LobbyPage() {
     <div className="min-h-screen w-full bg-black text-white flex items-center justify-center">
       Redirecting...
     </div>
+  );
+}
+
+export default function LobbyPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen w-full bg-black text-white flex items-center justify-center">
+          Loading...
+        </div>
+      }
+    >
+      <RedirectContent />
+    </Suspense>
   );
 }
