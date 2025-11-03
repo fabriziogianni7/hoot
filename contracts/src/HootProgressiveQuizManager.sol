@@ -1,18 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {QuizManagerBase} from "./base/QuizManagerBase.sol";
 
 /**
  * @title HootProgressiveQuizManager
  * @dev Manages quiz prize pools with progressive per-question distribution
  * Distributes prizes after each question rather than at quiz completion
  */
-contract HootProgressiveQuizManager is Ownable, ReentrancyGuard {
-    using SafeERC20 for IERC20;
+contract HootProgressiveQuizManager is QuizManagerBase {
 
     enum QuizStatus {
         Pending,
@@ -34,13 +30,10 @@ contract HootProgressiveQuizManager is Ownable, ReentrancyGuard {
     }
 
     mapping(string => Quiz) public quizzes;
-    mapping(string => address) public quizDistributors;
     // Track cumulative prizes distributed to each player
     mapping(string => mapping(address => uint256)) public playerCumulativePrizes;
 
-    address public treasury;
-    uint256 public treasuryFeePercent; // Fee in basis points (10000 = 1%, 1000000 = 100%)
-    uint256 public feePrecision; // Precision denominator for fee calculation (default: 1000000 = 4 decimals)
+    
 
     // Progressive distribution ratios (1st: 40%, 2nd: 30%, 3rd: 20%, treasury: 10%)
     uint256 public constant FIRST_PLACE_RATIO = 400000;  // 40% in basis points
@@ -71,81 +64,20 @@ contract HootProgressiveQuizManager is Ownable, ReentrancyGuard {
         uint256 treasuryAmount
     );
 
-    event PrizeDistributionStarted(
-        string indexed quizId,
-        address[] winners,
-        uint256[] amounts,
-        uint256 treasuryAmount
-    );
+    
 
-    event PrizeCalculations(
-        uint256 totalPrize,
-        uint256 treasuryFee,
-        uint256[] prizeAmounts
-    );
-
-    event TreasuryTransfer(
-        address treasury,
-        uint256 amount
-    );
-
-    event TreasuryTransferSuccess(
-        address treasury,
-        uint256 amount
-    );
-
-    event WinnerTransfer(
-        address winner,
-        uint256 amount,
-        uint256 position
-    );
-
-    event WinnerTransferSuccess(
-        address winner,
-        uint256 amount,
-        uint256 position
-    );
-
-    event QuizCancelled(string indexed quizId, address indexed creator);
-
-    event TreasuryUpdated(address indexed newTreasury);
-
-    event TreasuryFeePercentUpdated(uint256 newFeePercent);
-
-    event FeePrecisionUpdated(uint256 newPrecision);
-
-    error QuizNotFound();
-    error QuizNotActive();
-    error QuizAlreadyCompleted();
-    error UnauthorizedDistributor();
-    error InvalidPrizeAmount();
-    error InsufficientBalance();
-    error TransferFailed();
-    error InvalidWinnersCount();
-    error InvalidArrayLength();
-    error InvalidTreasuryFeePercent();
-    error InvalidFeePrecision();
+    
     error InvalidTotalQuestions();
     error AllQuestionsProcessed();
 
-    constructor(address _treasury, uint256 _treasuryFeePercent, uint256 _feePrecision) Ownable(msg.sender) {
-        if (_feePrecision == 0) revert InvalidFeePrecision();
-        if (_treasuryFeePercent > _feePrecision) revert InvalidTreasuryFeePercent(); // Fee can't exceed 100%
-
-        treasury = _treasury;
-        treasuryFeePercent = _treasuryFeePercent;
-        feePrecision = _feePrecision;
-    }
+    constructor(address _treasury, uint256 _treasuryFeePercent, uint256 _feePrecision)
+        QuizManagerBase(_treasury, _treasuryFeePercent, _feePrecision)
+    {}
 
     /**
      * @dev Modifier to check if caller is owner or quiz distributor
      */
-    modifier onlyOwnerOrQuizzDistributor(string memory quizId) {
-        if (msg.sender != owner() && msg.sender != quizDistributors[quizId]) {
-            revert UnauthorizedDistributor();
-        }
-        _;
-    }
+    
 
     /**
      * @dev Create a new progressive quiz with prize pool
@@ -162,26 +94,8 @@ contract HootProgressiveQuizManager is Ownable, ReentrancyGuard {
     ) external payable nonReentrant {
         if (prizeAmount == 0) revert InvalidPrizeAmount();
         if (totalQuestions == 0) revert InvalidTotalQuestions();
-
-        // Check if quiz already exists
-        if (bytes(quizzes[quizId].quizId).length > 0) {
-            revert QuizNotFound();
-        }
-
-        if (prizeToken == address(0)) {
-            // ETH prize
-            if (msg.value != prizeAmount) revert InvalidPrizeAmount();
-        } else {
-            // ERC20 prize
-            if (msg.value > 0) revert InvalidPrizeAmount();
-
-            IERC20 token = IERC20(prizeToken);
-            if (token.balanceOf(msg.sender) < prizeAmount) revert InsufficientBalance();
-            if (token.allowance(msg.sender, address(this)) < prizeAmount) revert InsufficientBalance();
-
-            // Transfer tokens from creator to contract
-            token.safeTransferFrom(msg.sender, address(this), prizeAmount);
-        }
+        if (bytes(quizzes[quizId].quizId).length > 0) revert QuizNotFound();
+        _collectFunds(prizeToken, prizeAmount);
 
         quizzes[quizId] = Quiz({
             quizId: quizId,
@@ -244,64 +158,24 @@ contract HootProgressiveQuizManager is Ownable, ReentrancyGuard {
         // Distribute prizes
         if (winners[0] != address(0) && firstPlaceAmount > 0) {
             emit WinnerTransfer(winners[0], firstPlaceAmount, 1);
-
-            if (quiz.prizeToken == address(0)) {
-                // ETH transfer
-                (bool success, ) = winners[0].call{value: firstPlaceAmount}("");
-                if (!success) revert TransferFailed();
-            } else {
-                // ERC20 transfer
-                IERC20(quiz.prizeToken).safeTransfer(winners[0], firstPlaceAmount);
-            }
-
+            _safeTransfer(quiz.prizeToken, winners[0], firstPlaceAmount);
             emit WinnerTransferSuccess(winners[0], firstPlaceAmount, 1);
         }
 
         if (winners[1] != address(0) && secondPlaceAmount > 0) {
             emit WinnerTransfer(winners[1], secondPlaceAmount, 2);
-
-            if (quiz.prizeToken == address(0)) {
-                // ETH transfer
-                (bool success, ) = winners[1].call{value: secondPlaceAmount}("");
-                if (!success) revert TransferFailed();
-            } else {
-                // ERC20 transfer
-                IERC20(quiz.prizeToken).safeTransfer(winners[1], secondPlaceAmount);
-            }
-
+            _safeTransfer(quiz.prizeToken, winners[1], secondPlaceAmount);
             emit WinnerTransferSuccess(winners[1], secondPlaceAmount, 2);
         }
 
         if (winners[2] != address(0) && thirdPlaceAmount > 0) {
             emit WinnerTransfer(winners[2], thirdPlaceAmount, 3);
-
-            if (quiz.prizeToken == address(0)) {
-                // ETH transfer
-                (bool success, ) = winners[2].call{value: thirdPlaceAmount}("");
-                if (!success) revert TransferFailed();
-            } else {
-                // ERC20 transfer
-                IERC20(quiz.prizeToken).safeTransfer(winners[2], thirdPlaceAmount);
-            }
-
+            _safeTransfer(quiz.prizeToken, winners[2], thirdPlaceAmount);
             emit WinnerTransferSuccess(winners[2], thirdPlaceAmount, 3);
         }
 
         // Transfer treasury fee
-        if (treasuryAmount > 0 && treasury != address(0)) {
-            emit TreasuryTransfer(treasury, treasuryAmount);
-
-            if (quiz.prizeToken == address(0)) {
-                // ETH transfer
-                (bool treasurySuccess, ) = treasury.call{value: treasuryAmount}("");
-                if (!treasurySuccess) revert TransferFailed();
-            } else {
-                // ERC20 transfer
-                IERC20(quiz.prizeToken).safeTransfer(treasury, treasuryAmount);
-            }
-
-            emit TreasuryTransferSuccess(treasury, treasuryAmount);
-        }
+        _transferToTreasury(quiz.prizeToken, treasuryAmount);
 
         // Update quiz progress
         quiz.questionsProcessed += 1;
@@ -336,7 +210,7 @@ contract HootProgressiveQuizManager is Ownable, ReentrancyGuard {
      * @dev Cancel quiz and return remaining prize to creator
      * @param quizId Quiz identifier
      */
-    function cancelQuiz(string memory quizId) external nonReentrant {
+    function cancelQuiz(string memory quizId) external nonReentrant override {
         Quiz storage quiz = quizzes[quizId];
 
         if (bytes(quiz.quizId).length == 0) revert QuizNotFound();
@@ -348,14 +222,7 @@ contract HootProgressiveQuizManager is Ownable, ReentrancyGuard {
         uint256 remainingPrize = quiz.prizeAmount - quiz.totalDistributed;
 
         if (remainingPrize > 0) {
-            if (quiz.prizeToken == address(0)) {
-                // Return ETH
-                (bool success, ) = quiz.creator.call{value: remainingPrize}("");
-                if (!success) revert TransferFailed();
-            } else {
-                // Return ERC20 tokens
-                IERC20(quiz.prizeToken).safeTransfer(quiz.creator, remainingPrize);
-            }
+            _safeTransfer(quiz.prizeToken, quiz.creator, remainingPrize);
         }
 
         emit QuizCancelled(quizId, quiz.creator);
@@ -365,63 +232,11 @@ contract HootProgressiveQuizManager is Ownable, ReentrancyGuard {
      * @dev Set the treasury address
      * @param newTreasury New treasury address
      */
-    function setTreasury(address newTreasury) external onlyOwner {
-        treasury = newTreasury;
-        emit TreasuryUpdated(newTreasury);
-    }
-
-    /**
-     * @dev Get the treasury address
-     * @return address Treasury address
-     */
-    function getTreasury() external view returns (address) {
-        return treasury;
-    }
-
-    /**
-     * @dev Set the treasury fee percentage
-     * @param newFeePercent New fee percentage in basis points (relative to feePrecision)
-     */
-    function setTreasuryFeePercent(uint256 newFeePercent) external onlyOwner {
-        if (newFeePercent > feePrecision) revert InvalidTreasuryFeePercent(); // Max 100%
-        treasuryFeePercent = newFeePercent;
-        emit TreasuryFeePercentUpdated(newFeePercent);
-    }
-
-    /**
-     * @dev Get the treasury fee percentage
-     * @return uint256 Fee percentage in basis points
-     */
-    function getTreasuryFeePercent() external view returns (uint256) {
-        return treasuryFeePercent;
-    }
-
-    /**
-     * @dev Set the fee precision (denominator for fee calculation)
-     * @param newPrecision New precision value (must be > 0)
-     */
-    function setFeePrecision(uint256 newPrecision) external onlyOwner {
-        if (newPrecision == 0) revert InvalidFeePrecision();
-        // Validate that current fee percent doesn't exceed new precision
-        if (treasuryFeePercent > newPrecision) revert InvalidTreasuryFeePercent();
-
-        feePrecision = newPrecision;
-        emit FeePrecisionUpdated(newPrecision);
-    }
-
-    /**
-     * @dev Get the fee precision
-     * @return uint256 Current fee precision (denominator)
-     */
-    function getFeePrecision() external view returns (uint256) {
-        return feePrecision;
-    }
-
     /**
      * @dev Set quiz status to active (called when game starts)
      * @param quizId Quiz identifier
      */
-    function setQuizActive(string memory quizId) external {
+    function setQuizActive(string calldata quizId) external override {
         Quiz storage quiz = quizzes[quizId];
 
         if (bytes(quiz.quizId).length == 0) revert QuizNotFound();
@@ -446,7 +261,7 @@ contract HootProgressiveQuizManager is Ownable, ReentrancyGuard {
      * @param quizId Quiz identifier
      * @return bool
      */
-    function quizExists(string memory quizId) external view returns (bool) {
+    function quizExists(string calldata quizId) external view override returns (bool) {
         return bytes(quizzes[quizId].quizId).length > 0;
     }
 }

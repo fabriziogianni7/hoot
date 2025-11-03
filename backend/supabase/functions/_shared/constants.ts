@@ -102,30 +102,12 @@ export const HOOT_BONUS_QUIZ_MANAGER_ABI = [
         "type": "string"
       },
       {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
+        "internalType": "address[]",
+        "name": "players",
+        "type": "address[]"
       }
     ],
-    "name": "depositExtraBounty",
-    "outputs": [],
-    "stateMutability": "payable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "string",
-        "name": "quizId",
-        "type": "string"
-      },
-      {
-        "internalType": "bool",
-        "name": "allCorrect",
-        "type": "bool"
-      }
-    ],
-    "name": "setGoldenQuestionsResult",
+    "name": "distributeGoldenBounty",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -240,21 +222,8 @@ export const HOOT_SURVIVAL_QUIZ_MANAGER_ABI = [
       },
       {
         "internalType": "address[]",
-        "name": "survivors",
+        "name": "winnersInput",
         "type": "address[]"
-      }
-    ],
-    "name": "setSurvivors",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "string",
-        "name": "quizId",
-        "type": "string"
       }
     ],
     "name": "distributePrize",

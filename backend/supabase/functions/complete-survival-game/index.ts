@@ -78,11 +78,8 @@ async function distributePrizesOnChain(
   const wallet = new ethers.Wallet(privateKey, provider)
   const contract = new ethers.Contract(contractAddress, HOOT_SURVIVAL_QUIZ_MANAGER_ABI, wallet)
 
-  // Set survivors
-  await contract.setSurvivors(quizId, survivors)
-
-  // Call distributePrize
-  const tx = await contract.distributePrize(quizId)
+  // Call distributePrize passing the survivors directly
+  const tx = await contract.distributePrize(quizId, survivors)
 
   const receipt = await tx.wait()
 

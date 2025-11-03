@@ -2,14 +2,11 @@
 pragma solidity ^0.8.20;
 
 import {QuizManagerBase} from "./base/QuizManagerBase.sol";
+import {IQuizManager} from "./interfaces/IQuizManager.sol";
 
-/**
- * @title HootSurvivalQuizManager
- * @dev Manages quiz prize pools with survival mode distribution
- * Distributes prize equally among players who answered all questions correctly
- */
-contract HootSurvivalQuizManager is QuizManagerBase {
-
+/// @title HootQuizManagerV2
+/// @notice Base quiz manager using shared QuizManagerBase utilities
+contract HootQuizManagerV2 is QuizManagerBase {
     enum QuizStatus {
         Pending,
         Active,
@@ -23,25 +20,18 @@ contract HootSurvivalQuizManager is QuizManagerBase {
         address prizeToken; // address(0) for ETH
         uint256 prizeAmount;
         QuizStatus status;
-        address[] survivors;
-        uint256 survivorCount;
+        address[3] winners;
     }
 
+    // storage
     mapping(string => Quiz) public quizzes;
 
-    
-
+    // Events mirroring V1
     event QuizCreated(
         string indexed quizId,
         address indexed creator,
         address prizeToken,
         uint256 prizeAmount
-    );
-
-    event SurvivorsSet(
-        string indexed quizId,
-        address[] survivors,
-        uint256 survivorCount
     );
 
     event PrizeDistributed(
@@ -51,36 +41,23 @@ contract HootSurvivalQuizManager is QuizManagerBase {
         uint256 treasuryAmount
     );
 
-    
-
-    
-    error NoSurvivors();
-
     constructor(address _treasury, uint256 _treasuryFeePercent, uint256 _feePrecision)
         QuizManagerBase(_treasury, _treasuryFeePercent, _feePrecision)
     {}
 
-    /**
-     * @dev Modifier to check if caller is owner or quiz distributor
-     */
-    
-
-    /**
-     * @dev Create a new survival quiz with prize pool
-     * @param quizId Unique identifier for the quiz
-     * @param prizeToken Token address (address(0) for ETH)
-     * @param prizeAmount Amount of tokens/ETH for prize pool
-     */
+    /// @notice Create a new quiz with prize pool
     function createQuiz(
         string memory quizId,
         address prizeToken,
         uint256 prizeAmount
     ) external payable nonReentrant {
         if (prizeAmount == 0) revert InvalidPrizeAmount();
-        if (bytes(quizzes[quizId].quizId).length > 0) revert QuizNotFound();
-        _collectFunds(prizeToken, prizeAmount);
+        if (bytes(quizzes[quizId].quizId).length > 0) {
+            // Match V1 behavior (reused error name)
+            revert QuizNotFound();
+        }
 
-        address[] memory emptySurvivors;
+        _collectFunds(prizeToken, prizeAmount);
 
         quizzes[quizId] = Quiz({
             quizId: quizId,
@@ -88,71 +65,39 @@ contract HootSurvivalQuizManager is QuizManagerBase {
             prizeToken: prizeToken,
             prizeAmount: prizeAmount,
             status: QuizStatus.Pending,
-            survivors: emptySurvivors,
-            survivorCount: 0
+            winners: [address(0), address(0), address(0)]
         });
 
-        // Set the creator as the distributor for this quiz
+        // Set creator as distributor
         quizDistributors[quizId] = msg.sender;
 
         emit QuizCreated(quizId, msg.sender, prizeToken, prizeAmount);
     }
 
-    
+    /// @notice Distribute prizes to winners and treasury
+    function distributePrize(
+        string memory quizId,
+        address[] memory winners,
+        uint256[] memory amounts
+    ) external nonReentrant onlyOwnerOrQuizzDistributor(quizId) {
+        if (winners.length == 0 || winners.length > 5) revert InvalidWinnersCount();
+        if (winners.length != amounts.length) revert InvalidArrayLength();
 
-    /**
-     * @dev Distribute prizes equally among survivors
-     * @param quizId Quiz identifier
-     */
-    function distributePrize(string memory quizId, address[] memory winnersInput) external nonReentrant onlyOwnerOrQuizzDistributor(quizId) {
         Quiz storage quiz = quizzes[quizId];
         if (bytes(quiz.quizId).length == 0) revert QuizNotFound();
 
-        uint256 survivorCount = winnersInput.length;
-
-        if (survivorCount == 0) {
-            // No survivors - creator gets the prize
-            quiz.status = QuizStatus.Completed;
-
-            _safeTransfer(quiz.prizeToken, quiz.creator, quiz.prizeAmount);
-
-            // Emit empty distribution event
-            address[] memory emptyWinners;
-            uint256[] memory emptyAmounts;
-            emit PrizeDistributed(quizId, emptyWinners, emptyAmounts, 0);
-            return;
+        uint256 totalWinnersPrize = 0;
+        for (uint256 i = 0; i < amounts.length; i++) {
+            totalWinnersPrize += amounts[i];
         }
 
-        // Calculate treasury fee then winners pool
         uint256 treasuryAmount = (quiz.prizeAmount * treasuryFeePercent) / feePrecision;
-        uint256 winnersPool = quiz.prizeAmount - treasuryAmount;
+        if (totalWinnersPrize + treasuryAmount > quiz.prizeAmount) revert InvalidPrizeAmount();
 
-        // Prepare winners and amounts arrays
-        address[] memory winners = new address[](survivorCount);
-        uint256[] memory amounts = new uint256[](survivorCount);
-
-        if (survivorCount == 1) {
-            winners[0] = winnersInput[0];
-            amounts[0] = winnersPool;
-        } else {
-            uint256 prizePerSurvivor = winnersPool / survivorCount;
-            uint256 totalWinnersPrize = prizePerSurvivor * survivorCount;
-            for (uint256 i = 0; i < survivorCount; i++) {
-                winners[i] = winnersInput[i];
-                amounts[i] = prizePerSurvivor;
-            }
-            if (totalWinnersPrize < winnersPool) {
-                amounts[0] += (winnersPool - totalWinnersPrize);
-            }
-        }
-
-        // Log distribution details
         emit PrizeDistributionStarted(quizId, winners, amounts, treasuryAmount);
-
-        // Log prize calculations
         emit PrizeCalculations(quiz.prizeAmount, treasuryAmount, amounts);
 
-        // Distribute prizes to survivors
+        // payout winners
         for (uint256 i = 0; i < winners.length; i++) {
             if (winners[i] != address(0) && amounts[i] > 0) {
                 emit WinnerTransfer(winners[i], amounts[i], i + 1);
@@ -161,67 +106,44 @@ contract HootSurvivalQuizManager is QuizManagerBase {
             }
         }
 
-        // Transfer treasury fee
+        // treasury
         _transferToTreasury(quiz.prizeToken, treasuryAmount);
 
-        // Update quiz status
         quiz.status = QuizStatus.Completed;
-
         emit PrizeDistributed(quizId, winners, amounts, treasuryAmount);
     }
 
-    /**
-     * @dev Cancel quiz and return prize to creator
-     * @param quizId Quiz identifier
-     */
+    /// @notice Cancel quiz and return prize to creator
     function cancelQuiz(string memory quizId) external nonReentrant override {
         Quiz storage quiz = quizzes[quizId];
-
         if (bytes(quiz.quizId).length == 0) revert QuizNotFound();
         if (quiz.creator != msg.sender) revert UnauthorizedDistributor();
         if (quiz.status == QuizStatus.Completed) revert QuizAlreadyCompleted();
 
         quiz.status = QuizStatus.Cancelled;
-
         _safeTransfer(quiz.prizeToken, quiz.creator, quiz.prizeAmount);
-
         emit QuizCancelled(quizId, quiz.creator);
     }
 
-    /**
-     * @dev Set the treasury address
-     * @param newTreasury New treasury address
-     */
-    /**
-     * @dev Set quiz status to active (called when game starts)
-     * @param quizId Quiz identifier
-     */
+    /// @notice Set a quiz active
     function setQuizActive(string calldata quizId) external override {
         Quiz storage quiz = quizzes[quizId];
-
         if (bytes(quiz.quizId).length == 0) revert QuizNotFound();
         if (quiz.creator != msg.sender) revert UnauthorizedDistributor();
         if (quiz.status != QuizStatus.Pending) revert QuizNotActive();
-
         quiz.status = QuizStatus.Active;
     }
 
-    /**
-     * @dev Get quiz information
-     * @param quizId Quiz identifier
-     * @return Quiz struct
-     */
+    /// @notice Return quiz by id
     function getQuiz(string memory quizId) external view returns (Quiz memory) {
         if (bytes(quizzes[quizId].quizId).length == 0) revert QuizNotFound();
         return quizzes[quizId];
     }
 
-    /**
-     * @dev Check if quiz exists
-     * @param quizId Quiz identifier
-     * @return bool
-     */
+    /// @inheritdoc IQuizManager
     function quizExists(string calldata quizId) external view override returns (bool) {
         return bytes(quizzes[quizId].quizId).length > 0;
     }
 }
+
+

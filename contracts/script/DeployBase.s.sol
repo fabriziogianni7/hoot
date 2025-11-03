@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
-import "../src/HootQuizManager.sol";
+import "../src/HootQuizManagerV2.sol";
 
 // forge script script/DeployBase.s.sol \
 //   --rpc-url https://mainnet.base.org \
@@ -19,7 +19,7 @@ contract DeployBaseScript is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        HootQuizManager quizManager = new HootQuizManager(
+        HootQuizManagerV2 quizManager = new HootQuizManagerV2(
             treasury,
             treasuryFeePercent,
             feePrecision
@@ -27,7 +27,7 @@ contract DeployBaseScript is Script {
 
         vm.stopBroadcast();
 
-        console.log("HootQuizManager deployed to Base at:", address(quizManager));
+        console.log("HootQuizManagerV2 deployed to Base at:", address(quizManager));
         console.log("Treasury address:", treasury);
         console.log("Treasury fee percent:", treasuryFeePercent);
         console.log("Fee precision:", feePrecision);

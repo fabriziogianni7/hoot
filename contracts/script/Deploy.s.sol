@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
-import "../src/HootQuizManager.sol";
+import "../src/HootQuizManagerV2.sol";
 
 contract DeployScript is Script {
     function run() external {
@@ -16,7 +16,7 @@ contract DeployScript is Script {
         
         vm.startBroadcast(deployerPrivateKey);
 
-        HootQuizManager quizManager = new HootQuizManager(
+        HootQuizManagerV2 quizManager = new HootQuizManagerV2(
             treasury,
             treasuryFeePercent,
             feePrecision
@@ -24,7 +24,7 @@ contract DeployScript is Script {
 
         vm.stopBroadcast();
 
-        console.log("HootQuizManager deployed at:", address(quizManager));
+        console.log("HootQuizManagerV2 deployed at:", address(quizManager));
         console.log("Treasury address:", treasury);
         console.log("Treasury fee percent:", treasuryFeePercent);
         console.log("Fee precision:", feePrecision);

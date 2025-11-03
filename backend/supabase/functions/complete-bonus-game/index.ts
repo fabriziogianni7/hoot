@@ -51,8 +51,9 @@ async function checkGoldenQuestionsCorrect(
 async function distributePrizesOnChain(
   contractAddress: string,
   quizId: string,
-  distribution: PrizeDistribution,
-  goldenQuestionsCorrect: boolean
+  winners: string[],
+  baseAmounts: bigint[],
+  distributeGoldenToPlayers: boolean
 ): Promise<string> {
   const privateKey = Deno.env.get('PRIZE_DISTRIBUTOR_PRIVATE_KEY')
   const rpcUrl = Deno.env.get('RPC_URL') || 'http://localhost:8545'
@@ -65,15 +66,15 @@ async function distributePrizesOnChain(
   const wallet = new ethers.Wallet(privateKey, provider)
   const contract = new ethers.Contract(contractAddress, HOOT_BONUS_QUIZ_MANAGER_ABI, wallet)
 
-  // Set golden questions result
-  await contract.setGoldenQuestionsResult(quizId, goldenQuestionsCorrect)
+  // First, distribute the golden bounty either to winners or treasury
+  if (distributeGoldenToPlayers) {
+    await contract.distributeGoldenBounty(quizId, winners)
+  } else {
+    await contract.distributeGoldenBounty(quizId, [])
+  }
 
-  // Call distributePrize with winners and amounts arrays
-  const tx = await contract.distributePrize(
-    quizId,
-    distribution.winners,
-    distribution.amounts
-  )
+  // Then distribute base prizes to winners
+  const tx = await contract.distributePrize(quizId, winners, baseAmounts)
 
   const receipt = await tx.wait()
 
@@ -237,28 +238,23 @@ serve(async (req) => {
       console.log('Fee precision:', feePrecision.toString())
       console.log('Effective fee rate:', Number(feePercent) / Number(feePrecision) * 100, '%')
 
-      // Calculate prize distribution with bonus logic
-      const distribution = calculateBonusPrizeDistribution(
+      // Calculate base prize distribution only (exclude extra bounty)
+      const baseDistribution = calculatePrizeDistribution(
         prizeAmount,
-        extraBountyAmount,
         winners,
-        goldenQuestionsCorrect,
         decimals,
         feePercent,
         feePrecision
       )
-      console.log('?? Prize distribution calculated:')
-      console.log('Total prize:', distribution.totalPrize.toString())
-      console.log('Treasury fee:', distribution.treasuryFee.toString())
-      console.log('Distributed to winners:', distribution.distributedPrize.toString())
-      console.log('Extra bounty distributed:', distribution.extraBountyDistributed)
-      console.log('Extra bounty amount:', distribution.extraBountyAmount?.toString())
-      console.log('Extra treasury amount:', distribution.extraTreasuryAmount?.toString())
-      console.log('Number of winners:', distribution.winners.length)
-      console.log('Winners array:', distribution.winners)
-      console.log('Amounts array:', distribution.amounts.map(a => a.toString()))
+      console.log('?? Base prize distribution calculated:')
+      console.log('Total prize:', baseDistribution.totalPrize.toString())
+      console.log('Treasury fee:', baseDistribution.treasuryFee.toString())
+      console.log('Distributed to winners:', baseDistribution.distributedPrize.toString())
+      console.log('Number of winners:', baseDistribution.winners.length)
+      console.log('Winners array:', baseDistribution.winners)
+      console.log('Amounts array:', baseDistribution.amounts.map(a => a.toString()))
       console.log('Prize breakdown:')
-      distribution.prizeBreakdown.forEach((prize, i) => {
+      baseDistribution.prizeBreakdown.forEach((prize, i) => {
         console.log(`  Place ${i + 1}: ${prize.toString()}`)
       })
 
@@ -266,7 +262,13 @@ serve(async (req) => {
       console.log('Contract address:', contractAddress)
       console.log('Quiz ID:', gameSession.quiz_id)
 
-      txHash = await distributePrizesOnChain(contractAddress, gameSession.quiz_id, distribution, goldenQuestionsCorrect)
+      txHash = await distributePrizesOnChain(
+        contractAddress,
+        gameSession.quiz_id,
+        baseDistribution.winners,
+        baseDistribution.amounts,
+        extraBountyAmount > 0 && goldenQuestionsCorrect
+      )
       console.log('? Transaction successful! Hash:', txHash)
 
       console.log('?? Updating quiz with transaction...')

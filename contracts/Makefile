@@ -4,6 +4,9 @@
 -include .env
 -include .env.local
 -include .env.base
+ 
+# Default contract name for utilities
+CONTRACT_NAME ?= HootQuizManagerV2
 
 .PHONY: help install build test clean deploy-local deploy-sepolia deploy-base verify format lint snapshot gas
 
@@ -156,7 +159,7 @@ verify-sepolia: ## Verify contract on Base Sepolia (usage: make verify-sepolia C
 		exit 1; \
 	fi
 	forge verify-contract $(CONTRACT) \
-		HootQuizManager \
+		$(CONTRACT_NAME) \
 		--chain-id 84532 \
 		--verifier-url https://api-sepolia.basescan.org/v2/api \
 		--constructor-args $$(cast abi-encode "constructor(address,uint256,uint256)" $(TREASURY_ADDRESS) $(TREASURY_FEE_PERCENT) $(FEE_PRECISION)) \
@@ -170,7 +173,7 @@ verify-base: ## Verify contract on Base mainnet (usage: make verify-base CONTRAC
 		exit 1; \
 	fi
 	forge verify-contract $(CONTRACT) \
-		HootQuizManager \
+		$(CONTRACT_NAME) \
 		--chain-id 8453 \
 		--verifier-url https://api.basescan.org/v2/api \
 		--constructor-args $$(cast abi-encode "constructor(address,uint256,uint256)" $(TREASURY_ADDRESS) $(TREASURY_FEE_PERCENT) $(FEE_PRECISION)) \
@@ -239,13 +242,13 @@ gas-report: ## Generate detailed gas report
 	@echo "$(GREEN)Gas report saved to gas-report.txt$(NC)"
 
 storage-layout: ## Display storage layout
-	@echo "$(GREEN)Storage layout for HootQuizManager:$(NC)"
-	forge inspect HootQuizManager storage-layout
+	@echo "$(GREEN)Storage layout for $(CONTRACT_NAME):$(NC)"
+	forge inspect $(CONTRACT_NAME) storage-layout
 
 abi: ## Generate ABI
 	@echo "$(GREEN)Generating ABI...$(NC)"
-	forge inspect HootQuizManager abi > HootQuizManager.abi.json
-	@echo "$(GREEN)ABI saved to HootQuizManager.abi.json$(NC)"
+	forge inspect $(CONTRACT_NAME) abi > $(CONTRACT_NAME).abi.json
+	@echo "$(GREEN)ABI saved to $(CONTRACT_NAME).abi.json$(NC)"
 
 ##@ Environment Files
 
