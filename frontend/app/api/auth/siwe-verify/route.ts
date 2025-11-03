@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 
 // Create Supabase admin client for user management
 const supabaseAdmin = createClient(
-  "https://auuxbsnzmmnlgyxxojcr.supabase.co",
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   {
     auth: {
@@ -26,7 +26,8 @@ const viemClient = createPublicClient({
 export async function POST(request: Request) {
   try {
     const { message, signature, address, fid, username } = await request.json();
-
+console.log(process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!)
     // Validate required fields
     if (!message || !signature || !address) {
       return NextResponse.json(
