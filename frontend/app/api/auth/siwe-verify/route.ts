@@ -26,8 +26,6 @@ const viemClient = createPublicClient({
 export async function POST(request: Request) {
   try {
     const { message, signature, address, fid, username } = await request.json();
-console.log(process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!)
     // Validate required fields
     if (!message || !signature || !address) {
       return NextResponse.json(
