@@ -136,7 +136,7 @@ export default function Home() {
 
         if (gameSession) {
           // Navigate to lobby with room code
-          router.push(`/quiz/lobby?room=${gamePin.trim().toUpperCase()}`);
+          router.push(`/quiz/lobby/${gamePin.trim().toUpperCase()}`);
         } else {
           // Game session not found
           setError(
