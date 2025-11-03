@@ -14,6 +14,9 @@ export const minikitConfig = {
     payload: `${process.env.NEXT_PUBLIC_ACCOUNT_ASSOCIATION_PAYLOAD}` || "eyJkb21haW4iOiI4NDYwNTIzMDE4ODAubmdyb2stZnJlZS5hcHAifQ",
     signature: `${process.env.NEXT_PUBLIC_ACCOUNT_ASSOCIATION_SIGNATURE}` || "3GmZxY02ZXpt9I57SmIfL21lh+JYmpfphzRSh59SN3kf+oe6VwFtpEPKFUmlFB2JkjoTBLmH6SI7n2jUbSMKxRw="
   },
+   baseBuilder: {
+    ownerAddress: "0xE9F1D4c702A0519Ed91D90bFc19a28B0D57192e4"
+  },
   miniapp: {
     version: "1",
     name: "Hoot!", 
@@ -33,9 +36,6 @@ export const minikitConfig = {
     ogDescription: "",
     ogImageUrl: `${ROOT_URL}/hero_hoot_1.png`,
     canonicalDomain: "hoot-five.vercel.app",      
-  },
-  baseBuilder: {
-    ownerAddress: "0xE9F1D4c702A0519Ed91D90bFc19a28B0D57192e4"
   }
 } as const;
 
