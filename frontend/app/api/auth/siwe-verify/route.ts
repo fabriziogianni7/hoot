@@ -25,6 +25,7 @@ const viemClient = createPublicClient({
 
 export async function POST(request: Request) {
   try {
+
     const { message, signature, address, fid, username } = await request.json();
     // Validate required fields
     if (!message || !signature || !address) {
@@ -203,6 +204,8 @@ export async function POST(request: Request) {
     if (!userEmail) {
       const primaryAddress = user.user_metadata?.wallet_address?.toLowerCase() || address.toLowerCase();
       userEmail = `${primaryAddress}@wallet.hoot`;
+      console.log("userEmail", userEmail);
+
       
       // Update the user with the email
       try {
