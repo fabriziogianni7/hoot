@@ -953,11 +953,6 @@ function AdminPageContent() {
             Send Error: {sendError.message}
           </div>
         )}
-        {creationStep && (
-          <div className="w-full max-w-md mb-3 bg-purple-500/20 border border-purple-500 rounded-lg p-3 text-center text-purple-200">
-            {creationStep}
-          </div>
-        )}
 
         {/* Top navigation */}
         <div className="w-full max-w-md flex justify-center items-center mb-1 relative">
@@ -1203,12 +1198,30 @@ function AdminPageContent() {
 
       {/* Quiz Options Modal */}
       {showQuizOptions && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50"
+          onClick={(e) => {
+            // Prevent closing modal during creation
+            if (creationStep === CreationStep.NONE && e.target === e.currentTarget) {
+              setShowQuizOptions(false);
+            }
+          }}
+        >
           <div className="bg-black border border-white rounded-t-lg p-6 w-full max-w-md mx-4 mb-0 relative">
             {/* X button to close modal */}
             <button
-              onClick={() => setShowQuizOptions(false)}
-              className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors z-10"
+              onClick={() => {
+                // Prevent closing during creation
+                if (creationStep === CreationStep.NONE) {
+                  setShowQuizOptions(false);
+                }
+              }}
+              disabled={creationStep !== CreationStep.NONE}
+              className={`absolute top-4 right-4 transition-colors z-10 ${
+                creationStep !== CreationStep.NONE
+                  ? "text-gray-500 cursor-not-allowed"
+                  : "text-white hover:text-gray-300"
+              }`}
             >
               <svg
                 className="w-5 h-5"
@@ -1233,11 +1246,23 @@ function AdminPageContent() {
               </p>
             </div>
 
+            {/* Creation status banner */}
+            {creationStep && (
+              <div className="mb-4 bg-purple-500/20 border border-purple-500 rounded-lg p-3 text-center text-purple-200">
+                {creationStep}
+              </div>
+            )}
+
             <div className="space-y-4">
               {/* Free Quiz Option */}
               <button
                 onClick={handleFreeQuiz}
-                className="w-full p-4 bg-purple-600/20 border border-gray-600 rounded-lg text-white hover:bg-purple-700 transition-colors"
+                disabled={creationStep !== CreationStep.NONE}
+                className={`w-full p-4 bg-purple-600/20 border border-gray-600 rounded-lg text-white transition-colors ${
+                  creationStep !== CreationStep.NONE
+                    ? "opacity-50 cursor-not-allowed"
+                    : "hover:bg-purple-700"
+                }`}
               >
                 <div className="text-left">
                   <div className="font-semibold text-lg">Free Quiz</div>
@@ -1251,7 +1276,12 @@ function AdminPageContent() {
               <div className="bg-purple-600/20 rounded-lg p-4">
                 <button
                   onClick={handleBountyQuiz}
-                  className="w-full p-3 bg-purple-600/40 border border-purple-500 rounded-lg text-white hover:bg-purple-700 transition-colors mb-3"
+                  disabled={creationStep !== CreationStep.NONE}
+                  className={`w-full p-3 bg-purple-600/40 border border-purple-500 rounded-lg text-white transition-colors mb-3 ${
+                    creationStep !== CreationStep.NONE
+                      ? "opacity-50 cursor-not-allowed"
+                      : "hover:bg-purple-700"
+                  }`}
                 >
                   <div className="text-left">
                     <div className="font-semibold">Quiz with Bounty</div>
