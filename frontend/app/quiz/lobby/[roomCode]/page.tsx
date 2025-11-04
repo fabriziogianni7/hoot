@@ -459,20 +459,42 @@ function LobbyContent() {
 
   if (isLoadingGame) {
     return (
-      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden flex items-center justify-center">
-        <div className="animate-pulse text-2xl font-bold">Loading game...</div>
+      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
+        {/* Logo */}
+        <div className="absolute top-0 left-2 transform -translate-y-1 z-20">
+          <img 
+            src="/Logo.png" 
+            alt="Hoot Logo" 
+            className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => router.push('/')}
+          />
+        </div>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="animate-pulse text-2xl font-bold">Loading game...</div>
+        </div>
       </div>
     );
   }
 
   if (!quiz && !quizData) {
     return (
-      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-2xl font-bold mb-4">Game not found</div>
-          <Link href="/" className="text-blue-400 hover:underline">
-            Go back home
-          </Link>
+      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
+        {/* Logo */}
+        <div className="absolute top-0 left-2 transform -translate-y-1 z-20">
+          <img 
+            src="/Logo.png" 
+            alt="Hoot Logo" 
+            className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => router.push('/')}
+          />
+        </div>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="text-2xl font-bold mb-4">Game not found</div>
+            <Link href="/" className="text-blue-400 hover:underline">
+              Go back home
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -525,6 +547,16 @@ function LobbyContent() {
             </div>
           </div>
         )}
+
+        {/* Logo - centered above quiz title */}
+        <div className="mb-4">
+          <img 
+            src="/Logo.png" 
+            alt="Hoot Logo" 
+            className="h-32 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => router.push('/')}
+          />
+        </div>
 
         <h1 className="text-3xl font-bold mb-8">
           {quiz?.title || "Quiz Lobby"}
@@ -715,11 +747,23 @@ function LobbyContent() {
 }
 
 export default function LobbyPage() {
+  const router = useRouter();
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen w-full bg-black text-white flex items-center justify-center">
-          Loading...
+        <div className="min-h-screen w-full bg-black text-white relative">
+          {/* Logo */}
+          <div className="absolute top-0 left-2 transform -translate-y-1 z-20">
+            <img 
+              src="/Logo.png" 
+              alt="Hoot Logo" 
+              className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => router.push('/')}
+            />
+          </div>
+          <div className="flex items-center justify-center min-h-screen">
+            Loading...
+          </div>
         </div>
       }
     >
