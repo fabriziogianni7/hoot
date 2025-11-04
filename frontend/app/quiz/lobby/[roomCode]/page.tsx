@@ -62,6 +62,8 @@ function LobbyContent() {
     createdAt: Date;
   } | null>(null);
   const [isCreator, setIsCreator] = useState(false);
+  const [copiedPin, setCopiedPin] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Use realtime hook for player sessions
   const { 
@@ -352,6 +354,33 @@ function LobbyContent() {
     window.location.reload();
   };
 
+  const handleCopyPin = async () => {
+    const roomCodeToCopy = contextRoomCode || roomCodeFromUrl;
+    if (roomCodeToCopy) {
+      try {
+        await navigator.clipboard.writeText(roomCodeToCopy);
+        setCopiedPin(true);
+        setTimeout(() => setCopiedPin(false), 2000);
+      } catch (err) {
+        console.error("Failed to copy PIN:", err);
+      }
+    }
+  };
+
+  const handleCopyLink = async () => {
+    const roomCodeToCopy = contextRoomCode || roomCodeFromUrl;
+    if (roomCodeToCopy) {
+      const link = `${window.location.origin}/quiz/lobby/${roomCodeToCopy}`;
+      try {
+        await navigator.clipboard.writeText(link);
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2000);
+      } catch (err) {
+        console.error("Failed to copy link:", err);
+      }
+    }
+  };
+
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -571,30 +600,91 @@ function LobbyContent() {
 
         {countdown === null && (
           <>
-            <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6 mb-8 w-full max-w-md">
+            {(() => {
+              // Filter out creator from players list
+              const filteredPlayers = players.filter(
+                (player) => player.id !== gameData?.creator_session_id
+              );
+              
+              return (
+                <>
+                  <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6 mb-8 w-full max-w-md">
               <h2 className="text-xl font-semibold mb-4 text-purple-200">
                 Quiz Details
               </h2>
-              <ul className="space-y-2">
-                <li>
-                  Game PIN:{" "}
-                  <span className="font-mono font-bold text-2xl">
-                    {contextRoomCode || roomCodeFromUrl || "N/A"}
-                  </span>
-                </li>
-                <li>
+              
+              <div className="space-y-4">
+                <div>
+                  <p className="text-gray-300 mb-2">Share this link with other players:</p>
+                  <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3 flex items-center justify-between">
+                    <p className="text-sm text-blue-400 break-all flex-1 mr-2">
+                      {typeof window !== "undefined"
+                        ? `${window.location.origin}/quiz/lobby/${contextRoomCode || roomCodeFromUrl || ""}`
+                        : "Loading..."}
+                    </p>
+                    <button
+                      onClick={handleCopyLink}
+                      className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
+                        copiedLink 
+                          ? 'bg-green-600 text-white' 
+                          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                      }`}
+                      title={copiedLink ? 'Copied!' : 'Copy link'}
+                    >
+                      {copiedLink ? (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+                
+                <div>
+                  <p className="text-gray-300 mb-2">Or share the PIN:</p>
+                  <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3 flex items-center justify-between">
+                    <p className="text-2xl font-bold text-white font-mono flex-1 text-center">
+                      {contextRoomCode || roomCodeFromUrl || "N/A"}
+                    </p>
+                    <button
+                      onClick={handleCopyPin}
+                      className={`p-2 rounded-lg transition-colors ml-2 flex-shrink-0 ${
+                        copiedPin 
+                          ? 'bg-green-600 text-white' 
+                          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                      }`}
+                      title={copiedPin ? 'Copied!' : 'Copy PIN'}
+                    >
+                      {copiedPin ? (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="pt-2 border-t border-purple-700/50">
                   Status:{" "}
                   <span className="capitalize">
                     {currentGame?.status || gameData?.status || "waiting"}
                   </span>
-                </li>
-              </ul>
+                </div>
+              </div>
             </div>
 
             <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
               <h2 className="text-xl font-semibold mb-4 text-purple-200 flex items-center justify-between">
-                <span>Players ({players.length})</span>
-                {players.length > 0 && (
+                <span>Players ({filteredPlayers.length})</span>
+                {filteredPlayers.length > 0 && (
                   <span className="text-sm text-green-400 flex items-center gap-1">
                     <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
                     Live
@@ -602,11 +692,11 @@ function LobbyContent() {
                 )}
               </h2>
 
-              {players.length === 0 ? (
+              {filteredPlayers.length === 0 ? (
                 <p className="text-gray-400">Waiting for players to join...</p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {players.map((player) => (
+                  {filteredPlayers.map((player) => (
                     <div
                       key={player.id}
                       className="bg-purple-700/30 border border-purple-500/30 p-3 rounded text-center text-purple-100 relative group hover:bg-purple-700/50 transition-colors"
@@ -713,7 +803,7 @@ function LobbyContent() {
                 </div>
 
                 {/* Only show Start Quiz button to the creator */}
-                {isCreator && players.length > 0 && (
+                {isCreator && filteredPlayers.length > 0 && (
                   <button
                     onClick={handleStartQuiz}
                     className="w-full py-2 rounded text-white font-medium transition-colors"
@@ -727,7 +817,7 @@ function LobbyContent() {
                       e.currentTarget.style.backgroundColor = "#22c55e"; // green-500 normal state
                     }}
                   >
-                    Start Quiz ({players.length} {players.length === 1 ? 'player' : 'players'})
+                    Start Quiz ({filteredPlayers.length} {filteredPlayers.length === 1 ? 'player' : 'players'})
                   </button>
                 )}
 
@@ -739,6 +829,9 @@ function LobbyContent() {
                 </button>
               </div>
             )}
+                </>
+              );
+            })()}
           </>
         )}
       </div>
