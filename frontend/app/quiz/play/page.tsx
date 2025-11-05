@@ -26,6 +26,8 @@ function PlayQuizContent() {
   const [earnedPoints, setEarnedPoints] = useState(0);
   const [showConfetti, setShowConfetti] = useState(false);
   const [creatorSessionId, setCreatorSessionId] = useState<string | null>(null);
+  const [nextQuestionCountdown, setNextQuestionCountdown] = useState<number | null>(null);
+  const nextQuestionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   
   // Use realtime hook for answers (creator only)
   const { playerResponses } = useAnswersRealtime(
@@ -133,6 +135,65 @@ function PlayQuizContent() {
     
     checkCreator();
   }, [gameSessionId, supabase]);
+
+  // Subscribe to next question countdown broadcasts
+  useEffect(() => {
+    if (!gameSessionId) return;
+
+    // Clean up previous channel
+    if (nextQuestionChannelRef.current) {
+      supabase.removeChannel(nextQuestionChannelRef.current);
+      nextQuestionChannelRef.current = null;
+    }
+
+    const channel = supabase
+      .channel(`next_question:${gameSessionId}`)
+      .on(
+        'broadcast',
+        { event: 'next_question_countdown' },
+        (payload) => {
+          console.log('Received next question countdown:', payload.payload);
+          const countdown = payload.payload.countdown as number;
+          setNextQuestionCountdown(countdown);
+        }
+      )
+      .subscribe();
+
+    nextQuestionChannelRef.current = channel;
+
+    return () => {
+      if (nextQuestionChannelRef.current) {
+        supabase.removeChannel(nextQuestionChannelRef.current);
+        nextQuestionChannelRef.current = null;
+      }
+    };
+  }, [gameSessionId, supabase]);
+
+  // Handle countdown timer
+  useEffect(() => {
+    if (nextQuestionCountdown === null) return;
+
+    if (nextQuestionCountdown > 0) {
+      const timer = setTimeout(() => {
+        setNextQuestionCountdown(nextQuestionCountdown - 1);
+        
+        // Broadcast countdown update to all players
+        if (nextQuestionChannelRef.current && isCreator) {
+          nextQuestionChannelRef.current.send({
+            type: 'broadcast',
+            event: 'next_question_countdown',
+            payload: { countdown: nextQuestionCountdown - 1 }
+          });
+        }
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    } else if (nextQuestionCountdown === 0 && isCreator) {
+      // Countdown finished, actually advance to next question
+      setNextQuestionCountdown(null);
+      nextQuestion();
+    }
+  }, [nextQuestionCountdown, isCreator, nextQuestion]);
   
   // Start the game when play page loads (only if coming from "starting" status)
   // This ensures the question timer starts only when players are actually on the play page
@@ -209,7 +270,12 @@ function PlayQuizContent() {
         setShowPointsBanner(true);
         setTimeout(() => {
           setShowPointsBanner(false);
+          // Show question review after banner disappears (3 seconds after banner appeared)
+          setShowingResults(true);
         }, 3000);
+      } else {
+        // For creator, show results immediately (no banner)
+        setShowingResults(true);
       }
       
       // Auto-submit -1 for no answer (only for non-creators, since creators don't answer)
@@ -227,9 +293,6 @@ function PlayQuizContent() {
           }
         }
       }
-      
-      // Show results
-      setShowingResults(true);
       
       // Creator has manual control via "Next Question" button, no automatic advancement
       // Non-creators wait for creator to advance
@@ -282,6 +345,7 @@ function PlayQuizContent() {
     setShowingResults(false);
     setShowPointsBanner(false);
     setShowConfetti(false);
+    setNextQuestionCountdown(null); // Reset countdown when question changes
     timePercentageRef.current = 100;
     
     // Get server start time for synchronized timing
@@ -356,19 +420,26 @@ function PlayQuizContent() {
           
           // Show confetti and points banner
           setShowConfetti(response.is_correct);
-          setShowPointsBanner(isCreator ? false : true);
-          setTimeout(() => {
-            setShowPointsBanner(false);
-            setShowConfetti(false);
-          }, 3000);
+          if (!isCreator) {
+            setShowPointsBanner(true);
+            setTimeout(() => {
+              setShowPointsBanner(false);
+              setShowConfetti(false);
+              // Show question review after banner disappears (3 seconds after banner appeared)
+              setShowingResults(true);
+            }, 3000);
+          } else {
+            // For creator, show results immediately (no banner)
+            setShowingResults(true);
+          }
         }
       } catch (error) {
         console.error('Error submitting answer:', error);
       }
+    } else {
+      // If no response, still show results (for creator or error cases)
+      setShowingResults(true);
     }
-    
-    // Show results
-    setShowingResults(true);
     
     // Creator has manual control via "Next Question" button
     // Non-creators wait for creator to advance via realtime update
@@ -376,6 +447,12 @@ function PlayQuizContent() {
   
   const handleNextQuestion = () => {
     console.log("Moving to next question from:", currentQuestionIndex);
+    
+    // Only creator can advance questions
+    if (!isCreator) {
+      console.log("Non-creator waiting for question advance from host");
+      return;
+    }
     
     // Ferma il timer prima di passare alla prossima domanda
     if (timerRef.current) {
@@ -392,12 +469,17 @@ function PlayQuizContent() {
     setShowConfetti(false);
     timePercentageRef.current = 100;
     
-    // Only creator can advance questions
-    if (isCreator) {
-      console.log("Creator advancing to next question");
-      nextQuestion();
-    } else {
-      console.log("Non-creator waiting for question advance from host");
+    // Start 3 second countdown before advancing
+    console.log("Starting 3 second countdown before next question");
+    setNextQuestionCountdown(3);
+    
+    // Broadcast countdown start to all players
+    if (nextQuestionChannelRef.current) {
+      nextQuestionChannelRef.current.send({
+        type: 'broadcast',
+        event: 'next_question_countdown',
+        payload: { countdown: 3 }
+      });
     }
   };
   
@@ -495,6 +577,20 @@ function PlayQuizContent() {
         />
       </div>
 
+      {/* Next Question Countdown */}
+      {nextQuestionCountdown !== null && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-8xl font-bold text-white mb-4 animate-pulse">
+              {nextQuestionCountdown}
+            </div>
+            <div className="text-2xl text-gray-300">
+              Next question starting...
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Fireworks Animation */}
       {showConfetti && (
         <div className="fixed inset-0 pointer-events-none z-40">
@@ -568,7 +664,7 @@ function PlayQuizContent() {
         {/* Question progress */}
         <div className="w-full max-w-md mb-2">
           <div className="flex justify-between items-center mb-2">
-            <span className="text-lg font-semibold">Question {currentQuestionIndex + 1}</span>
+            <span className="text-lg font-semibold">Question {currentQuestionIndex + 1} of {quiz.questions.length}</span>
           </div>
         </div>
         
@@ -847,41 +943,70 @@ function PlayQuizContent() {
                 <h3 className="text-xl font-bold text-center mb-3 text-purple-100">Current Standings</h3>
                 <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-4">
                   <div className="space-y-2">
-                    {[...currentGame.players]
-                      .filter(p => p.id !== creatorSessionId) // Exclude creator
-                      .sort((a, b) => b.score - a.score)
-                      .slice(0, 5) // Show top 5
-                      .map((player, index) => {
-                        const playerSessionId = localStorage.getItem("playerSessionId");
-                        const isCurrentPlayer = player.id === playerSessionId;
-                        
-                        return (
-                          <div
-                            key={player.id}
-                            className={`flex items-center justify-between p-3 rounded-lg ${
-                              isCurrentPlayer
-                                ? 'bg-purple-700/50 border-2 border-purple-400'
-                                : 'bg-purple-700/20 border border-purple-500/30'
-                            }`}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
-                                index < 3 ? 'bg-yellow-500/30 text-yellow-300' : 'bg-gray-700 text-gray-300'
-                              }`}>
-                                {index === 0 && '🥇'}
-                                {index === 1 && '🥈'}
-                                {index === 2 && '🥉'}
-                                {index >= 3 && (index + 1)}
+                    {(() => {
+                      const playerSessionId = localStorage.getItem("playerSessionId");
+                      const allPlayers = [...currentGame.players]
+                        .filter(p => p.id !== creatorSessionId) // Exclude creator
+                        .sort((a, b) => b.score - a.score);
+                      
+                      const top5 = allPlayers.slice(0, 5);
+                      const currentPlayer = allPlayers.find(p => p.id === playerSessionId);
+                      const currentPlayerIndex = allPlayers.findIndex(p => p.id === playerSessionId);
+                      const isCurrentPlayerInTop5 = currentPlayerIndex < 5;
+                      
+                      return (
+                        <>
+                          {top5.map((player, index) => {
+                            const isCurrentPlayer = player.id === playerSessionId;
+                            
+                            return (
+                              <div
+                                key={player.id}
+                                className={`flex items-center justify-between p-3 rounded-lg ${
+                                  isCurrentPlayer
+                                    ? 'bg-purple-700/50 border-2 border-purple-400'
+                                    : 'bg-purple-700/20 border border-purple-500/30'
+                                }`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                                    index < 3 ? 'bg-yellow-500/30 text-yellow-300' : 'bg-gray-700 text-gray-300'
+                                  }`}>
+                                    {index === 0 && '👑'}
+                                    {index === 1 && '🥈'}
+                                    {index === 2 && '🥉'}
+                                    {index >= 3 && (index + 1)}
+                                  </div>
+                                  <span className={`font-medium ${isCurrentPlayer ? 'text-purple-100' : 'text-white'}`}>
+                                    {player.name}
+                                    {isCurrentPlayer && ' (You)'}
+                                  </span>
+                                </div>
+                                <span className="font-bold text-purple-200">{player.score} pts</span>
                               </div>
-                              <span className={`font-medium ${isCurrentPlayer ? 'text-purple-100' : 'text-white'}`}>
-                                {player.name}
-                                {isCurrentPlayer && ' (You)'}
-                              </span>
-                            </div>
-                            <span className="font-bold text-purple-200">{player.score} pts</span>
-                          </div>
-                        );
-                      })}
+                            );
+                          })}
+                          
+                          {/* Show current player if not in top 5 */}
+                          {!isCurrentPlayerInTop5 && currentPlayer && (
+                            <>
+                              <div className="h-px bg-purple-600/50 my-2"></div>
+                              <div className="flex items-center justify-between p-3 rounded-lg bg-purple-700/50 border-2 border-purple-400">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold bg-gray-700 text-gray-300">
+                                    {currentPlayerIndex + 1}
+                                  </div>
+                                  <span className="font-medium text-purple-100">
+                                    {currentPlayer.name} (You)
+                                  </span>
+                                </div>
+                                <span className="font-bold text-purple-200">{currentPlayer.score} pts</span>
+                              </div>
+                            </>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>

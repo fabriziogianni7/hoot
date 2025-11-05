@@ -31,13 +31,14 @@ async function fetchGameSession(supabase, roomCode) {
   if (error) return null;
   return data;
 }
-function validateGameSession(gameSession) {
+function validateGameSession(gameSession, isExistingPlayer = false) {
   if (!gameSession) {
-    return "Game session not found";
+    return "Game session already started! Create a new quiz.";
   }
-  //if (gameSession.status !== GAME_STATUS.WAITING) {
-  //  return 'Game is not accepting new players';
-  //}
+  // Allow reconnection for existing players, but block new players if game has started
+  if (!isExistingPlayer && gameSession.status !== 'waiting') {
+    return 'Game has already started. New players cannot join.';
+  }
   return null;
 }
 async function checkExistingPlayerByWallet(
@@ -141,10 +142,8 @@ serve(async (req) => {
     }
     // Fetch game session
     const gameSession = await fetchGameSession(supabase, room_code);
-    // Validate game session
-    const sessionError = validateGameSession(gameSession);
-    if (sessionError) {
-      return errorResponse(sessionError, gameSession ? 400 : 404);
+    if (!gameSession) {
+      return errorResponse("Game session not found", 404);
     }
     // Check for existing player by wallet address first (if provided)
     let existingPlayer = null;
@@ -155,6 +154,11 @@ serve(async (req) => {
         wallet_address
       );
       if (existingPlayer) {
+        // Validate game session for existing player (allows reconnection)
+        const sessionError = validateGameSession(gameSession, true);
+        if (sessionError) {
+          return errorResponse(sessionError, 400);
+        }
         const playerIsCreator = isCreator(
           gameSession.quizzes?.creator_address,
           wallet_address
@@ -188,6 +192,11 @@ serve(async (req) => {
       player_name
     );
     if (existingPlayerByName) {
+        // Validate game session for existing player (allows reconnection)
+        const sessionError = validateGameSession(gameSession, true);
+        if (sessionError) {
+          return errorResponse(sessionError, 400);
+        }
       // If someone tries to join with the same name but different wallet
       if (
         wallet_address &&
@@ -225,6 +234,11 @@ serve(async (req) => {
         quiz: gameSession.quizzes,
         players: allPlayers,
       });
+    }
+    // Validate game session for new player (must be in waiting status)
+    const sessionError = validateGameSession(gameSession, false);
+    if (sessionError) {
+      return errorResponse(sessionError, 400);
     }
     // Create new player session
     const playerSession = await createPlayerSession(
