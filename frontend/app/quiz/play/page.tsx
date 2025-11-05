@@ -577,7 +577,7 @@ function PlayQuizContent() {
         {/* Question progress */}
         <div className="w-full max-w-md mb-2">
           <div className="flex justify-between items-center mb-2">
-            <span className="text-lg font-semibold">Question {currentQuestionIndex + 1}</span>
+            <span className="text-lg font-semibold">Question {currentQuestionIndex + 1} of {quiz.questions.length}</span>
           </div>
         </div>
         

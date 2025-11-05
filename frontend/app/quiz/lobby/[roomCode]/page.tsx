@@ -1114,72 +1114,74 @@ function LobbyContent() {
                           {message.message}
                         </p>
                         
-                        {/* Reactions */}
-                        {joined && (
+                        {/* Reactions - Visible to everyone, but only joined users can interact */}
+                        {Object.keys(messageReactions).length > 0 || joined ? (
                           <div className="mt-1 flex items-center gap-2 flex-wrap">
                             {/* Existing reactions */}
                             {Object.entries(messageReactions).map(([emoji, playerIds]) => {
                               const count = playerIds.length;
-                              const hasReacted = playerIds.includes(playerSessionId || "");
-                              return (
-                                <button
-                                  key={emoji}
-                                  onClick={() => handleReaction(message.id, emoji)}
-                                  className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
-                                    hasReacted
-                                      ? "bg-purple-600/30 border border-purple-500/50 text-purple-200"
-                                      : "bg-gray-700/50 border border-gray-600/50 text-gray-300 hover:bg-gray-700/70"
-                                  }`}
-                                >
-                                  <span>{emoji}</span>
-                                  <span className="text-xs">{count}</span>
-                                </button>
-                              );
+                              const hasReacted = joined && playerIds.includes(playerSessionId || "");
+                              
+                              if (joined) {
+                                // Joined users can click to toggle reactions
+                                return (
+                                  <button
+                                    key={emoji}
+                                    onClick={() => handleReaction(message.id, emoji)}
+                                    className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
+                                      hasReacted
+                                        ? "bg-purple-600/30 border border-purple-500/50 text-purple-200"
+                                        : "bg-gray-700/50 border border-gray-600/50 text-gray-300 hover:bg-gray-700/70"
+                                    }`}
+                                  >
+                                    <span>{emoji}</span>
+                                    <span className="text-xs">{count}</span>
+                                  </button>
+                                );
+                              } else {
+                                // Non-joined users can only see reactions
+                                return (
+                                  <span
+                                    key={emoji}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-700/50 border border-gray-600/50 text-gray-300"
+                                  >
+                                    <span>{emoji}</span>
+                                    <span className="text-xs">{count}</span>
+                                  </span>
+                                );
+                              }
                             })}
                             
-                            {/* Add reaction button */}
-                            <div className="relative emoji-picker-container">
-                              <button
-                                onClick={() => setOpenEmojiPicker(openEmojiPicker === message.id ? null : message.id)}
-                                className="px-2 py-0.5 rounded text-xs bg-gray-700/50 border border-gray-600/50 text-gray-400 hover:bg-gray-700/70 hover:text-gray-300 transition-colors"
-                                title="Add reaction"
-                              >
-                                <span>+</span>
-                              </button>
-                              {openEmojiPicker === message.id && (
-                                <div className="absolute bottom-full left-0 mb-2 flex gap-1 bg-gray-800 border border-gray-700 rounded-lg p-2 shadow-lg z-10">
-                                  {availableEmojis.map((emoji) => (
-                                    <button
-                                      key={emoji}
-                                      onClick={() => {
-                                        handleReaction(message.id, emoji);
-                                        setOpenEmojiPicker(null);
-                                      }}
-                                      className="text-xl hover:scale-125 transition-transform p-1"
-                                    >
-                                      {emoji}
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
+                            {/* Add reaction button - Only for joined users */}
+                            {joined && (
+                              <div className="relative emoji-picker-container">
+                                <button
+                                  onClick={() => setOpenEmojiPicker(openEmojiPicker === message.id ? null : message.id)}
+                                  className="px-2 py-0.5 rounded text-xs bg-gray-700/50 border border-gray-600/50 text-gray-400 hover:bg-gray-700/70 hover:text-gray-300 transition-colors"
+                                  title="Add reaction"
+                                >
+                                  <span>+</span>
+                                </button>
+                                {openEmojiPicker === message.id && (
+                                  <div className="absolute bottom-full left-0 mb-2 flex gap-1 bg-gray-800 border border-gray-700 rounded-lg p-2 shadow-lg z-10">
+                                    {availableEmojis.map((emoji) => (
+                                      <button
+                                        key={emoji}
+                                        onClick={() => {
+                                          handleReaction(message.id, emoji);
+                                          setOpenEmojiPicker(null);
+                                        }}
+                                        className="text-xl hover:scale-125 transition-transform p-1"
+                                      >
+                                        {emoji}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        )}
-                        
-                        {/* Show reactions count for non-joined users */}
-                        {!joined && Object.keys(messageReactions).length > 0 && (
-                          <div className="mt-1 flex items-center gap-2 flex-wrap">
-                            {Object.entries(messageReactions).map(([emoji, playerIds]) => (
-                              <span
-                                key={emoji}
-                                className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-700/50 border border-gray-600/50 text-gray-300"
-                              >
-                                <span>{emoji}</span>
-                                <span className="text-xs">{playerIds.length}</span>
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -1198,7 +1200,7 @@ function LobbyContent() {
                 type="text"
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
-                placeholder="Announce progress to players..."
+                placeholder="Send a message..."
                 className="flex-1 min-w-0 px-4 py-2 rounded bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 maxLength={500}
                 disabled={isSendingMessage}
