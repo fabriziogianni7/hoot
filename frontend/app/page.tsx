@@ -22,7 +22,7 @@ export default function Home() {
 
   // Badge text state
   const [badgeText, setBadgeText] = useState<{
-    primary: string | null;
+    primary: string;
     secondary: string | null;
     statusColor?: string;
   }>({
@@ -85,7 +85,7 @@ export default function Home() {
   useEffect(() => {
     if (loggedUser?.isAuthenticated) {
       // ← Add the isAuthenticated check
-      let primary: string | null = null;
+      let primary = "Connected";
       let secondary: string | null = null;
       let statusColor = "#4ade80"; // Green for connected
 
@@ -227,7 +227,7 @@ export default function Home() {
               gap: "0.125rem",
             }}
           >
-            {badgeText.primary && <div>{badgeText.primary}</div>}
+            <div>{badgeText.primary}</div>
             {badgeText.secondary &&
               !badgeText.secondary.includes("Farcaster") && (
                 <div style={{ fontSize: "0.75rem", opacity: 0.8 }}>
@@ -301,13 +301,8 @@ export default function Home() {
             borderRadius: "0.75rem",
             padding: "1.5rem",
             marginBottom: "1.5rem",
-            border: gamePin.trim().length === 6 
-              ? "3px solid rgba(121, 90, 255, 0.8)" 
-              : "3px solid rgba(121, 90, 255, 0.2)",
-            boxShadow: gamePin.trim().length === 6
-              ? "0 8px 32px rgba(121, 90, 255, 0.4)"
-              : "0 8px 32px rgba(121, 90, 255, 0.1)",
-            transition: "border 0.2s ease, boxShadow 0.2s ease",
+            border: "3px solid rgba(121, 90, 255, 0.2)",
+            boxShadow: "0 8px 32px rgba(121, 90, 255, 0.1)",
           }}
         >
           {/* Section label */}
