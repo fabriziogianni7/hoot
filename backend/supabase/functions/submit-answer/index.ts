@@ -103,7 +103,8 @@ serve(async (req) => {
   }
 
   try {
-    const supabase = initSupabaseClient(req)
+    // Use service role key to bypass RLS policies and ensure answers are saved
+    const supabase = initSupabaseClient(req, true)
     const { player_session_id, question_id, answer_index, time_taken }: SubmitAnswerRequest = await req.json()
 
     // Validate required fields
