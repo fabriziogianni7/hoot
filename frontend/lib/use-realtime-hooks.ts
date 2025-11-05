@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useSupabase } from "./supabase-context";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -300,6 +300,113 @@ export function useAnswersRealtime(
 
   return {
     playerResponses,
+  };
+}
+
+// Lobby message type (using broadcast - no DB persistence)
+export type LobbyMessage = {
+  id: string; // Generated client-side
+  message: string;
+  created_at: number; // Timestamp
+  player_session_id: string;
+  player_name: string;
+  is_creator: boolean;
+};
+
+/**
+ * Custom hook for real-time lobby messages using broadcast
+ * No database persistence - messages are ephemeral
+ * All players can send messages and react with emojis
+ */
+export function useLobbyMessagesRealtime(
+  gameSessionId: string | null
+) {
+  const { supabase } = useSupabase();
+  
+  const [messages, setMessages] = useState<LobbyMessage[]>([]);
+  const [isConnected, setIsConnected] = useState(true);
+  
+  const channelRef = useRef<RealtimeChannel | null>(null);
+
+  useEffect(() => {
+    if (!gameSessionId || !supabase) return;
+
+    let isSubscribed = true;
+
+    // Clean up existing channel if any
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+
+    channelRef.current = supabase
+      .channel(`lobby_messages:${gameSessionId}`)
+      .on(
+        "broadcast",
+        {
+          event: "lobby_message",
+        },
+        (payload) => {
+          console.log("💬 New message received:", payload.payload);
+          if (isSubscribed) {
+            const newMessage = payload.payload as LobbyMessage;
+            setMessages((prev) => {
+              // Check if message already exists (avoid duplicates)
+              if (prev.some((m) => m.id === newMessage.id)) {
+                return prev;
+              }
+              return [...prev, newMessage].sort(
+                (a, b) => a.created_at - b.created_at
+              );
+            });
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        console.log("Lobby messages channel status:", status);
+        if (err) {
+          console.error("Lobby messages channel error:", err);
+        }
+
+        if (status === "SUBSCRIBED") {
+          console.log("✅ Lobby messages channel connected successfully");
+          setIsConnected(true);
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.error("❌ Lobby messages connection error:", status, err);
+          setIsConnected(false);
+        } else if (status === "CLOSED") {
+          console.log("Lobby messages channel closed");
+        }
+      });
+
+    return () => {
+      console.log("Cleaning up lobby messages channel");
+      isSubscribed = false;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
+    };
+  }, [gameSessionId, supabase]);
+
+  // Function to add message locally (for immediate feedback when sending)
+  const addMessageLocal = useCallback((message: LobbyMessage) => {
+    setMessages((prev) => {
+      // Check if message already exists (avoid duplicates)
+      if (prev.some((m) => m.id === message.id)) {
+        return prev;
+      }
+      return [...prev, message].sort(
+        (a, b) => a.created_at - b.created_at
+      );
+    });
+  }, []);
+
+  return {
+    messages,
+    isConnected,
+    channel: channelRef.current, // Expose channel for sending messages
+    addMessageLocal, // Function to add message locally
   };
 }
 
