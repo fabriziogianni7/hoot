@@ -209,12 +209,7 @@ function PlayQuizContent() {
         setShowPointsBanner(true);
         setTimeout(() => {
           setShowPointsBanner(false);
-          // Show question review after banner disappears (3 seconds after banner appeared)
-          setShowingResults(true);
         }, 3000);
-      } else {
-        // For creator, show results immediately (no banner)
-        setShowingResults(true);
       }
       
       // Auto-submit -1 for no answer (only for non-creators, since creators don't answer)
@@ -232,6 +227,9 @@ function PlayQuizContent() {
           }
         }
       }
+      
+      // Show results
+      setShowingResults(true);
       
       // Creator has manual control via "Next Question" button, no automatic advancement
       // Non-creators wait for creator to advance
@@ -358,26 +356,19 @@ function PlayQuizContent() {
           
           // Show confetti and points banner
           setShowConfetti(response.is_correct);
-          if (!isCreator) {
-            setShowPointsBanner(true);
-            setTimeout(() => {
-              setShowPointsBanner(false);
-              setShowConfetti(false);
-              // Show question review after banner disappears (3 seconds after banner appeared)
-              setShowingResults(true);
-            }, 3000);
-          } else {
-            // For creator, show results immediately (no banner)
-            setShowingResults(true);
-          }
+          setShowPointsBanner(isCreator ? false : true);
+          setTimeout(() => {
+            setShowPointsBanner(false);
+            setShowConfetti(false);
+          }, 3000);
         }
       } catch (error) {
         console.error('Error submitting answer:', error);
       }
-    } else {
-      // If no response, still show results (for creator or error cases)
-      setShowingResults(true);
     }
+    
+    // Show results
+    setShowingResults(true);
     
     // Creator has manual control via "Next Question" button
     // Non-creators wait for creator to advance via realtime update
@@ -856,70 +847,41 @@ function PlayQuizContent() {
                 <h3 className="text-xl font-bold text-center mb-3 text-purple-100">Current Standings</h3>
                 <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-4">
                   <div className="space-y-2">
-                    {(() => {
-                      const playerSessionId = localStorage.getItem("playerSessionId");
-                      const allPlayers = [...currentGame.players]
-                        .filter(p => p.id !== creatorSessionId) // Exclude creator
-                        .sort((a, b) => b.score - a.score);
-                      
-                      const top5 = allPlayers.slice(0, 5);
-                      const currentPlayer = allPlayers.find(p => p.id === playerSessionId);
-                      const currentPlayerIndex = allPlayers.findIndex(p => p.id === playerSessionId);
-                      const isCurrentPlayerInTop5 = currentPlayerIndex < 5;
-                      
-                      return (
-                        <>
-                          {top5.map((player, index) => {
-                            const isCurrentPlayer = player.id === playerSessionId;
-                            
-                            return (
-                              <div
-                                key={player.id}
-                                className={`flex items-center justify-between p-3 rounded-lg ${
-                                  isCurrentPlayer
-                                    ? 'bg-purple-700/50 border-2 border-purple-400'
-                                    : 'bg-purple-700/20 border border-purple-500/30'
-                                }`}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
-                                    index < 3 ? 'bg-yellow-500/30 text-yellow-300' : 'bg-gray-700 text-gray-300'
-                                  }`}>
-                                    {index === 0 && '👑'}
-                                    {index === 1 && '🥈'}
-                                    {index === 2 && '🥉'}
-                                    {index >= 3 && (index + 1)}
-                                  </div>
-                                  <span className={`font-medium ${isCurrentPlayer ? 'text-purple-100' : 'text-white'}`}>
-                                    {player.name}
-                                    {isCurrentPlayer && ' (You)'}
-                                  </span>
-                                </div>
-                                <span className="font-bold text-purple-200">{player.score} pts</span>
+                    {[...currentGame.players]
+                      .filter(p => p.id !== creatorSessionId) // Exclude creator
+                      .sort((a, b) => b.score - a.score)
+                      .slice(0, 5) // Show top 5
+                      .map((player, index) => {
+                        const playerSessionId = localStorage.getItem("playerSessionId");
+                        const isCurrentPlayer = player.id === playerSessionId;
+                        
+                        return (
+                          <div
+                            key={player.id}
+                            className={`flex items-center justify-between p-3 rounded-lg ${
+                              isCurrentPlayer
+                                ? 'bg-purple-700/50 border-2 border-purple-400'
+                                : 'bg-purple-700/20 border border-purple-500/30'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                                index < 3 ? 'bg-yellow-500/30 text-yellow-300' : 'bg-gray-700 text-gray-300'
+                              }`}>
+                                {index === 0 && '🥇'}
+                                {index === 1 && '🥈'}
+                                {index === 2 && '🥉'}
+                                {index >= 3 && (index + 1)}
                               </div>
-                            );
-                          })}
-                          
-                          {/* Show current player if not in top 5 */}
-                          {!isCurrentPlayerInTop5 && currentPlayer && (
-                            <>
-                              <div className="h-px bg-purple-600/50 my-2"></div>
-                              <div className="flex items-center justify-between p-3 rounded-lg bg-purple-700/50 border-2 border-purple-400">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold bg-gray-700 text-gray-300">
-                                    {currentPlayerIndex + 1}
-                                  </div>
-                                  <span className="font-medium text-purple-100">
-                                    {currentPlayer.name} (You)
-                                  </span>
-                                </div>
-                                <span className="font-bold text-purple-200">{currentPlayer.score} pts</span>
-                              </div>
-                            </>
-                          )}
-                        </>
-                      );
-                    })()}
+                              <span className={`font-medium ${isCurrentPlayer ? 'text-purple-100' : 'text-white'}`}>
+                                {player.name}
+                                {isCurrentPlayer && ' (You)'}
+                              </span>
+                            </div>
+                            <span className="font-bold text-purple-200">{player.score} pts</span>
+                          </div>
+                        );
+                      })}
                   </div>
                 </div>
               </div>

@@ -310,7 +310,7 @@ export default function ResultsPage() {
         <h1 className="text-3xl font-bold mb-2">Quiz Results</h1>
         <h2 className="text-xl mb-8">{quiz.title}</h2>
         
-        {currentPlayer && !isCreator && (
+        {currentPlayer && (
           <div className="bg-purple-900/30 border border-purple-500 rounded-lg p-4 mb-8 w-full max-w-md">
             <h3 className="text-center mb-2 text-purple-200">Your Score</h3>
             <div className="text-4xl font-bold text-center text-purple-100">{currentPlayer.score}</div>
