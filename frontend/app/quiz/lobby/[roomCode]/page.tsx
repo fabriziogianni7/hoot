@@ -11,6 +11,7 @@ import { useSupabase } from "@/lib/supabase-context";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import Link from "next/link";
 import { useAuth } from "@/lib/use-auth";
+import SignInPrompt from "@/components/SignInPrompt";
 import { usePlayerSessionsRealtime } from "@/lib/use-realtime-hooks";
 
 function LobbyContent() {
@@ -27,7 +28,15 @@ function LobbyContent() {
   const { address } = useAccount();
   const { supabase } = useSupabase();
   const { isFrameReady, setFrameReady } = useMiniKit();
-  const { loggedUser, isAuthLoading, authError, triggerAuth } = useAuth();
+  const {
+    loggedUser,
+    isAuthLoading,
+    authError,
+    showSignInPrompt,
+    triggerAuth,
+    handleSignInAccept,
+    handleSignInDecline
+  } = useAuth();
   const [countdown, setCountdown] = useState<number | null>(null);
   const [playerName, setPlayerName] = useState("");
   const [joined, setJoined] = useState(false);
@@ -710,6 +719,14 @@ function LobbyContent() {
           </>
         )}
       </div>
+
+      {/* Sign In Prompt Modal */}
+      {showSignInPrompt && (
+        <SignInPrompt
+          onAccept={handleSignInAccept}
+          onDecline={handleSignInDecline}
+        />
+      )}
     </div>
   );
 }

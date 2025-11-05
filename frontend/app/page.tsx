@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { useAuth } from "@/lib/use-auth";
+import SignInPrompt from "@/components/SignInPrompt";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -18,7 +19,15 @@ export default function Home() {
   const [isPinFocused, setIsPinFocused] = useState(false);
 
   // Use the shared authentication hook
-  const { loggedUser, isAuthLoading, authError, triggerAuth } = useAuth();
+  const {
+    loggedUser,
+    isAuthLoading,
+    authError,
+    showSignInPrompt,
+    triggerAuth,
+    handleSignInAccept,
+    handleSignInDecline
+  } = useAuth();
 
   // Badge text state
   const [badgeText, setBadgeText] = useState<{
@@ -497,6 +506,17 @@ export default function Home() {
           </p>
         </div>
       </div>
+
+      {/* Sign In Prompt Modal */}
+      {showSignInPrompt && (
+        <>
+          {console.log("🎯 Rendering SignInPrompt component")}
+          <SignInPrompt
+            onAccept={handleSignInAccept}
+            onDecline={handleSignInDecline}
+          />
+        </>
+      )}
     </div>
   );
 }

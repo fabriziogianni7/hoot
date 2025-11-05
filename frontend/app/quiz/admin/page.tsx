@@ -21,6 +21,7 @@ import {
 } from "@/lib/contracts";
 import { parseEther, parseUnits } from "viem";
 import ShareBox from "@/components/ShareBox";
+import SignInPrompt from "@/components/SignInPrompt";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { useAuth } from "@/lib/use-auth";
 
@@ -70,7 +71,15 @@ function AdminPageContent() {
   const publicClient = usePublicClient();
   const { supabase } = useSupabase();
   const { data: ethBalance } = useBalance({ address });
-  const { loggedUser, isAuthLoading, authError, triggerAuth } = useAuth();
+  const {
+    loggedUser,
+    isAuthLoading,
+    authError,
+    showSignInPrompt,
+    triggerAuth,
+    handleSignInAccept,
+    handleSignInDecline
+  } = useAuth();
 
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -1405,6 +1414,14 @@ function AdminPageContent() {
             setShowShareBox(false);
             router.push(`/quiz/lobby/${createdRoomCode}`);
           }}
+        />
+      )}
+
+      {/* Sign In Prompt Modal */}
+      {showSignInPrompt && (
+        <SignInPrompt
+          onAccept={handleSignInAccept}
+          onDecline={handleSignInDecline}
         />
       )}
     </div>

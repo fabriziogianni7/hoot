@@ -248,7 +248,7 @@ export async function POST(request: Request) {
 
       // Create a regular Supabase client (with anon key) to verify the token and get session tokens
       const supabase = createClient(
-        process.env.SUPABASE_URL || "https://auuxbsnzmmnlgyxxojcr.supabase.co",
+        process.env.NEXT_PUBLIC_SUPABASE_URL || "https://auuxbsnzmmnlgyxxojcr.supabase.co",
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // Use public anon key here
       );
 
