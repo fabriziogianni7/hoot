@@ -82,7 +82,7 @@ function AdminPageContent() {
   const [addQuestionError, setAddQuestionError] = useState<string>("");
   const [showTooltip, setShowTooltip] = useState(false);
   const [showQuizOptions, setShowQuizOptions] = useState(false);
-  const [bountyAmount, setBountyAmount] = useState("0.001");
+  const [bountyAmount, setBountyAmount] = useState("10");
   const [selectedCurrency, setSelectedCurrency] = useState<
     "usdc" | "eth" | "custom"
   >("usdc");
@@ -368,6 +368,17 @@ function AdminPageContent() {
       refetchErc20Balance();
     }
   }, [selectedCurrency, chain?.id, refetchErc20Balance]);
+
+  // Update default amount when currency changes
+  useEffect(() => {
+    if (selectedCurrency === "usdc") {
+      setBountyAmount("10");
+    } else if (selectedCurrency === "eth") {
+      setBountyAmount("0.001");
+    } else if (selectedCurrency === "custom") {
+      setBountyAmount("100");
+    }
+  }, [selectedCurrency]);
 
   // Effetto per caricare la domanda corrente quando cambia l'indice
   useEffect(() => {
