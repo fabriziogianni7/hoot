@@ -26,6 +26,8 @@ function PlayQuizContent() {
   const [earnedPoints, setEarnedPoints] = useState(0);
   const [showConfetti, setShowConfetti] = useState(false);
   const [creatorSessionId, setCreatorSessionId] = useState<string | null>(null);
+  const [nextQuestionCountdown, setNextQuestionCountdown] = useState<number | null>(null);
+  const nextQuestionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   
   // Use realtime hook for answers (creator only)
   const { playerResponses } = useAnswersRealtime(
@@ -133,6 +135,65 @@ function PlayQuizContent() {
     
     checkCreator();
   }, [gameSessionId, supabase]);
+
+  // Subscribe to next question countdown broadcasts
+  useEffect(() => {
+    if (!gameSessionId) return;
+
+    // Clean up previous channel
+    if (nextQuestionChannelRef.current) {
+      supabase.removeChannel(nextQuestionChannelRef.current);
+      nextQuestionChannelRef.current = null;
+    }
+
+    const channel = supabase
+      .channel(`next_question:${gameSessionId}`)
+      .on(
+        'broadcast',
+        { event: 'next_question_countdown' },
+        (payload) => {
+          console.log('Received next question countdown:', payload.payload);
+          const countdown = payload.payload.countdown as number;
+          setNextQuestionCountdown(countdown);
+        }
+      )
+      .subscribe();
+
+    nextQuestionChannelRef.current = channel;
+
+    return () => {
+      if (nextQuestionChannelRef.current) {
+        supabase.removeChannel(nextQuestionChannelRef.current);
+        nextQuestionChannelRef.current = null;
+      }
+    };
+  }, [gameSessionId, supabase]);
+
+  // Handle countdown timer
+  useEffect(() => {
+    if (nextQuestionCountdown === null) return;
+
+    if (nextQuestionCountdown > 0) {
+      const timer = setTimeout(() => {
+        setNextQuestionCountdown(nextQuestionCountdown - 1);
+        
+        // Broadcast countdown update to all players
+        if (nextQuestionChannelRef.current && isCreator) {
+          nextQuestionChannelRef.current.send({
+            type: 'broadcast',
+            event: 'next_question_countdown',
+            payload: { countdown: nextQuestionCountdown - 1 }
+          });
+        }
+      }, 1000);
+
+      return () => clearTimeout(timer);
+    } else if (nextQuestionCountdown === 0 && isCreator) {
+      // Countdown finished, actually advance to next question
+      setNextQuestionCountdown(null);
+      nextQuestion();
+    }
+  }, [nextQuestionCountdown, isCreator, nextQuestion]);
   
   // Start the game when play page loads (only if coming from "starting" status)
   // This ensures the question timer starts only when players are actually on the play page
@@ -282,6 +343,7 @@ function PlayQuizContent() {
     setShowingResults(false);
     setShowPointsBanner(false);
     setShowConfetti(false);
+    setNextQuestionCountdown(null); // Reset countdown when question changes
     timePercentageRef.current = 100;
     
     // Get server start time for synchronized timing
@@ -377,6 +439,12 @@ function PlayQuizContent() {
   const handleNextQuestion = () => {
     console.log("Moving to next question from:", currentQuestionIndex);
     
+    // Only creator can advance questions
+    if (!isCreator) {
+      console.log("Non-creator waiting for question advance from host");
+      return;
+    }
+    
     // Ferma il timer prima di passare alla prossima domanda
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -392,12 +460,17 @@ function PlayQuizContent() {
     setShowConfetti(false);
     timePercentageRef.current = 100;
     
-    // Only creator can advance questions
-    if (isCreator) {
-      console.log("Creator advancing to next question");
-      nextQuestion();
-    } else {
-      console.log("Non-creator waiting for question advance from host");
+    // Start 3 second countdown before advancing
+    console.log("Starting 3 second countdown before next question");
+    setNextQuestionCountdown(3);
+    
+    // Broadcast countdown start to all players
+    if (nextQuestionChannelRef.current) {
+      nextQuestionChannelRef.current.send({
+        type: 'broadcast',
+        event: 'next_question_countdown',
+        payload: { countdown: 3 }
+      });
     }
   };
   
@@ -494,6 +567,20 @@ function PlayQuizContent() {
           onClick={() => router.push('/')}
         />
       </div>
+
+      {/* Next Question Countdown */}
+      {nextQuestionCountdown !== null && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="text-8xl font-bold text-white mb-4 animate-pulse">
+              {nextQuestionCountdown}
+            </div>
+            <div className="text-2xl text-gray-300">
+              Next question starting...
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Fireworks Animation */}
       {showConfetti && (
