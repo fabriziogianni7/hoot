@@ -539,6 +539,72 @@ function LobbyContent() {
           {quiz?.title || "Quiz Lobby"}
         </h1>
 
+        {/* Join Form - Show if not joined */}
+        {!joined && (
+          <form onSubmit={handleJoin} className="w-full max-w-md mb-8">
+            {error && (
+              <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+                {error}
+              </div>
+            )}
+            {authError && (
+              <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+                Authentication Error: {authError}
+              </div>
+            )}
+            <div className="mb-4">
+              <input
+                type="text"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                placeholder="Enter your name"
+                className="w-full px-4 py-2 rounded bg-white text-black"
+                required
+                disabled={isJoining}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isJoining || isAuthLoading}
+              data-testid="join-quiz-button"
+              style={{
+                width: "100%",
+                padding: "0.5rem 0",
+                borderRadius: "0.375rem",
+                color: "white",
+                fontWeight: "500",
+                backgroundColor:
+                  isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
+                border: "none",
+                cursor:
+                  isJoining || isAuthLoading ? "not-allowed" : "pointer",
+                opacity: isJoining || isAuthLoading ? 0.5 : 1,
+                transition: "background-color 0.2s ease",
+                background:
+                  isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
+              }}
+              onMouseEnter={(e) => {
+                if (!isJoining && !isAuthLoading) {
+                  e.currentTarget.style.backgroundColor = "#6B46C1";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isJoining && !isAuthLoading) {
+                  e.currentTarget.style.backgroundColor = "#795AFF";
+                }
+              }}
+            >
+              {isAuthLoading
+                ? "Loading..."
+                : isJoining
+                ? "Joining..."
+                : !loggedUser?.isAuthenticated || !loggedUser?.session
+                ? "Connect Wallet to Join"
+                : "Join Quiz"}
+            </button>
+          </form>
+        )}
+
         {countdown !== null && (
           <div className="mb-8 text-center">
             <div className="text-6xl font-bold mb-4">{countdown}</div>
@@ -784,70 +850,7 @@ function LobbyContent() {
         )}
       </div>
 
-            {!joined ? (
-              <form onSubmit={handleJoin} className="w-full max-w-md">
-                {error && (
-                  <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
-                    {error}
-                  </div>
-                )}
-                {authError && (
-                  <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
-                    Authentication Error: {authError}
-                  </div>
-                )}
-                <div className="mb-4">
-                  <input
-                    type="text"
-                    value={playerName}
-                    onChange={(e) => setPlayerName(e.target.value)}
-                    placeholder="Enter your name"
-                    className="w-full px-4 py-2 rounded bg-white text-black"
-                    required
-                    disabled={isJoining}
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={isJoining || isAuthLoading}
-                  data-testid="join-quiz-button"
-                  style={{
-                    width: "100%",
-                    padding: "0.5rem 0",
-                    borderRadius: "0.375rem",
-                    color: "white",
-                    fontWeight: "500",
-                    backgroundColor:
-                      isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
-                    border: "none",
-                    cursor:
-                      isJoining || isAuthLoading ? "not-allowed" : "pointer",
-                    opacity: isJoining || isAuthLoading ? 0.5 : 1,
-                    transition: "background-color 0.2s ease",
-                    background:
-                      isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isJoining && !isAuthLoading) {
-                      e.currentTarget.style.backgroundColor = "#6B46C1";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isJoining && !isAuthLoading) {
-                      e.currentTarget.style.backgroundColor = "#795AFF";
-                    }
-                  }}
-                >
-                  {isAuthLoading
-                    ? "Loading..."
-                    : isJoining
-                    ? "Joining..."
-                    : !loggedUser?.isAuthenticated || !loggedUser?.session
-                    ? "Connect Wallet to Join"
-                    : "Join Quiz"}
-                </button>
-              </form>
-            ) : (
+            {joined && (
               <div className="w-full max-w-md flex flex-col gap-4">
                 <div className="relative bg-purple-600/20 border border-purple-500 rounded-lg p-4 text-center">
                   {/* Connection Status Indicator - Green Dot */}
