@@ -48,15 +48,6 @@ async function createAnswer(
   timeTaken: number,
   pointsEarned: number
 ) {
-  console.log('Creating answer record:', {
-    playerSessionId,
-    questionId,
-    answerIndex,
-    isCorrect,
-    timeTaken,
-    pointsEarned
-  })
-
   const { data, error } = await supabase
     .from('answers')
     .insert({
@@ -71,19 +62,9 @@ async function createAnswer(
     .single()
 
   if (error) {
-    console.error('Error creating answer record:', {
-      error: error.message,
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-      playerSessionId,
-      questionId,
-      answerIndex
-    })
-    throw new Error(`Failed to submit answer: ${error.message}`)
+    throw new Error('Failed to submit answer')
   }
 
-  console.log('Answer record created successfully:', data.id)
   return data
 }
 
@@ -92,8 +73,6 @@ async function updatePlayerScore(
   playerSessionId: string,
   pointsToAdd: number
 ): Promise<number> {
-  console.log('Updating player score:', { playerSessionId, pointsToAdd })
-
   const { data: playerSession, error: fetchError } = await supabase
     .from('player_sessions')
     .select('total_score')
@@ -101,8 +80,7 @@ async function updatePlayerScore(
     .single()
 
   if (fetchError) {
-    console.error('Error fetching player session:', fetchError)
-    throw new Error(`Failed to fetch player session: ${fetchError.message}`)
+    throw new Error('Failed to fetch player session')
   }
 
   const newTotalScore = (playerSession?.total_score || 0) + pointsToAdd
@@ -113,11 +91,9 @@ async function updatePlayerScore(
     .eq('id', playerSessionId)
 
   if (updateError) {
-    console.error('Error updating player score:', updateError)
-    throw new Error(`Failed to update player score: ${updateError.message}`)
+    throw new Error('Failed to update player score')
   }
 
-  console.log('Player score updated:', { playerSessionId, oldScore: playerSession?.total_score || 0, newTotalScore })
   return newTotalScore
 }
 
@@ -127,26 +103,11 @@ serve(async (req) => {
   }
 
   try {
-    // Use service role key to bypass RLS policies and ensure answers are saved
-    const supabase = initSupabaseClient(req, true)
+    const supabase = initSupabaseClient(req)
     const { player_session_id, question_id, answer_index, time_taken }: SubmitAnswerRequest = await req.json()
 
-    console.log('Received answer submission:', {
-      player_session_id,
-      question_id,
-      answer_index,
-      time_taken
-    })
-
     // Validate required fields
-    // Allow answer_index === -1 for timeout cases
-    if (!player_session_id || !question_id || answer_index === undefined || answer_index === null || time_taken < 0) {
-      console.error('Validation failed:', {
-        hasPlayerSessionId: !!player_session_id,
-        hasQuestionId: !!question_id,
-        answer_index,
-        time_taken
-      })
+    if (!player_session_id || !question_id || answer_index < 0 || time_taken < 0) {
       return errorResponse('Missing or invalid required fields', 400)
     }
 
@@ -162,23 +123,18 @@ serve(async (req) => {
       return errorResponse(timingError, 400)
     }
 
-    // Check if answer is correct (skip for timeout cases where answer_index is -1)
-    const isCorrect = answer_index >= 0 && answer_index === question.correct_answer_index
+    // Check if answer is correct
+    const isCorrect = answer_index === question.correct_answer_index
 
     // Check for existing answer submission (prevent duplicates)
-    const { data: existingAnswer, error: existingError } = await supabase
+    const { data: existingAnswer } = await supabase
       .from('answers')
       .select('id')
       .eq('player_session_id', player_session_id)
       .eq('question_id', question_id)
       .maybeSingle()
 
-    if (existingError) {
-      console.error('Error checking for existing answer:', existingError)
-    }
-
     if (existingAnswer) {
-      console.log('Answer already exists for this question:', existingAnswer.id)
       return errorResponse('Answer already submitted for this question', 400)
     }
 
@@ -199,13 +155,6 @@ serve(async (req) => {
     // Update player's total score
     const newTotalScore = await updatePlayerScore(supabase, player_session_id, pointsEarned)
 
-    console.log('Answer submitted successfully:', {
-      answer_id: answer.id,
-      is_correct: isCorrect,
-      points_earned: pointsEarned,
-      new_total_score: newTotalScore
-    })
-
     return successResponse({ 
       success: true,
       is_correct: isCorrect,
@@ -215,11 +164,7 @@ serve(async (req) => {
     })
 
   } catch (error) {
-    console.error('Error submitting answer:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    })
+    console.error('Error submitting answer:', error)
     return errorResponse(error.message || 'Internal server error', 500)
   }
 })

@@ -539,72 +539,6 @@ function LobbyContent() {
           {quiz?.title || "Quiz Lobby"}
         </h1>
 
-        {/* Join Form - Show if not joined */}
-        {!joined && (
-          <form onSubmit={handleJoin} className="w-full max-w-md mb-8">
-            {error && (
-              <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
-                {error}
-              </div>
-            )}
-            {authError && (
-              <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
-                Authentication Error: {authError}
-              </div>
-            )}
-            <div className="mb-4">
-              <input
-                type="text"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                placeholder="Enter your name"
-                className="w-full px-4 py-2 rounded bg-white text-black"
-                required
-                disabled={isJoining}
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={isJoining || isAuthLoading}
-              data-testid="join-quiz-button"
-              style={{
-                width: "100%",
-                padding: "0.5rem 0",
-                borderRadius: "0.375rem",
-                color: "white",
-                fontWeight: "500",
-                backgroundColor:
-                  isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
-                border: "none",
-                cursor:
-                  isJoining || isAuthLoading ? "not-allowed" : "pointer",
-                opacity: isJoining || isAuthLoading ? 0.5 : 1,
-                transition: "background-color 0.2s ease",
-                background:
-                  isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
-              }}
-              onMouseEnter={(e) => {
-                if (!isJoining && !isAuthLoading) {
-                  e.currentTarget.style.backgroundColor = "#6B46C1";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isJoining && !isAuthLoading) {
-                  e.currentTarget.style.backgroundColor = "#795AFF";
-                }
-              }}
-            >
-              {isAuthLoading
-                ? "Loading..."
-                : isJoining
-                ? "Joining..."
-                : !loggedUser?.isAuthenticated || !loggedUser?.session
-                ? "Connect Wallet to Join"
-                : "Join Quiz"}
-            </button>
-          </form>
-        )}
-
         {countdown !== null && (
           <div className="mb-8 text-center">
             <div className="text-6xl font-bold mb-4">{countdown}</div>
@@ -668,189 +602,70 @@ function LobbyContent() {
               )}
             </div>
 
-            {/* Chat Component */}
-            <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
-        <h2 className="text-xl font-semibold mb-4 text-purple-200 flex items-center justify-between">
-          <span>💬 Lobby Chat</span>
-          {isMessagesConnected && (
-            <span className="text-xs text-green-400 flex items-center gap-1">
-            </span>
-          )}
-        </h2>
-
-        {/* Creator Banners - Only show to non-creators, only latest message */}
-        {!isCreator && creatorBanners.length > 0 && (
-          <div className="fixed top-4 right-4 z-50">
-            {creatorBanners.map((banner) => (
-              <div
-                key={banner.id}
-                className="bg-yellow-500/95 border border-yellow-400 rounded-lg p-3 shadow-lg max-w-sm animate-slide-in"
-              >
-                <div className="flex items-start gap-2">
-                  <span className="text-yellow-900 font-semibold text-sm">👑</span>
-                  <div className="flex-1">
-                    <p className="text-xs text-yellow-900 font-semibold mb-1">{banner.playerName}</p>
-                    <p className="text-sm text-yellow-900 whitespace-pre-wrap break-words">{banner.message}</p>
+            {!joined ? (
+              <form onSubmit={handleJoin} className="w-full max-w-md">
+                {error && (
+                  <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+                    {error}
                   </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Messages List - Discord style (no boxes) */}
-        <div className="rounded-lg p-4 mb-4 max-h-64 overflow-y-auto bg-purple-900/30">
-          {messages.length === 0 ? (
-            <p className="text-gray-400 text-sm text-center py-4">No messages yet. Start the conversation!</p>
-          ) : (
-            <div className="space-y-1">
-              {messages.map((message) => {
-                const messageReactions = reactions[message.id] || {};
-                const playerSessionId = localStorage.getItem("playerSessionId");
-                const isCurrentUser = playerSessionId === message.player_session_id;
-                
-                return (
-                  <div
-                    key={message.id}
-                    className={`py-1 px-2 rounded hover:bg-purple-700/20 transition-colors ${
-                      message.is_creator ? "bg-yellow-500/10 border-l-2 border-yellow-400" : ""
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {message.is_creator && (
-                        <span className="text-yellow-400 font-semibold text-sm flex-shrink-0">👑</span>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2">
-                          <span className={`text-sm font-semibold ${
-                            message.is_creator ? "text-yellow-300" : "text-purple-200"
-                          }`}>
-                            {message.player_name}
-                            {isCurrentUser && " (you)"}
-                          </span>
-                          <span className="text-xs text-gray-400">
-                            {new Date(message.created_at).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              second: "2-digit",
-                            })}
-                          </span>
-                        </div>
-                        <p className="text-gray-100 text-sm whitespace-pre-wrap break-words mt-0.5">
-                          {message.message}
-                        </p>
-                        
-                        {/* Reactions - Visible to everyone, but only joined users can interact */}
-                        {Object.keys(messageReactions).length > 0 || joined ? (
-                          <div className="mt-1 flex items-center gap-2 flex-wrap">
-                            {/* Existing reactions */}
-                            {Object.entries(messageReactions).map(([emoji, playerIds]) => {
-                              const count = playerIds.length;
-                              const hasReacted = joined && playerIds.includes(playerSessionId || "");
-                              
-                              if (joined) {
-                                // Joined users can click to toggle reactions
-                                return (
-                                  <button
-                                    key={emoji}
-                                    onClick={() => handleReaction(message.id, emoji)}
-                                    className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
-                                      hasReacted
-                                        ? "bg-purple-600/30 border border-purple-500/50 text-purple-200"
-                                        : "bg-gray-700/50 border border-gray-600/50 text-gray-300 hover:bg-gray-700/70"
-                                    }`}
-                                  >
-                                    <span>{emoji}</span>
-                                    <span className="text-xs">{count}</span>
-                                  </button>
-                                );
-                              } else {
-                                // Non-joined users can only see reactions
-                                return (
-                                  <span
-                                    key={emoji}
-                                    className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-700/50 border border-gray-600/50 text-gray-300"
-                                  >
-                                    <span>{emoji}</span>
-                                    <span className="text-xs">{count}</span>
-                                  </span>
-                                );
-                              }
-                            })}
-                            
-                            {/* Add reaction button - Only for joined users */}
-                            {joined && (
-                              <div className="relative emoji-picker-container">
-                                <button
-                                  onClick={() => setOpenEmojiPicker(openEmojiPicker === message.id ? null : message.id)}
-                                  className="px-2 py-0.5 rounded text-xs bg-gray-700/50 border border-gray-600/50 text-gray-400 hover:bg-gray-700/70 hover:text-gray-300 transition-colors"
-                                  title="Add reaction"
-                                >
-                                  <span>+</span>
-                                </button>
-                                {openEmojiPicker === message.id && (
-                                  <div className="absolute bottom-full left-0 mb-2 flex gap-1 bg-gray-800 border border-gray-700 rounded-lg p-2 shadow-lg z-10">
-                                    {availableEmojis.map((emoji) => (
-                                      <button
-                                        key={emoji}
-                                        onClick={() => {
-                                          handleReaction(message.id, emoji);
-                                          setOpenEmojiPicker(null);
-                                        }}
-                                        className="text-xl hover:scale-125 transition-transform p-1"
-                                      >
-                                        {emoji}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </div>
-
-        {/* Message Input - Visible to all joined players */}
-        {joined && (
-          <form onSubmit={handleSendMessage} className="space-y-2">
-            <div className="flex items-stretch gap-2">
-              <input
-                type="text"
-                value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
-                placeholder="Send a message..."
-                className="flex-1 min-w-0 px-4 py-2 rounded bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                maxLength={500}
-                disabled={isSendingMessage}
-              />
-              <button
-                type="submit"
-                disabled={!messageText.trim() || isSendingMessage}
-                className="flex-shrink-0 px-6 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-white font-medium transition-colors"
-              >
-                {isSendingMessage ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                  </span>
-                ) : (
-                  "Send"
                 )}
-              </button>
-            </div>
-            <p className="text-xs text-gray-400">Everyone in the lobby can chat</p>
-          </form>
-        )}
-      </div>
-
-            {joined && (
+                {authError && (
+                  <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+                    Authentication Error: {authError}
+                  </div>
+                )}
+                <div className="mb-4">
+                  <input
+                    type="text"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value)}
+                    placeholder="Enter your name"
+                    className="w-full px-4 py-2 rounded bg-white text-black"
+                    required
+                    disabled={isJoining}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isJoining || isAuthLoading}
+                  data-testid="join-quiz-button"
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem 0",
+                    borderRadius: "0.375rem",
+                    color: "white",
+                    fontWeight: "500",
+                    backgroundColor:
+                      isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
+                    border: "none",
+                    cursor:
+                      isJoining || isAuthLoading ? "not-allowed" : "pointer",
+                    opacity: isJoining || isAuthLoading ? 0.5 : 1,
+                    transition: "background-color 0.2s ease",
+                    background:
+                      isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isJoining && !isAuthLoading) {
+                      e.currentTarget.style.backgroundColor = "#6B46C1";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isJoining && !isAuthLoading) {
+                      e.currentTarget.style.backgroundColor = "#795AFF";
+                    }
+                  }}
+                >
+                  {isAuthLoading
+                    ? "Loading..."
+                    : isJoining
+                    ? "Joining..."
+                    : !loggedUser?.isAuthenticated || !loggedUser?.session
+                    ? "Connect Wallet to Join"
+                    : "Join Quiz"}
+                </button>
+              </form>
+            ) : (
               <div className="w-full max-w-md flex flex-col gap-4">
                 <div className="relative bg-purple-600/20 border border-purple-500 rounded-lg p-4 text-center">
                   {/* Connection Status Indicator - Green Dot */}
