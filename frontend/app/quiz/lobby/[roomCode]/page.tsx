@@ -11,7 +11,7 @@ import { useSupabase } from "@/lib/supabase-context";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import Link from "next/link";
 import { useAuth } from "@/lib/use-auth";
-import { usePlayerSessionsRealtime, useLobbyMessagesRealtime } from "@/lib/use-realtime-hooks";
+import { usePlayerSessionsRealtime } from "@/lib/use-realtime-hooks";
 
 function LobbyContent() {
   const router = useRouter();
@@ -62,24 +62,6 @@ function LobbyContent() {
     createdAt: Date;
   } | null>(null);
   const [isCreator, setIsCreator] = useState(false);
-  const [copiedPin, setCopiedPin] = useState(false);
-  const [copiedLink, setCopiedLink] = useState(false);
-  const [messageText, setMessageText] = useState("");
-  const [isSendingMessage, setIsSendingMessage] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  // Reactions: messageId -> emoji -> array of player_session_ids
-  const [reactions, setReactions] = useState<Record<string, Record<string, string[]>>>({});
-  // Track which emoji picker is open
-  const [openEmojiPicker, setOpenEmojiPicker] = useState<string | null>(null);
-  // Banner notifications for creator messages
-  const [creatorBanners, setCreatorBanners] = useState<Array<{
-    id: string;
-    message: string;
-    playerName: string;
-    timestamp: number;
-  }>>([]);
-  // Track which creator messages have already been shown as banners
-  const shownCreatorMessagesRef = useRef<Set<string>>(new Set());
 
   // Use realtime hook for player sessions
   const { 
@@ -91,9 +73,6 @@ function LobbyContent() {
     initialFetch: true, 
     sortBy: 'joined_at' 
   });
-
-  // Use realtime hook for lobby messages
-  const { messages, isConnected: isMessagesConnected, channel: messagesChannel, addMessageLocal } = useLobbyMessagesRealtime(gameSessionId);
 
   const quiz = getCurrentQuiz() || quizData;
 
@@ -190,51 +169,20 @@ function LobbyContent() {
   // Check if player is already joined and if they're the creator
   useEffect(() => {
     const playerSessionId = localStorage.getItem("playerSessionId");
-    if (!playerSessionId || !gameSessionId) return;
-
-    const checkPlayerSession = async () => {
-      // First check in players list from realtime hook (fastest)
-      const existingPlayer = players.find(p => p.id === playerSessionId);
-      if (existingPlayer) {
+    if (playerSessionId && currentGame) {
+      const playerExists = currentGame.players.some(
+        (p) => p.id === playerSessionId
+      );
+      if (playerExists) {
         setJoined(true);
-        setPlayerName(existingPlayer.player_name);
-        
-        // Check if this player is the creator
-        if (gameData?.creator_session_id) {
-          setIsCreator(playerSessionId === gameData.creator_session_id);
-        }
-        return;
       }
+    }
 
-      // If not found in realtime players, verify with database
-      try {
-        const { data: playerData, error } = await supabase
-          .from("player_sessions")
-          .select("id, player_name, game_session_id")
-          .eq("id", playerSessionId)
-          .eq("game_session_id", gameSessionId)
-          .single();
-
-        if (!error && playerData) {
-          setJoined(true);
-          setPlayerName(playerData.player_name);
-          
-          // Check if this player is the creator
-          if (gameData?.creator_session_id) {
-            setIsCreator(playerSessionId === gameData.creator_session_id);
-          }
-        } else {
-          // Player session not found or invalid, clear localStorage
-          localStorage.removeItem("playerSessionId");
-          setJoined(false);
-        }
-      } catch (err) {
-        console.error("Error checking player session:", err);
-      }
-    };
-
-    checkPlayerSession();
-  }, [currentGame, gameData, players, gameSessionId, supabase]);
+    // Check if this player is the creator
+    if (playerSessionId && gameData?.creator_session_id) {
+      setIsCreator(playerSessionId === gameData.creator_session_id);
+    }
+  }, [currentGame, gameData]);
 
   // Listen for game status changes via realtime with auto-reconnection
   const gameStatusReconnectAttemptsRef = useRef(0);
@@ -404,33 +352,6 @@ function LobbyContent() {
     window.location.reload();
   };
 
-  const handleCopyPin = async () => {
-    const roomCodeToCopy = contextRoomCode || roomCodeFromUrl;
-    if (roomCodeToCopy) {
-      try {
-        await navigator.clipboard.writeText(roomCodeToCopy);
-        setCopiedPin(true);
-        setTimeout(() => setCopiedPin(false), 2000);
-      } catch (err) {
-        console.error("Failed to copy PIN:", err);
-      }
-    }
-  };
-
-  const handleCopyLink = async () => {
-    const roomCodeToCopy = contextRoomCode || roomCodeFromUrl;
-    if (roomCodeToCopy) {
-      const link = `${window.location.origin}/quiz/lobby/${roomCodeToCopy}`;
-      try {
-        await navigator.clipboard.writeText(link);
-        setCopiedLink(true);
-        setTimeout(() => setCopiedLink(false), 2000);
-      } catch (err) {
-        console.error("Failed to copy link:", err);
-      }
-    }
-  };
-
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -536,321 +457,22 @@ function LobbyContent() {
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!messageText.trim() || !joined || !gameSessionId || isSendingMessage || !messagesChannel) {
-      return;
-    }
-
-    const playerSessionId = localStorage.getItem("playerSessionId");
-    if (!playerSessionId) {
-      setError("Cannot send message: player session not found");
-      return;
-    }
-
-    // Find player name from players list
-    const currentPlayer = players.find(p => p.id === playerSessionId);
-    const senderName = currentPlayer?.player_name || playerName || "Unknown";
-
-    setIsSendingMessage(true);
-    setError("");
-
-    try {
-      // Create message object
-      const message: {
-        id: string;
-        message: string;
-        created_at: number;
-        player_session_id: string;
-        player_name: string;
-        is_creator: boolean;
-      } = {
-        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        message: messageText.trim(),
-        created_at: Date.now(),
-        player_session_id: playerSessionId,
-        player_name: senderName,
-        is_creator: isCreator,
-      };
-
-      // Add message locally immediately for instant feedback
-      addMessageLocal(message);
-
-      // Broadcast message via Realtime (no DB persistence)
-      const broadcastStatus = await messagesChannel.send({
-        type: "broadcast",
-        event: "lobby_message",
-        payload: message,
-      });
-
-      if (broadcastStatus === "error") {
-        console.error("Error broadcasting message");
-        setError("Failed to send message. Please try again.");
-        // Remove message from local state if broadcast failed
-        // (The message will be filtered out naturally since it won't arrive via broadcast)
-      } else {
-        // Message is already added locally, will also arrive via broadcast (but won't duplicate due to ID check)
-        setMessageText("");
-      }
-    } catch (err) {
-      console.error("Error sending message:", err);
-      setError("Failed to send message. Please try again.");
-    } finally {
-      setIsSendingMessage(false);
-    }
-  };
-
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // Handle creator banners - show only the latest creator message (only once per message)
-  useEffect(() => {
-    // Don't show banners to creator
-    if (isCreator) return;
-
-    // Find the latest creator message
-    const creatorMessages = messages.filter(m => m.is_creator && m.created_at);
-    if (creatorMessages.length === 0) return;
-
-    const latestMessage = creatorMessages.reduce((latest, current) => 
-      current.created_at > latest.created_at ? current : latest
-    );
-
-    // Check if this message has already been shown as a banner
-    if (shownCreatorMessagesRef.current.has(latestMessage.id)) {
-      return;
-    }
-
-    // Check if banner already exists for this message (in case it's currently showing)
-    const bannerExists = creatorBanners.some(b => b.id === latestMessage.id);
-    if (!bannerExists) {
-      // Mark this message as shown
-      shownCreatorMessagesRef.current.add(latestMessage.id);
-
-      // Clear previous banners and show only the latest
-      setCreatorBanners([{
-        id: latestMessage.id,
-        message: latestMessage.message,
-        playerName: latestMessage.player_name,
-        timestamp: latestMessage.created_at,
-      }]);
-
-      // Remove banner after 4 seconds
-      setTimeout(() => {
-        setCreatorBanners(prev => prev.filter(b => b.id !== latestMessage.id));
-      }, 4000);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, isCreator]);
-
-  // Close emoji picker when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      // Check if click is outside the emoji picker
-      if (!target.closest('.emoji-picker-container')) {
-        setOpenEmojiPicker(null);
-      }
-    };
-
-    if (openEmojiPicker) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
-      };
-    }
-  }, [openEmojiPicker]);
-
-  // Listen for reaction updates
-  useEffect(() => {
-    if (!messagesChannel || !gameSessionId) return;
-
-    const handleReaction = (payload: any) => {
-      const reaction = payload.payload as {
-        messageId: string;
-        emoji: string;
-        playerSessionId: string;
-        action: "add" | "remove";
-      };
-
-      setReactions((prev) => {
-        const newReactions = { ...prev };
-        if (!newReactions[reaction.messageId]) {
-          newReactions[reaction.messageId] = {};
-        }
-        if (!newReactions[reaction.messageId][reaction.emoji]) {
-          newReactions[reaction.messageId][reaction.emoji] = [];
-        }
-
-        const emojiReactions = [...newReactions[reaction.messageId][reaction.emoji]];
-        
-        if (reaction.action === "add") {
-          if (!emojiReactions.includes(reaction.playerSessionId)) {
-            emojiReactions.push(reaction.playerSessionId);
-          }
-        } else {
-          const index = emojiReactions.indexOf(reaction.playerSessionId);
-          if (index > -1) {
-            emojiReactions.splice(index, 1);
-          }
-        }
-
-        newReactions[reaction.messageId][reaction.emoji] = emojiReactions;
-        
-        // Clean up empty emoji arrays
-        if (emojiReactions.length === 0) {
-          delete newReactions[reaction.messageId][reaction.emoji];
-        }
-        if (Object.keys(newReactions[reaction.messageId]).length === 0) {
-          delete newReactions[reaction.messageId];
-        }
-
-        return newReactions;
-      });
-    };
-
-    // Subscribe to reaction events - listener is automatically cleaned up when channel is removed
-    messagesChannel.on(
-      "broadcast",
-      { event: "message_reaction" },
-      handleReaction
-    );
-  }, [messagesChannel, gameSessionId]);
-
-  const handleReaction = async (messageId: string, emoji: string) => {
-    if (!messagesChannel || !joined) return;
-
-    const playerSessionId = localStorage.getItem("playerSessionId");
-    if (!playerSessionId) return;
-
-    // Check if already reacted
-    const hasReacted = reactions[messageId]?.[emoji]?.includes(playerSessionId);
-    const action = hasReacted ? "remove" : "add";
-
-    // Update local state immediately for better UX
-    setReactions((prev) => {
-      const newReactions = { ...prev };
-      if (!newReactions[messageId]) {
-        newReactions[messageId] = {};
-      }
-      if (!newReactions[messageId][emoji]) {
-        newReactions[messageId][emoji] = [];
-      }
-
-      const emojiReactions = [...newReactions[messageId][emoji]];
-      
-      if (action === "add") {
-        if (!emojiReactions.includes(playerSessionId)) {
-          emojiReactions.push(playerSessionId);
-        }
-      } else {
-        const index = emojiReactions.indexOf(playerSessionId);
-        if (index > -1) {
-          emojiReactions.splice(index, 1);
-        }
-      }
-
-      newReactions[messageId][emoji] = emojiReactions;
-      
-      // Clean up empty emoji arrays
-      if (emojiReactions.length === 0) {
-        delete newReactions[messageId][emoji];
-      }
-      if (Object.keys(newReactions[messageId]).length === 0) {
-        delete newReactions[messageId];
-      }
-
-      return newReactions;
-    });
-
-    // Broadcast reaction
-    try {
-      await messagesChannel.send({
-        type: "broadcast",
-        event: "message_reaction",
-        payload: {
-          messageId,
-          emoji,
-          playerSessionId,
-          action,
-        },
-      });
-    } catch (err) {
-      console.error("Error sending reaction:", err);
-      // Revert local state on error
-      setReactions((prev) => {
-        const newReactions = { ...prev };
-        if (!newReactions[messageId]) {
-          newReactions[messageId] = {};
-        }
-        if (!newReactions[messageId][emoji]) {
-          newReactions[messageId][emoji] = [];
-        }
-
-        const emojiReactions = [...newReactions[messageId][emoji]];
-        
-        if (action === "remove") {
-          // Revert: add back
-          if (!emojiReactions.includes(playerSessionId)) {
-            emojiReactions.push(playerSessionId);
-          }
-        } else {
-          // Revert: remove
-          const index = emojiReactions.indexOf(playerSessionId);
-          if (index > -1) {
-            emojiReactions.splice(index, 1);
-          }
-        }
-
-        newReactions[messageId][emoji] = emojiReactions;
-        return newReactions;
-      });
-    }
-  };
-
-  const availableEmojis = ["👍", "❤️", "😂", "🎉", "🔥","🐺", "👏"];
-
   if (isLoadingGame) {
     return (
-      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
-        {/* Logo */}
-        <div className="absolute top-0 left-2 transform -translate-y-1 z-20">
-          <img 
-            src="/Logo.png" 
-            alt="Hoot Logo" 
-            className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => router.push('/')}
-          />
-        </div>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-pulse text-2xl font-bold">Loading game...</div>
-        </div>
+      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden flex items-center justify-center">
+        <div className="animate-pulse text-2xl font-bold">Loading game...</div>
       </div>
     );
   }
 
   if (!quiz && !quizData) {
     return (
-      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
-        {/* Logo */}
-        <div className="absolute top-0 left-2 transform -translate-y-1 z-20">
-          <img 
-            src="/Logo.png" 
-            alt="Hoot Logo" 
-            className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => router.push('/')}
-          />
-        </div>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="text-2xl font-bold mb-4">Game not found</div>
-            <Link href="/" className="text-blue-400 hover:underline">
-              Go back home
-            </Link>
-          </div>
+      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-2xl font-bold mb-4">Game not found</div>
+          <Link href="/" className="text-blue-400 hover:underline">
+            Go back home
+          </Link>
         </div>
       </div>
     );
@@ -904,85 +526,9 @@ function LobbyContent() {
           </div>
         )}
 
-        {/* Logo - centered above quiz title */}
-        <div className="mb-4">
-          <img 
-            src="/Logo.png" 
-            alt="Hoot Logo" 
-            className="h-32 w-auto cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => router.push('/')}
-          />
-        </div>
-
         <h1 className="text-3xl font-bold mb-8">
           {quiz?.title || "Quiz Lobby"}
         </h1>
-
-        {/* Join Form - Show if not joined */}
-        {!joined && (
-          <form onSubmit={handleJoin} className="w-full max-w-md mb-8">
-            {error && (
-              <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
-                {error}
-              </div>
-            )}
-            {authError && (
-              <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
-                Authentication Error: {authError}
-              </div>
-            )}
-            <div className="mb-4">
-              <input
-                type="text"
-                value={playerName}
-                onChange={(e) => setPlayerName(e.target.value)}
-                placeholder="Enter your name"
-                className="w-full px-4 py-2 rounded bg-white text-black"
-                required
-                disabled={isJoining}
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={isJoining || isAuthLoading}
-              data-testid="join-quiz-button"
-              style={{
-                width: "100%",
-                padding: "0.5rem 0",
-                borderRadius: "0.375rem",
-                color: "white",
-                fontWeight: "500",
-                backgroundColor:
-                  isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
-                border: "none",
-                cursor:
-                  isJoining || isAuthLoading ? "not-allowed" : "pointer",
-                opacity: isJoining || isAuthLoading ? 0.5 : 1,
-                transition: "background-color 0.2s ease",
-                background:
-                  isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
-              }}
-              onMouseEnter={(e) => {
-                if (!isJoining && !isAuthLoading) {
-                  e.currentTarget.style.backgroundColor = "#6B46C1";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isJoining && !isAuthLoading) {
-                  e.currentTarget.style.backgroundColor = "#795AFF";
-                }
-              }}
-            >
-              {isAuthLoading
-                ? "Loading..."
-                : isJoining
-                ? "Joining..."
-                : !loggedUser?.isAuthenticated || !loggedUser?.session
-                ? "Connect Wallet to Join"
-                : "Join Quiz"}
-            </button>
-          </form>
-        )}
 
         {countdown !== null && (
           <div className="mb-8 text-center">
@@ -993,91 +539,30 @@ function LobbyContent() {
 
         {countdown === null && (
           <>
-            {(() => {
-              // Filter out creator from players list
-              const filteredPlayers = players.filter(
-                (player) => player.id !== gameData?.creator_session_id
-              );
-              
-              return (
-                <>
-                  <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6 mb-8 w-full max-w-md">
+            <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6 mb-8 w-full max-w-md">
               <h2 className="text-xl font-semibold mb-4 text-purple-200">
                 Quiz Details
               </h2>
-              
-              <div className="space-y-4">
-                <div>
-                  <p className="text-gray-300 mb-2">Share this link with other players:</p>
-                  <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3 flex items-center justify-between">
-                    <p className="text-sm text-blue-400 break-all flex-1 mr-2">
-                      {typeof window !== "undefined"
-                        ? `${window.location.origin}/quiz/lobby/${contextRoomCode || roomCodeFromUrl || ""}`
-                        : "Loading..."}
-                    </p>
-                    <button
-                      onClick={handleCopyLink}
-                      className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
-                        copiedLink 
-                          ? 'bg-green-600 text-white' 
-                          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                      }`}
-                      title={copiedLink ? 'Copied!' : 'Copy link'}
-                    >
-                      {copiedLink ? (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                </div>
-                
-                <div>
-                  <p className="text-gray-300 mb-2">Or share the PIN:</p>
-                  <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3 flex items-center justify-between">
-                    <p className="text-2xl font-bold text-white font-mono flex-1 text-center">
-                      {contextRoomCode || roomCodeFromUrl || "N/A"}
-                    </p>
-                    <button
-                      onClick={handleCopyPin}
-                      className={`p-2 rounded-lg transition-colors ml-2 flex-shrink-0 ${
-                        copiedPin 
-                          ? 'bg-green-600 text-white' 
-                          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                      }`}
-                      title={copiedPin ? 'Copied!' : 'Copy PIN'}
-                    >
-                      {copiedPin ? (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="pt-2 border-t border-purple-700/50">
+              <ul className="space-y-2">
+                <li>
+                  Game PIN:{" "}
+                  <span className="font-mono font-bold text-2xl">
+                    {contextRoomCode || roomCodeFromUrl || "N/A"}
+                  </span>
+                </li>
+                <li>
                   Status:{" "}
                   <span className="capitalize">
                     {currentGame?.status || gameData?.status || "waiting"}
                   </span>
-                </div>
-              </div>
+                </li>
+              </ul>
             </div>
 
             <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
               <h2 className="text-xl font-semibold mb-4 text-purple-200 flex items-center justify-between">
-                <span>Players ({filteredPlayers.length})</span>
-                {filteredPlayers.length > 0 && (
+                <span>Players ({players.length})</span>
+                {players.length > 0 && (
                   <span className="text-sm text-green-400 flex items-center gap-1">
                     <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
                     Live
@@ -1085,11 +570,11 @@ function LobbyContent() {
                 )}
               </h2>
 
-              {filteredPlayers.length === 0 ? (
+              {players.length === 0 ? (
                 <p className="text-gray-400">Waiting for players to join...</p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {filteredPlayers.map((player) => (
+                  {players.map((player) => (
                     <div
                       key={player.id}
                       className="bg-purple-700/30 border border-purple-500/30 p-3 rounded text-center text-purple-100 relative group hover:bg-purple-700/50 transition-colors"
@@ -1108,189 +593,70 @@ function LobbyContent() {
               )}
             </div>
 
-            {/* Chat Component */}
-            <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
-        <h2 className="text-xl font-semibold mb-4 text-purple-200 flex items-center justify-between">
-          <span>💬 Lobby Chat</span>
-          {isMessagesConnected && (
-            <span className="text-xs text-green-400 flex items-center gap-1">
-            </span>
-          )}
-        </h2>
-
-        {/* Creator Banners - Only show to non-creators, only latest message */}
-        {!isCreator && creatorBanners.length > 0 && (
-          <div className="fixed top-4 right-4 z-50">
-            {creatorBanners.map((banner) => (
-              <div
-                key={banner.id}
-                className="bg-yellow-500/95 border border-yellow-400 rounded-lg p-3 shadow-lg max-w-sm animate-slide-in"
-              >
-                <div className="flex items-start gap-2">
-                  <span className="text-yellow-900 font-semibold text-sm">👑</span>
-                  <div className="flex-1">
-                    <p className="text-xs text-yellow-900 font-semibold mb-1">{banner.playerName}</p>
-                    <p className="text-sm text-yellow-900 whitespace-pre-wrap break-words">{banner.message}</p>
+            {!joined ? (
+              <form onSubmit={handleJoin} className="w-full max-w-md">
+                {error && (
+                  <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+                    {error}
                   </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Messages List - Discord style (no boxes) */}
-        <div className="rounded-lg p-4 mb-4 max-h-64 overflow-y-auto bg-purple-900/30">
-          {messages.length === 0 ? (
-            <p className="text-gray-400 text-sm text-center py-4">No messages yet. Start the conversation!</p>
-          ) : (
-            <div className="space-y-1">
-              {messages.map((message) => {
-                const messageReactions = reactions[message.id] || {};
-                const playerSessionId = localStorage.getItem("playerSessionId");
-                const isCurrentUser = playerSessionId === message.player_session_id;
-                
-                return (
-                  <div
-                    key={message.id}
-                    className={`py-1 px-2 rounded hover:bg-purple-700/20 transition-colors ${
-                      message.is_creator ? "bg-yellow-500/10 border-l-2 border-yellow-400" : ""
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {message.is_creator && (
-                        <span className="text-yellow-400 font-semibold text-sm flex-shrink-0">👑</span>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2">
-                          <span className={`text-sm font-semibold ${
-                            message.is_creator ? "text-yellow-300" : "text-purple-200"
-                          }`}>
-                            {message.player_name}
-                            {isCurrentUser && " (you)"}
-                          </span>
-                          <span className="text-xs text-gray-400">
-                            {new Date(message.created_at).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              second: "2-digit",
-                            })}
-                          </span>
-                        </div>
-                        <p className="text-gray-100 text-sm whitespace-pre-wrap break-words mt-0.5">
-                          {message.message}
-                        </p>
-                        
-                        {/* Reactions - Visible to everyone, but only joined users can interact */}
-                        {Object.keys(messageReactions).length > 0 || joined ? (
-                          <div className="mt-1 flex items-center gap-2 flex-wrap">
-                            {/* Existing reactions */}
-                            {Object.entries(messageReactions).map(([emoji, playerIds]) => {
-                              const count = playerIds.length;
-                              const hasReacted = joined && playerIds.includes(playerSessionId || "");
-                              
-                              if (joined) {
-                                // Joined users can click to toggle reactions
-                                return (
-                                  <button
-                                    key={emoji}
-                                    onClick={() => handleReaction(message.id, emoji)}
-                                    className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
-                                      hasReacted
-                                        ? "bg-purple-600/30 border border-purple-500/50 text-purple-200"
-                                        : "bg-gray-700/50 border border-gray-600/50 text-gray-300 hover:bg-gray-700/70"
-                                    }`}
-                                  >
-                                    <span>{emoji}</span>
-                                    <span className="text-xs">{count}</span>
-                                  </button>
-                                );
-                              } else {
-                                // Non-joined users can only see reactions
-                                return (
-                                  <span
-                                    key={emoji}
-                                    className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-700/50 border border-gray-600/50 text-gray-300"
-                                  >
-                                    <span>{emoji}</span>
-                                    <span className="text-xs">{count}</span>
-                                  </span>
-                                );
-                              }
-                            })}
-                            
-                            {/* Add reaction button - Only for joined users */}
-                            {joined && (
-                              <div className="relative emoji-picker-container">
-                                <button
-                                  onClick={() => setOpenEmojiPicker(openEmojiPicker === message.id ? null : message.id)}
-                                  className="px-2 py-0.5 rounded text-xs bg-gray-700/50 border border-gray-600/50 text-gray-400 hover:bg-gray-700/70 hover:text-gray-300 transition-colors"
-                                  title="Add reaction"
-                                >
-                                  <span>+</span>
-                                </button>
-                                {openEmojiPicker === message.id && (
-                                  <div className="absolute bottom-full left-0 mb-2 flex gap-1 bg-gray-800 border border-gray-700 rounded-lg p-2 shadow-lg z-10">
-                                    {availableEmojis.map((emoji) => (
-                                      <button
-                                        key={emoji}
-                                        onClick={() => {
-                                          handleReaction(message.id, emoji);
-                                          setOpenEmojiPicker(null);
-                                        }}
-                                        className="text-xl hover:scale-125 transition-transform p-1"
-                                      >
-                                        {emoji}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </div>
-
-        {/* Message Input - Visible to all joined players */}
-        {joined && (
-          <form onSubmit={handleSendMessage} className="space-y-2">
-            <div className="flex items-stretch gap-2">
-              <input
-                type="text"
-                value={messageText}
-                onChange={(e) => setMessageText(e.target.value)}
-                placeholder="Send a message..."
-                className="flex-1 min-w-0 px-4 py-2 rounded bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                maxLength={500}
-                disabled={isSendingMessage}
-              />
-              <button
-                type="submit"
-                disabled={!messageText.trim() || isSendingMessage}
-                className="flex-shrink-0 px-6 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-white font-medium transition-colors"
-              >
-                {isSendingMessage ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                  </span>
-                ) : (
-                  "Send"
                 )}
-              </button>
-            </div>
-            <p className="text-xs text-gray-400">Everyone in the lobby can chat</p>
-          </form>
-        )}
-      </div>
-
-            {joined && (
+                {authError && (
+                  <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+                    Authentication Error: {authError}
+                  </div>
+                )}
+                <div className="mb-4">
+                  <input
+                    type="text"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value)}
+                    placeholder="Enter your name"
+                    className="w-full px-4 py-2 rounded bg-white text-black"
+                    required
+                    disabled={isJoining}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isJoining || isAuthLoading}
+                  data-testid="join-quiz-button"
+                  style={{
+                    width: "100%",
+                    padding: "0.5rem 0",
+                    borderRadius: "0.375rem",
+                    color: "white",
+                    fontWeight: "500",
+                    backgroundColor:
+                      isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
+                    border: "none",
+                    cursor:
+                      isJoining || isAuthLoading ? "not-allowed" : "pointer",
+                    opacity: isJoining || isAuthLoading ? 0.5 : 1,
+                    transition: "background-color 0.2s ease",
+                    background:
+                      isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isJoining && !isAuthLoading) {
+                      e.currentTarget.style.backgroundColor = "#6B46C1";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isJoining && !isAuthLoading) {
+                      e.currentTarget.style.backgroundColor = "#795AFF";
+                    }
+                  }}
+                >
+                  {isAuthLoading
+                    ? "Loading..."
+                    : isJoining
+                    ? "Joining..."
+                    : !loggedUser?.isAuthenticated || !loggedUser?.session
+                    ? "Connect Wallet to Join"
+                    : "Join Quiz"}
+                </button>
+              </form>
+            ) : (
               <div className="w-full max-w-md flex flex-col gap-4">
                 <div className="relative bg-purple-600/20 border border-purple-500 rounded-lg p-4 text-center">
                   {/* Connection Status Indicator - Green Dot */}
@@ -1315,7 +681,7 @@ function LobbyContent() {
                 </div>
 
                 {/* Only show Start Quiz button to the creator */}
-                {isCreator && filteredPlayers.length > 0 && (
+                {isCreator && players.length > 0 && (
                   <button
                     onClick={handleStartQuiz}
                     className="w-full py-2 rounded text-white font-medium transition-colors"
@@ -1329,7 +695,7 @@ function LobbyContent() {
                       e.currentTarget.style.backgroundColor = "#22c55e"; // green-500 normal state
                     }}
                   >
-                    Start Quiz ({filteredPlayers.length} {filteredPlayers.length === 1 ? 'player' : 'players'})
+                    Start Quiz ({players.length} {players.length === 1 ? 'player' : 'players'})
                   </button>
                 )}
 
@@ -1341,9 +707,6 @@ function LobbyContent() {
                 </button>
               </div>
             )}
-                </>
-              );
-            })()}
           </>
         )}
       </div>
@@ -1352,23 +715,11 @@ function LobbyContent() {
 }
 
 export default function LobbyPage() {
-  const router = useRouter();
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen w-full bg-black text-white relative">
-          {/* Logo */}
-          <div className="absolute top-0 left-2 transform -translate-y-1 z-20">
-            <img 
-              src="/Logo.png" 
-              alt="Hoot Logo" 
-              className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
-              onClick={() => router.push('/')}
-            />
-          </div>
-          <div className="flex items-center justify-center min-h-screen">
-            Loading...
-          </div>
+        <div className="min-h-screen w-full bg-black text-white flex items-center justify-center">
+          Loading...
         </div>
       }
     >
