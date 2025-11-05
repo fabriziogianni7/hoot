@@ -7,7 +7,6 @@ import { useSupabase } from "@/lib/supabase-context";
 import { useAccount } from "wagmi";
 import Link from "next/link";
 import { sdk } from "@farcaster/miniapp-sdk";
-import { USDC_ADDRESSES, ZERO_ADDRESS } from "@/lib/contracts";
 
 export default function ResultsPage() {
   const router = useRouter();
@@ -23,7 +22,6 @@ export default function ResultsPage() {
   const [quizData, setQuizData] = useState<{
     id: string;
     prize_amount: number;
-    prize_token: string | null;
     creator_address: string;
     status: string;
     contract_tx_hash?: string;
@@ -84,7 +82,7 @@ export default function ResultsPage() {
       try {
         const { data, error } = await supabase
           .from('quizzes')
-          .select('id, prize_amount, prize_token, creator_address, status, contract_tx_hash')
+          .select('*')
           .eq('id', currentGame.quizId)
           .single();
           
@@ -355,42 +353,31 @@ export default function ResultsPage() {
           </div>
         </div>
         
-        {/* Prize Distribution Section - Only show for paid quizzes */}
-        {quizData && quizData.prize_amount > 0 && (() => {
-          // Determine token symbol based on prize_token
-          // prize_token is null or ZERO_ADDRESS for ETH, otherwise it's the token address
-          const isETH = !quizData.prize_token || 
-            quizData.prize_token.toLowerCase() === ZERO_ADDRESS.toLowerCase();
-          const isUSDC = !isETH && quizData.prize_token &&
-            (quizData.prize_token.toLowerCase() === USDC_ADDRESSES.base.toLowerCase() ||
-             quizData.prize_token.toLowerCase() === USDC_ADDRESSES.baseSepolia.toLowerCase());
-          const tokenSymbol = isUSDC ? "USDC" : "ETH";
-          const decimals = isUSDC ? 2 : 6; // USDC has 2 decimals, ETH has 6 for better precision
-          
-          return (
+        {/* Prize Distribution Section - Only show for paid quizzes (>= 0.01 ETH) */}
+        {quizData && quizData.prize_amount > 0 && (
           <div className="bg-purple-600/20 border border-purple-500 rounded-lg p-6 mb-8 w-full max-w-md">
             <h3 className="text-xl font-semibold mb-4 text-center text-purple-200">Prize Distribution</h3>
             
             <div className="mb-4 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span>Total Prize Pool:</span>
-                <span className="font-bold">{quizData.prize_amount.toFixed(decimals)} {tokenSymbol}</span>
+                <span className="font-bold">{quizData.prize_amount} ETH</span>
               </div>
               <div className="flex justify-between">
                 <span>1st Place (40%):</span>
-                <span>{(quizData.prize_amount * 0.36).toFixed(decimals)} {tokenSymbol}</span>
+                <span>{(quizData.prize_amount * 0.36).toFixed(4)} ETH</span>
               </div>
               <div className="flex justify-between">
                 <span>2nd Place (30%):</span>
-                <span>{(quizData.prize_amount * 0.27).toFixed(decimals)} {tokenSymbol}</span>
+                <span>{(quizData.prize_amount * 0.27).toFixed(4)} ETH</span>
               </div>
               <div className="flex justify-between">
                 <span>3rd Place (20%):</span>
-                <span>{(quizData.prize_amount * 0.18).toFixed(decimals)} {tokenSymbol}</span>
+                <span>{(quizData.prize_amount * 0.18).toFixed(4)} ETH</span>
               </div>
               <div className="flex justify-between text-gray-400">
                 <span>Treasury (10%):</span>
-                <span>{(quizData.prize_amount * 0.1).toFixed(decimals)} {tokenSymbol}</span>
+                <span>{(quizData.prize_amount * 0.1).toFixed(4)} ETH</span>
               </div>
             </div>
             
@@ -447,8 +434,7 @@ export default function ResultsPage() {
               </div>
             )}
           </div>
-          );
-        })()}
+        )}
         
         {quizData && quizData.status === 'completed' && (
           <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-4 mb-8 w-full max-w-md text-center">
