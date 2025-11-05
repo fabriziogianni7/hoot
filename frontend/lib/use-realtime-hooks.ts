@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useSupabase } from "./supabase-context";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -309,6 +309,8 @@ export type LobbyMessage = {
   message: string;
   created_at: number; // Timestamp
   player_session_id: string;
+  player_name: string;
+  is_creator: boolean;
 };
 
 /**
@@ -387,10 +389,24 @@ export function useLobbyMessagesRealtime(
     };
   }, [gameSessionId, supabase]);
 
+  // Function to add message locally (for immediate feedback when sending)
+  const addMessageLocal = useCallback((message: LobbyMessage) => {
+    setMessages((prev) => {
+      // Check if message already exists (avoid duplicates)
+      if (prev.some((m) => m.id === message.id)) {
+        return prev;
+      }
+      return [...prev, message].sort(
+        (a, b) => a.created_at - b.created_at
+      );
+    });
+  }, []);
+
   return {
     messages,
     isConnected,
     channel: channelRef.current, // Expose channel for sending messages
+    addMessageLocal, // Function to add message locally
   };
 }
 

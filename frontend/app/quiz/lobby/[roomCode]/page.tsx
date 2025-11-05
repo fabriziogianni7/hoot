@@ -78,6 +78,17 @@ function LobbyContent() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // Reactions: messageId -> emoji -> array of player_session_ids
   const [reactions, setReactions] = useState<Record<string, Record<string, string[]>>>({});
+  // Track which emoji picker is open
+  const [openEmojiPicker, setOpenEmojiPicker] = useState<string | null>(null);
+  // Banner notifications for creator messages
+  const [creatorBanners, setCreatorBanners] = useState<Array<{
+    id: string;
+    message: string;
+    playerName: string;
+    timestamp: number;
+  }>>([]);
+  // Track which creator messages have already been shown as banners
+  const shownCreatorMessagesRef = useRef<Set<string>>(new Set());
 
   // Use realtime hook for player sessions
   const { 
@@ -91,7 +102,7 @@ function LobbyContent() {
   });
 
   // Use realtime hook for lobby messages
-  const { messages, isConnected: isMessagesConnected, channel: messagesChannel } = useLobbyMessagesRealtime(gameSessionId);
+  const { messages, isConnected: isMessagesConnected, channel: messagesChannel, addMessageLocal } = useLobbyMessagesRealtime(gameSessionId);
 
   const quiz = getCurrentQuiz() || quizData;
 
@@ -188,20 +199,51 @@ function LobbyContent() {
   // Check if player is already joined and if they're the creator
   useEffect(() => {
     const playerSessionId = localStorage.getItem("playerSessionId");
-    if (playerSessionId && currentGame) {
-      const playerExists = currentGame.players.some(
-        (p) => p.id === playerSessionId
-      );
-      if (playerExists) {
-        setJoined(true);
-      }
-    }
+    if (!playerSessionId || !gameSessionId) return;
 
-    // Check if this player is the creator
-    if (playerSessionId && gameData?.creator_session_id) {
-      setIsCreator(playerSessionId === gameData.creator_session_id);
-    }
-  }, [currentGame, gameData]);
+    const checkPlayerSession = async () => {
+      // First check in players list from realtime hook (fastest)
+      const existingPlayer = players.find(p => p.id === playerSessionId);
+      if (existingPlayer) {
+        setJoined(true);
+        setPlayerName(existingPlayer.player_name);
+        
+        // Check if this player is the creator
+        if (gameData?.creator_session_id) {
+          setIsCreator(playerSessionId === gameData.creator_session_id);
+        }
+        return;
+      }
+
+      // If not found in realtime players, verify with database
+      try {
+        const { data: playerData, error } = await supabase
+          .from("player_sessions")
+          .select("id, player_name, game_session_id")
+          .eq("id", playerSessionId)
+          .eq("game_session_id", gameSessionId)
+          .single();
+
+        if (!error && playerData) {
+          setJoined(true);
+          setPlayerName(playerData.player_name);
+          
+          // Check if this player is the creator
+          if (gameData?.creator_session_id) {
+            setIsCreator(playerSessionId === gameData.creator_session_id);
+          }
+        } else {
+          // Player session not found or invalid, clear localStorage
+          localStorage.removeItem("playerSessionId");
+          setJoined(false);
+        }
+      } catch (err) {
+        console.error("Error checking player session:", err);
+      }
+    };
+
+    checkPlayerSession();
+  }, [currentGame, gameData, players, gameSessionId, supabase]);
 
   // Listen for game status changes via realtime with auto-reconnection
   const gameStatusReconnectAttemptsRef = useRef(0);
@@ -506,7 +548,7 @@ function LobbyContent() {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!messageText.trim() || !isCreator || !gameSessionId || isSendingMessage || !messagesChannel) {
+    if (!messageText.trim() || !joined || !gameSessionId || isSendingMessage || !messagesChannel) {
       return;
     }
 
@@ -515,6 +557,10 @@ function LobbyContent() {
       setError("Cannot send message: player session not found");
       return;
     }
+
+    // Find player name from players list
+    const currentPlayer = players.find(p => p.id === playerSessionId);
+    const senderName = currentPlayer?.player_name || playerName || "Unknown";
 
     setIsSendingMessage(true);
     setError("");
@@ -526,12 +572,19 @@ function LobbyContent() {
         message: string;
         created_at: number;
         player_session_id: string;
+        player_name: string;
+        is_creator: boolean;
       } = {
         id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         message: messageText.trim(),
         created_at: Date.now(),
         player_session_id: playerSessionId,
+        player_name: senderName,
+        is_creator: isCreator,
       };
+
+      // Add message locally immediately for instant feedback
+      addMessageLocal(message);
 
       // Broadcast message via Realtime (no DB persistence)
       const broadcastStatus = await messagesChannel.send({
@@ -543,8 +596,10 @@ function LobbyContent() {
       if (broadcastStatus === "error") {
         console.error("Error broadcasting message");
         setError("Failed to send message. Please try again.");
+        // Remove message from local state if broadcast failed
+        // (The message will be filtered out naturally since it won't arrive via broadcast)
       } else {
-        // Message will be received via broadcast and added by the hook
+        // Message is already added locally, will also arrive via broadcast (but won't duplicate due to ID check)
         setMessageText("");
       }
     } catch (err) {
@@ -559,6 +614,64 @@ function LobbyContent() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Handle creator banners - show only the latest creator message (only once per message)
+  useEffect(() => {
+    // Don't show banners to creator
+    if (isCreator) return;
+
+    // Find the latest creator message
+    const creatorMessages = messages.filter(m => m.is_creator && m.created_at);
+    if (creatorMessages.length === 0) return;
+
+    const latestMessage = creatorMessages.reduce((latest, current) => 
+      current.created_at > latest.created_at ? current : latest
+    );
+
+    // Check if this message has already been shown as a banner
+    if (shownCreatorMessagesRef.current.has(latestMessage.id)) {
+      return;
+    }
+
+    // Check if banner already exists for this message (in case it's currently showing)
+    const bannerExists = creatorBanners.some(b => b.id === latestMessage.id);
+    if (!bannerExists) {
+      // Mark this message as shown
+      shownCreatorMessagesRef.current.add(latestMessage.id);
+
+      // Clear previous banners and show only the latest
+      setCreatorBanners([{
+        id: latestMessage.id,
+        message: latestMessage.message,
+        playerName: latestMessage.player_name,
+        timestamp: latestMessage.created_at,
+      }]);
+
+      // Remove banner after 4 seconds
+      setTimeout(() => {
+        setCreatorBanners(prev => prev.filter(b => b.id !== latestMessage.id));
+      }, 4000);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, isCreator]);
+
+  // Close emoji picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      // Check if click is outside the emoji picker
+      if (!target.closest('.emoji-picker-container')) {
+        setOpenEmojiPicker(null);
+      }
+    };
+
+    if (openEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [openEmojiPicker]);
 
   // Listen for reaction updates
   useEffect(() => {
@@ -707,7 +820,7 @@ function LobbyContent() {
     }
   };
 
-  const availableEmojis = ["👍", "❤️", "😂", "🎉", "🔥", "👏"];
+  const availableEmojis = ["👍", "❤️", "😂", "🎉", "🔥","🐺", "👏"];
 
   if (isLoadingGame) {
     return (
@@ -938,41 +1051,81 @@ function LobbyContent() {
               )}
             </div>
 
-            {/* Chat Component - Creator Announcements */}
+            {/* Chat Component */}
             <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
         <h2 className="text-xl font-semibold mb-4 text-purple-200 flex items-center justify-between">
-          <span>💬 Creator Announcements  </span>
+          <span>💬 Lobby Chat</span>
           {isMessagesConnected && (
             <span className="text-xs text-green-400 flex items-center gap-1">
             </span>
           )}
         </h2>
 
-        {/* Messages List */}
-        {messages.length > 0 && (
-          <div className="rounded-lg p-4 mb-4 max-h-64 overflow-y-auto">
-            <div className="space-y-3">
+        {/* Creator Banners - Only show to non-creators, only latest message */}
+        {!isCreator && creatorBanners.length > 0 && (
+          <div className="fixed top-4 right-4 z-50">
+            {creatorBanners.map((banner) => (
+              <div
+                key={banner.id}
+                className="bg-yellow-500/95 border border-yellow-400 rounded-lg p-3 shadow-lg max-w-sm animate-slide-in"
+              >
+                <div className="flex items-start gap-2">
+                  <span className="text-yellow-900 font-semibold text-sm">👑</span>
+                  <div className="flex-1">
+                    <p className="text-xs text-yellow-900 font-semibold mb-1">{banner.playerName}</p>
+                    <p className="text-sm text-yellow-900 whitespace-pre-wrap break-words">{banner.message}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Messages List - Discord style (no boxes) */}
+        <div className="rounded-lg p-4 mb-4 max-h-64 overflow-y-auto bg-purple-900/30">
+          {messages.length === 0 ? (
+            <p className="text-gray-400 text-sm text-center py-4">No messages yet. Start the conversation!</p>
+          ) : (
+            <div className="space-y-1">
               {messages.map((message) => {
                 const messageReactions = reactions[message.id] || {};
                 const playerSessionId = localStorage.getItem("playerSessionId");
+                const isCurrentUser = playerSessionId === message.player_session_id;
                 
                 return (
-                  <div key={message.id} className="bg-white border border-gray-200 rounded-lg p-3">
+                  <div
+                    key={message.id}
+                    className={`py-1 px-2 rounded hover:bg-purple-700/20 transition-colors ${
+                      message.is_creator ? "bg-yellow-500/10 border-l-2 border-yellow-400" : ""
+                    }`}
+                  >
                     <div className="flex items-start gap-2">
-                      <span className="text-yellow-400 font-semibold text-sm">👑</span>
-                      <div className="flex-1">
-                        <p className="text-gray-900 text-sm whitespace-pre-wrap break-words">{message.message}</p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {new Date(message.created_at).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          })}
+                      {message.is_creator && (
+                        <span className="text-yellow-400 font-semibold text-sm flex-shrink-0">👑</span>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2">
+                          <span className={`text-sm font-semibold ${
+                            message.is_creator ? "text-yellow-300" : "text-purple-200"
+                          }`}>
+                            {message.player_name}
+                            {isCurrentUser && " (you)"}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {new Date(message.created_at).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                            })}
+                          </span>
+                        </div>
+                        <p className="text-gray-100 text-sm whitespace-pre-wrap break-words mt-0.5">
+                          {message.message}
                         </p>
                         
                         {/* Reactions */}
                         {joined && (
-                          <div className="mt-2 flex items-center gap-2 flex-wrap">
+                          <div className="mt-1 flex items-center gap-2 flex-wrap">
                             {/* Existing reactions */}
                             {Object.entries(messageReactions).map(([emoji, playerIds]) => {
                               const count = playerIds.length;
@@ -981,51 +1134,57 @@ function LobbyContent() {
                                 <button
                                   key={emoji}
                                   onClick={() => handleReaction(message.id, emoji)}
-                                  className={`flex items-center gap-1 px-2 py-1 rounded-full text-sm transition-colors ${
+                                  className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
                                     hasReacted
-                                      ? "bg-purple-100 border border-purple-300"
-                                      : "bg-gray-100 border border-gray-200 hover:bg-gray-200"
+                                      ? "bg-purple-600/30 border border-purple-500/50 text-purple-200"
+                                      : "bg-gray-700/50 border border-gray-600/50 text-gray-300 hover:bg-gray-700/70"
                                   }`}
                                 >
                                   <span>{emoji}</span>
-                                  <span className="text-xs text-gray-600">{count}</span>
+                                  <span className="text-xs">{count}</span>
                                 </button>
                               );
                             })}
                             
                             {/* Add reaction button */}
-                            <div className="relative group">
+                            <div className="relative emoji-picker-container">
                               <button
-                                className="px-2 py-1 rounded-full text-sm bg-gray-100 border border-gray-200 hover:bg-gray-200 transition-colors"
+                                onClick={() => setOpenEmojiPicker(openEmojiPicker === message.id ? null : message.id)}
+                                className="px-2 py-0.5 rounded text-xs bg-gray-700/50 border border-gray-600/50 text-gray-400 hover:bg-gray-700/70 hover:text-gray-300 transition-colors"
                                 title="Add reaction"
                               >
-                                <span className="text-gray-500">+</span>
+                                <span>+</span>
                               </button>
-                              <div className="absolute bottom-full left-0 mb-2 hidden group-hover:flex gap-1 bg-white border border-gray-200 rounded-lg p-2 shadow-lg z-10">
-                                {availableEmojis.map((emoji) => (
-                                  <button
-                                    key={emoji}
-                                    onClick={() => handleReaction(message.id, emoji)}
-                                    className="text-xl hover:scale-125 transition-transform p-1"
-                                  >
-                                    {emoji}
-                                  </button>
-                                ))}
-                              </div>
+                              {openEmojiPicker === message.id && (
+                                <div className="absolute bottom-full left-0 mb-2 flex gap-1 bg-gray-800 border border-gray-700 rounded-lg p-2 shadow-lg z-10">
+                                  {availableEmojis.map((emoji) => (
+                                    <button
+                                      key={emoji}
+                                      onClick={() => {
+                                        handleReaction(message.id, emoji);
+                                        setOpenEmojiPicker(null);
+                                      }}
+                                      className="text-xl hover:scale-125 transition-transform p-1"
+                                    >
+                                      {emoji}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
                         )}
                         
                         {/* Show reactions count for non-joined users */}
                         {!joined && Object.keys(messageReactions).length > 0 && (
-                          <div className="mt-2 flex items-center gap-2 flex-wrap">
+                          <div className="mt-1 flex items-center gap-2 flex-wrap">
                             {Object.entries(messageReactions).map(([emoji, playerIds]) => (
                               <span
                                 key={emoji}
-                                className="flex items-center gap-1 px-2 py-1 rounded-full text-sm bg-gray-100 border border-gray-200"
+                                className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-700/50 border border-gray-600/50 text-gray-300"
                               >
                                 <span>{emoji}</span>
-                                <span className="text-xs text-gray-600">{playerIds.length}</span>
+                                <span className="text-xs">{playerIds.length}</span>
                               </span>
                             ))}
                           </div>
@@ -1037,11 +1196,11 @@ function LobbyContent() {
               })}
               <div ref={messagesEndRef} />
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Message Input - Only visible to creator */}
-        {isCreator && joined && (
+        {/* Message Input - Visible to all joined players */}
+        {joined && (
           <form onSubmit={handleSendMessage} className="space-y-2">
             <div className="flex items-stretch gap-2">
               <input
@@ -1067,7 +1226,7 @@ function LobbyContent() {
                 )}
               </button>
             </div>
-            <p className="text-xs text-gray-400">Only you can send announcements to all players</p>
+            <p className="text-xs text-gray-400">Everyone in the lobby can chat</p>
           </form>
         )}
       </div>
