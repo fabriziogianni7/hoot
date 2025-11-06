@@ -4,51 +4,55 @@ import { base } from "wagmi/chains";
 import { OnchainKitProvider } from "@coinbase/onchainkit";
 // Rimuoviamo temporaneamente questo import per risolvere il conflitto con Tailwind
 // import "@coinbase/onchainkit/styles.css";
-import '@farcaster/auth-kit/styles.css';
+import "@farcaster/auth-kit/styles.css";
 import { QuizProvider } from "@/lib/quiz-context";
 import { SupabaseProvider } from "@/lib/supabase-context";
 import { NetworkProvider } from "@/lib/network-context";
-import { WagmiProvider } from "wagmi";
+import { WagmiProvider } from "@privy-io/wagmi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { wagmiConfig } from "@/lib/wagmi";
+import { PrivyProvider } from "@privy-io/react-auth";
+import { privyConfig } from "@/lib/privy-config";
 
 const queryClient = new QueryClient();
 
 // Farcaster Auth Kit configuration for miniapp
 // For miniapps, we can use minimal configuration as Farcaster handles most of the auth
 
-
 export function RootProvider({ children }: { children: ReactNode }) {
   return (
-    <OnchainKitProvider
-      apiKey={process.env.NEXT_PUBLIC_ONCHAINKIT_API_KEY}
-      chain={base}
-      config={{
-        appearance: {
-          mode: "auto",
-        },
-        wallet: {
-          display: "modal",
-          preference: "all",
-        },
-      }}
-      miniKit={{
-        enabled: true,
-        autoConnect: true,
-        notificationProxyUrl: undefined,
-      }}
+    <PrivyProvider
+      appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID || ""}
+      config={privyConfig}
     >
-      <WagmiProvider config={wagmiConfig}>
-        <QueryClientProvider client={queryClient}>
-          <NetworkProvider>
-            <SupabaseProvider>
-              <QuizProvider>
-                {children}
-              </QuizProvider>
-            </SupabaseProvider>
-          </NetworkProvider>
-        </QueryClientProvider>
-      </WagmiProvider>
-    </OnchainKitProvider>
+      <QueryClientProvider client={queryClient}>
+        <WagmiProvider config={wagmiConfig}>
+          <OnchainKitProvider
+            apiKey={process.env.NEXT_PUBLIC_ONCHAINKIT_API_KEY}
+            chain={base}
+            config={{
+              appearance: {
+                mode: "auto",
+              },
+              wallet: {
+                display: "modal",
+                preference: "all",
+              },
+            }}
+            miniKit={{
+              enabled: true,
+              autoConnect: true,
+              notificationProxyUrl: undefined,
+            }}
+          >
+            <NetworkProvider>
+              <SupabaseProvider>
+                <QuizProvider>{children}</QuizProvider>
+              </SupabaseProvider>
+            </NetworkProvider>
+          </OnchainKitProvider>
+        </WagmiProvider>
+      </QueryClientProvider>
+    </PrivyProvider>
   );
 }

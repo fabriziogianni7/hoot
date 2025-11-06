@@ -27,7 +27,7 @@ function LobbyContent() {
   const { address } = useAccount();
   const { supabase } = useSupabase();
   const { isFrameReady, setFrameReady } = useMiniKit();
-  const { loggedUser, isAuthLoading, authError, triggerAuth } = useAuth();
+  const { loggedUser, isAuthLoading, authError, triggerAuth, signatureModal } = useAuth();
   const [countdown, setCountdown] = useState<number | null>(null);
   const [playerName, setPlayerName] = useState("");
   const [joined, setJoined] = useState(false);
@@ -978,7 +978,7 @@ function LobbyContent() {
                 : isJoining
                 ? "Joining..."
                 : !loggedUser?.isAuthenticated || !loggedUser?.session
-                ? "Connect Wallet to Join"
+                ? "Connect To Hoot to Join"
                 : "Join Quiz"}
             </button>
           </form>
@@ -1347,6 +1347,9 @@ function LobbyContent() {
           </>
         )}
       </div>
+
+      {/* Signature confirmation modal */}
+      {signatureModal}
     </div>
   );
 }

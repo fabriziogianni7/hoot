@@ -70,7 +70,7 @@ function AdminPageContent() {
   const publicClient = usePublicClient();
   const { supabase } = useSupabase();
   const { data: ethBalance } = useBalance({ address });
-  const { loggedUser, isAuthLoading, authError, triggerAuth } = useAuth();
+  const { loggedUser, isAuthLoading, authError, triggerAuth, signatureModal } = useAuth();
 
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -1188,7 +1188,7 @@ function AdminPageContent() {
                 backgroundColor: "#795AFF",
               }}
             >
-              Connect Wallet to Create Quiz
+              Connect To Hoot to Create Quiz
             </button>
           )}
 
@@ -1448,6 +1448,9 @@ function AdminPageContent() {
           }}
         />
       )}
+
+      {/* Signature confirmation modal */}
+      {signatureModal}
     </div>
   );
 }

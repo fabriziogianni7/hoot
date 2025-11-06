@@ -17,7 +17,7 @@ export default function MyQuizzesPage() {
   const router = useRouter();
   const { supabase } = useSupabase();
   const { address } = useAccount();
-  const { loggedUser } = useAuth();
+  const { loggedUser, signatureModal } = useAuth();
   const [quizzes, setQuizzes] = useState<QuizRow[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -184,6 +184,9 @@ export default function MyQuizzesPage() {
           </div>
         )}
       </div>
+
+      {/* Signature confirmation modal */}
+      {signatureModal}
     </div>
   );
 }
