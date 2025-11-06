@@ -117,7 +117,7 @@ function LobbyContent() {
         const { data: gameSession, error: gameError } = await supabase
           .from("game_sessions")
           .select(`*, quizzes (*)`)
-          .eq("room_code", roomCodeFromUrl)
+          .eq("room_code", roomCodeFromUrl.toLocaleUpperCase())
           .single();
 
         if (gameError || !gameSession) {
