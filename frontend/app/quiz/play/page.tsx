@@ -637,7 +637,7 @@ function PlayQuizContent() {
       )}
 
       {/* Points Banner */}
-      {showPointsBanner && (
+      {showPointsBanner && !isCreator && (
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-30">
           <div className={`text-white px-8 py-4 rounded-2xl shadow-2xl border-4 animate-bounce ${
             earnedPoints > 0 
@@ -645,11 +645,9 @@ function PlayQuizContent() {
               : 'bg-gradient-to-r from-red-500 to-red-600 border-red-300'
           }`}>
             <div className="text-center">
-              {
-               !isCreator && <div className="text-4xl font-bold mb-2">
+              <div className="text-4xl font-bold mb-2">
                 {earnedPoints > 0 ? 'Correct!' : (selectedAnswer === null ? "Time's up!" :  'Wrong!')}
               </div>
-              }
               <div className="text-2xl font-semibold">
                 {earnedPoints > 0 ? `+${earnedPoints} points` : '0 points'}
               </div>
