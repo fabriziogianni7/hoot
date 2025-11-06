@@ -18,7 +18,7 @@ export default function Home() {
   const [isPinFocused, setIsPinFocused] = useState(false);
 
   // Use the shared authentication hook
-  const { loggedUser, isAuthLoading, authError, triggerAuth } = useAuth();
+  const { loggedUser, isAuthLoading, authError, triggerAuth, signatureModal } = useAuth();
 
   // Badge text state
   const [badgeText, setBadgeText] = useState<{
@@ -502,6 +502,9 @@ export default function Home() {
           </p>
         </div>
       </div>
+
+      {/* Signature confirmation modal */}
+      {signatureModal}
     </div>
   );
 }

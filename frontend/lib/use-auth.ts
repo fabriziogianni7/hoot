@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { sdk } from "@farcaster/miniapp-sdk";
 
 import { supabase } from "./supabase-client";
+import SignatureConfirmationModal from "../components/SignatureConfirmationModal";
 import { useAccount, useConnections, useSignMessage, useEnsName, useConnect, Connector } from "wagmi";
 import type { Session, AuthError, User } from "@supabase/supabase-js";
 import { base, mainnet } from "viem/chains";
@@ -26,6 +27,7 @@ interface UseAuthReturn {
   authError: string | null;
   triggerAuth: (chainId?: number) => Promise<void>;
   connectWallet: (chainId?: number) => Promise<void>;
+  signatureModal: React.ReactNode;
 }
 
 /**
@@ -41,6 +43,7 @@ export function useAuth(): UseAuthReturn {
   const [loggedUser, setLoggedUser] = useState<LoggedUser | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
 
   // Wagmi hooks
   const { signMessageAsync } = useSignMessage();
@@ -133,7 +136,7 @@ export function useAuth(): UseAuthReturn {
   }, [connectAsync, connectors, connections.length]);
 
   // Sign message and sign in with Web3
-  const signMsgAndSignInWithWeb3 = useCallback(async (): Promise<void> => {
+  const performSignIn = useCallback(async (): Promise<void> => {
     if (!address || connections.length <= 0) {
       console.log("⚠️ Cannot sign in: no address or connections");
       return;
@@ -228,6 +231,21 @@ export function useAuth(): UseAuthReturn {
       setIsAuthLoading(false);
     }
   }, [address, signMessageAsync, connections.length, ensName]);
+
+  // Handlers for signature confirmation modal
+  const handleSignatureConfirm = useCallback(async () => {
+    setShowSignatureModal(false);
+    await performSignIn();
+  }, [performSignIn]);
+
+  const handleSignatureCancel = useCallback(() => {
+    setShowSignatureModal(false);
+  }, []);
+
+  // Main function that shows modal first
+  const signMsgAndSignInWithWeb3 = useCallback(async (): Promise<void> => {
+    setShowSignatureModal(true);
+  }, []);
 
   const triggerAuth = useCallback(async (chainId: number = 8453) => {
     if (connections.length === 0) {
@@ -386,5 +404,10 @@ export function useAuth(): UseAuthReturn {
     authError,
     triggerAuth,
     connectWallet,
+    signatureModal: React.createElement(SignatureConfirmationModal, {
+      isOpen: showSignatureModal,
+      onConfirm: handleSignatureConfirm,
+      onCancel: handleSignatureCancel,
+    }),
   };
 }
