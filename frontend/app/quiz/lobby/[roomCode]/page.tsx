@@ -978,7 +978,7 @@ function LobbyContent() {
                 : isJoining
                 ? "Joining..."
                 : !loggedUser?.isAuthenticated || !loggedUser?.session
-                ? "Connect Wallet to Join"
+                ? "Connect To Hoot to Join"
                 : "Join Quiz"}
             </button>
           </form>

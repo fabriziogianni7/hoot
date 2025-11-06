@@ -1188,7 +1188,7 @@ function AdminPageContent() {
                 backgroundColor: "#795AFF",
               }}
             >
-              Connect Wallet to Create Quiz
+              Connect To Hoot to Create Quiz
             </button>
           )}
 

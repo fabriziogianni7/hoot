@@ -1,5 +1,6 @@
 import { farcasterMiniApp as miniAppConnector } from "@farcaster/miniapp-wagmi-connector";
-import { createConfig, http } from "wagmi";
+import { createConfig } from "@privy-io/wagmi";
+import { http } from "wagmi";
 import { baseAccount, injected } from "wagmi/connectors";
 import { base, baseSepolia } from "viem/chains";
 

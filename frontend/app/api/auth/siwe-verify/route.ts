@@ -26,11 +26,11 @@ const viemClient = createPublicClient({
 export async function POST(request: Request) {
   try {
 
-    const { message, signature, address, fid, username } = await request.json();
+    const { message, signature, address, fid, username, email } = await request.json();
     // Validate required fields
-    if (!message || !signature || !address) {
+    if (!message || !signature || !address || !email) {
       return NextResponse.json(
-        { error: "Missing required fields: message, signature, or address" },
+        { error: "Missing required fields: message, signature, address, or email" },
         { status: 400 }
       );
     }
@@ -128,7 +128,7 @@ export async function POST(request: Request) {
         // No existing user with this FID, proceed with create/find by address
         const { data, error: upsertError } =
           await supabaseAdmin.auth.admin.createUser({
-            email: `${address.toLowerCase()}@wallet.hoot`,
+            email: email,
             email_confirm: true,
             user_metadata: {
               wallet_address: address.toLowerCase(),
