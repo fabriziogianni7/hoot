@@ -11,6 +11,9 @@ import type { Session, AuthError, User } from "@supabase/supabase-js";
 import { base, mainnet } from "viem/chains";
 import { toCoinType } from "viem";
 import { SiweMessage } from "siwe";
+import { detectMiniappClient, type MiniappClient } from "./miniapp-client";
+
+type AuthFlowState = "idle" | "checking" | "wallet_required" | "signing" | "ready" | "error";
 
 interface LoggedUser {
   address?: string;
@@ -26,10 +29,13 @@ interface UseAuthReturn {
   loggedUser: LoggedUser | null;
   isAuthLoading: boolean;
   authError: string | null;
-  triggerAuth: (chainId?: number) => Promise<void>;
+  triggerAuth: (chainId?: number, mode?: "auto" | "miniapp" | "privy") => Promise<void>;
   connectWallet: (chainId?: number) => Promise<void>;
   logout: () => Promise<void>;
   signatureModal: React.ReactNode;
+  authFlowState: AuthFlowState;
+  isMiniapp: boolean | null;
+  miniappClient: MiniappClient | null;
 }
 
 /**
@@ -47,6 +53,8 @@ export function useAuth(): UseAuthReturn {
   const [authError, setAuthError] = useState<string | null>(null);
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [isMiniapp, setIsMiniapp] = useState<boolean | null>(null);
+  const [miniappClient, setMiniappClient] = useState<MiniappClient | null>(null);
+  const [authFlowState, setAuthFlowState] = useState<AuthFlowState>("idle");
 
   // Privy hooks
   const { ready, authenticated, user: privyUser, login: privyLogin, logout: privyLogout } = usePrivy();
@@ -65,8 +73,20 @@ export function useAuth(): UseAuthReturn {
       try {
         const miniappStatus = await sdk.isInMiniApp();
         setIsMiniapp(miniappStatus);
+        if (miniappStatus) {
+          try {
+            const context = await sdk.context;
+            setMiniappClient(detectMiniappClient(context));
+          } catch (error) {
+            console.warn("Unable to fetch miniapp context", error);
+            setMiniappClient("unknown");
+          }
+        } else {
+          setMiniappClient(null);
+        }
       } catch {
         setIsMiniapp(false);
+        setMiniappClient(null);
       }
     };
     checkMiniapp();
@@ -332,6 +352,7 @@ export function useAuth(): UseAuthReturn {
       console.error("❌ Sign in error:", error);
       setAuthError(errorMessage);
       setSessionError(error as AuthError);
+      setAuthFlowState("error");
       setIsAuthLoading(false);
     }
   }, [address, signMessageAsync, connections.length, ensName, isMiniapp, privyUser, sessionData, wallets, setActiveWallet]);
@@ -348,6 +369,8 @@ export function useAuth(): UseAuthReturn {
 
   // Main function that shows modal first
   const signMsgAndSignInWithWeb3 = useCallback(async (): Promise<void> => {
+    setAuthFlowState("signing");
+    setIsAuthLoading(true);
     // Check if we already have a valid Supabase session
     try {
       const { data: sessionData, error } = await supabase.auth.getSession();
@@ -370,6 +393,8 @@ export function useAuth(): UseAuthReturn {
           console.log("✅ Wallet still connected, skipping signature modal");
           // Update local sessionData state
           setSessionData({ session: sessionData.session, user: sessionData.session.user });
+          setAuthFlowState("ready");
+          setIsAuthLoading(false);
           return;
         } else {
           console.log("⚠️ Session exists but wallet disconnected, need re-authentication");
@@ -382,11 +407,24 @@ export function useAuth(): UseAuthReturn {
     setShowSignatureModal(true);
   }, [isMiniapp, connections.length, ready, authenticated, privyUser]);
 
-  const triggerAuth = useCallback(async (chainId: number = 8453) => {
+  const triggerAuth = useCallback(
+    async (chainId: number = 8453, mode: "auto" | "miniapp" | "privy" = "auto") => {
     if (isMiniapp === null) {
       // Still checking miniapp status
       return;
     }
+
+    const resolvedMode = mode === "auto"
+      ? (isMiniapp && miniappClient !== "telegram" ? "miniapp" : "privy")
+      : mode;
+
+    const targetMode =
+      resolvedMode === "miniapp" && miniappClient === "telegram"
+        ? "privy"
+        : resolvedMode;
+
+    setAuthError(null);
+    setAuthFlowState("checking");
 
     // Check if we already have a valid Supabase session with connected wallet
     try {
@@ -395,7 +433,7 @@ export function useAuth(): UseAuthReturn {
       if (!error && sessionData?.session) {
         let walletConnected = false;
 
-        if (isMiniapp) {
+        if (targetMode === "miniapp") {
           walletConnected = connections.length > 0;
         } else {
           walletConnected = ready && authenticated && !!privyUser?.wallet?.address;
@@ -405,6 +443,8 @@ export function useAuth(): UseAuthReturn {
           console.log("✅ Already authenticated with connected wallet, skipping auth trigger");
           // Update local sessionData state
           setSessionData({ session: sessionData.session, user: sessionData.session.user });
+          setAuthFlowState("ready");
+          setIsAuthLoading(false);
           return;
         }
       }
@@ -412,38 +452,47 @@ export function useAuth(): UseAuthReturn {
       console.log("❌ Error checking existing session:", error);
     }
 
-    if (isMiniapp) {
+    if (targetMode === "miniapp") {
       // Miniapp: use traditional wallet connection flow
       if (connections.length === 0) {
         console.log("🔌 Connecting wallet for miniapp...");
         try {
           await connectWallet(chainId);
           // After successful connection, the useEffect will handle sign in
-        } catch {
-          setAuthError("Failed to connect wallet. Please try again.");
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : "Failed to connect wallet. Please try again.";
+          setAuthError(errorMessage);
+          setAuthFlowState("error");
+          setIsAuthLoading(false);
           return;
         }
       }
 
       // Only sign if we don't have a session
       if (!sessionData?.session) {
+        setAuthFlowState("signing");
+        setIsAuthLoading(true);
         await signMsgAndSignInWithWeb3();
       }
     } else {
       // External app: use Privy authentication
       if (!ready) {
         console.log("⏳ Privy not ready yet");
+        setAuthFlowState("checking");
         return;
       }
 
       if (!authenticated) {
         console.log("🔐 Starting Privy authentication...");
         try {
+          setAuthFlowState("wallet_required");
           privyLogin();
           // After Privy login completes, the useEffect will handle SIWE signing
         } catch (error) {
           console.error("❌ Privy login failed:", error);
           setAuthError("Failed to authenticate with Privy");
+          setAuthFlowState("error");
+          setIsAuthLoading(false);
         }
       } else {
         // Privy authenticated - ensure wallet is connected before signing
@@ -452,16 +501,22 @@ export function useAuth(): UseAuthReturn {
           if (!privyUser?.wallet?.address) {
             console.log("⚠️ Privy authenticated but no wallet available");
             setAuthError("Please connect or create a wallet to continue.");
+            setAuthFlowState("wallet_required");
+            setIsAuthLoading(false);
             return;
           }
 
           // Wallet is available, proceed with signing
           console.log("✅ Privy wallet ready, proceeding with authentication");
+          setAuthFlowState("signing");
+          setIsAuthLoading(true);
           await signMsgAndSignInWithWeb3();
         }
       }
     }
-  }, [isMiniapp, connections.length, sessionData, signMsgAndSignInWithWeb3, connectWallet, ready, authenticated, privyLogin, privyUser]);
+  },
+    [isMiniapp, miniappClient, connections.length, sessionData, signMsgAndSignInWithWeb3, connectWallet, ready, authenticated, privyLogin, privyUser]
+  );
 
   // Logout function
   const logout = useCallback(async () => {
@@ -481,6 +536,7 @@ export function useAuth(): UseAuthReturn {
       setSessionError(null);
       setHasCheckedSession(false);
       setIsAuthLoading(false);
+      setAuthFlowState("idle");
 
       console.log("✅ Logged out successfully");
     } catch (error: unknown) {
@@ -660,11 +716,13 @@ export function useAuth(): UseAuthReturn {
         const user = await createLoggedUser(sessionData!.session);
         setLoggedUser(user);
         setIsAuthLoading(false);
+        setAuthFlowState("ready");
         console.log("✅ User setup complete");
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : "Failed to setup user";
         console.error("❌ User setup error:", error);
         setAuthError(errorMessage);
+        setAuthFlowState("error");
         setIsAuthLoading(false);
       }
     };
@@ -691,6 +749,7 @@ export function useAuth(): UseAuthReturn {
       setLoggedUser(null);
       setSessionData(null);
       setIsAuthLoading(false);
+      setAuthFlowState("idle");
     }
   }, [connections.length, loggedUser, isMiniapp, authenticated]);
 
@@ -706,5 +765,8 @@ export function useAuth(): UseAuthReturn {
       onConfirm: handleSignatureConfirm,
       onCancel: handleSignatureCancel,
     }),
+    authFlowState,
+    isMiniapp,
+    miniappClient,
   };
 }

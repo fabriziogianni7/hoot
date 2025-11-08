@@ -53,6 +53,7 @@ export default function ResultsPage() {
     const totalQuestions = quiz.questions.length;
     const playerRank = sortedPlayers.findIndex(p => p.id === currentPlayerId) + 1;
     
+
     // Create the cast text
     const castText = `🎯 Just completed "${quiz.title}" quiz!\n\n` +
       `📊 My Score: ${currentPlayer.score} points\n` +
@@ -60,13 +61,15 @@ export default function ResultsPage() {
       `🏆 Ranked #${playerRank} out of ${sortedPlayers.length} players\n\n` +
       `Play Hoot Quiz and test your knowledge! 🦉`;
     
+    const quizUrl = `${window.location.origin}/`;
+
     try {
       // Use the new composeCast function
       await sdk.actions.composeCast({ 
         text: castText,
         close: false,
         channelKey: 'hoot',
-        embeds: []
+        embeds: [`${quizUrl}` as string]
       });
     } catch (error) {
       console.error('Error casting:', error);

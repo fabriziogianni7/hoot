@@ -27,12 +27,22 @@ function LobbyContent() {
   const { address } = useAccount();
   const { supabase } = useSupabase();
   const { isFrameReady, setFrameReady } = useMiniKit();
-  const { loggedUser, isAuthLoading, authError, triggerAuth, signatureModal } = useAuth();
+  const {
+    loggedUser,
+    isAuthLoading,
+    authError,
+    triggerAuth,
+    authFlowState,
+    isMiniapp,
+    miniappClient,
+    signatureModal,
+  } = useAuth();
   const [countdown, setCountdown] = useState<number | null>(null);
   const [playerName, setPlayerName] = useState("");
   const [joined, setJoined] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState("");
+  const [hasTriggeredAuth, setHasTriggeredAuth] = useState(false);
 
   const roomCodeFromUrl = params.roomCode as string;
   const [isLoadingGame, setIsLoadingGame] = useState(true);
@@ -96,6 +106,14 @@ function LobbyContent() {
   const { messages, isConnected: isMessagesConnected, channel: messagesChannel, addMessageLocal } = useLobbyMessagesRealtime(gameSessionId);
 
   const quiz = getCurrentQuiz() || quizData;
+  const authReady = Boolean(loggedUser?.isAuthenticated && authFlowState === "ready");
+  const needsPrivyFlow = (isMiniapp === false) || miniappClient === "telegram";
+  const handleAuthClick = (mode: "miniapp" | "privy") => {
+    setHasTriggeredAuth(true);
+    triggerAuth(8453, mode).catch((err) => {
+      console.error("Error triggering authentication flow:", err);
+    });
+  };
 
   // Initialize the miniapp
   useEffect(() => {
@@ -104,20 +122,46 @@ function LobbyContent() {
     }
   }, [setFrameReady, isFrameReady]);
 
+  // Auto-trigger authentication for embedded miniapps that already provide a wallet
+  useEffect(() => {
+    if (authReady) return;
+    if (isMiniapp === null) return;
+    if (hasTriggeredAuth) return;
+
+    if (isMiniapp && miniappClient && miniappClient !== "telegram") {
+      const attemptAuth = async () => {
+        try {
+          await triggerAuth(8453, "miniapp");
+        } catch (err) {
+          console.error("Error triggering miniapp authentication:", err);
+        }
+      };
+
+      attemptAuth();
+      setHasTriggeredAuth(true);
+    }
+  }, [authReady, hasTriggeredAuth, isMiniapp, miniappClient, triggerAuth]);
+
   // Load game session if room code is provided
   useEffect(() => {
+    if (!authReady) {
+      return;
+    }
+
     const loadGameSession = async () => {
       if (!roomCodeFromUrl) {
         setIsLoadingGame(false);
         return;
       }
 
+      setIsLoadingGame(true);
+      setError("");
       try {
         // Fetch game session from backend
         const { data: gameSession, error: gameError } = await supabase
           .from("game_sessions")
           .select(`*, quizzes (*)`)
-          .eq("room_code", roomCodeFromUrl.toLocaleUpperCase())
+          .eq("room_code", roomCodeFromUrl)
           .single();
 
         if (gameError || !gameSession) {
@@ -185,7 +229,7 @@ function LobbyContent() {
     };
 
     loadGameSession();
-  }, [roomCodeFromUrl, supabase, setCurrentQuiz]);
+  }, [roomCodeFromUrl, supabase, setCurrentQuiz, authReady]);
 
   // Check if player is already joined and if they're the creator
   useEffect(() => {
@@ -439,20 +483,6 @@ function LobbyContent() {
       setError("");
 
       try {
-        // Check if user is authenticated, if not trigger authentication
-        if (!loggedUser?.isAuthenticated || !loggedUser?.session) {
-          console.log("User not authenticated, triggering auth...");
-          await triggerAuth(8453);
-
-          // After triggerAuth completes, check again if user is now authenticated
-          // If still not authenticated, the auth flow was cancelled or failed
-          if (!loggedUser?.isAuthenticated) {
-            setError("Authentication required to join the game.");
-            setIsJoining(false);
-            return;
-          }
-        }
-
         const roomCodeToUse = roomCodeFromUrl || contextRoomCode;
         if (!roomCodeToUse) {
           setError("No room code available");
@@ -813,62 +843,141 @@ function LobbyContent() {
 
   const availableEmojis = ["👍", "❤️", "😂", "🎉", "🔥","🐺", "👏"];
 
+  if (!authReady) {
+    const isProcessing =
+      authFlowState === "checking" || authFlowState === "signing" || isAuthLoading;
+    const environmentPending = isMiniapp === null;
+    const buttonLabel = needsPrivyFlow
+      ? "Connect with Privy"
+      : miniappClient === "base"
+      ? "Continue with Base embedded wallet"
+      : "Continue with Farcaster wallet";
+    const description = needsPrivyFlow
+      ? "Connect or create a wallet with Privy to join the quiz lobby."
+      : "Use the embedded miniapp wallet and sign a message to enter the lobby.";
+    const displayDescription = environmentPending ? "Checking your environment..." : description;
+    const footerMessage = environmentPending
+      ? "Hang tight while we detect the client capabilities."
+      : needsPrivyFlow
+      ? "You’ll be prompted by Privy to connect or create a wallet."
+      : "We’ll request a signature from your embedded wallet to confirm the session.";
+    const showSpinner = isProcessing || environmentPending;
+
+    return (
+      <>
+        {signatureModal}
+        <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
+          <div className="absolute top-0 left-2 transform -translate-y-1 z-20">
+            <img
+              src="/Logo.png"
+              alt="Hoot Logo"
+              className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => router.push("/")}
+            />
+          </div>
+          <div className="flex items-center justify-center min-h-screen px-4">
+            <div className="max-w-md w-full bg-purple-900/40 border border-purple-700/60 rounded-2xl p-8 text-center space-y-5">
+              <h1 className="text-2xl font-bold">Connect your wallet</h1>
+              <p className="text-sm text-gray-300">{displayDescription}</p>
+              {authError && (
+                <div className="bg-red-500/20 border border-red-500 rounded-lg p-3 text-sm text-red-200">
+                  {authError}
+                </div>
+              )}
+              {showSpinner ? (
+                <div className="flex flex-col items-center gap-2 text-sm text-gray-300">
+                  <div className="w-6 h-6 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                  <span>
+                    {authFlowState === "signing"
+                      ? "Awaiting signature..."
+                      : "Preparing authentication..."}
+                  </span>
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleAuthClick(needsPrivyFlow ? "privy" : "miniapp")}
+                  className="w-full py-2 bg-purple-600 hover:bg-purple-700 rounded text-white font-medium transition-colors"
+                >
+                  {buttonLabel}
+                </button>
+              )}
+              {authFlowState === "error" && (
+                <p className="text-xs text-red-300">
+                  Something went wrong. Please try again.
+                </p>
+              )}
+              <p className="text-xs text-gray-500">{footerMessage}</p>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   if (isLoadingGame) {
     return (
-      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
-        {/* Logo */}
-        <div className="absolute top-0 left-2 transform -translate-y-1 z-20">
-          <img 
-            src="/Logo.png" 
-            alt="Hoot Logo" 
-            className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => router.push('/')}
-          />
+      <>
+        {signatureModal}
+        <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
+          {/* Logo */}
+          <div className="absolute top-0 left-2 transform -translate-y-1 z-20">
+            <img 
+              src="/Logo.png" 
+              alt="Hoot Logo" 
+              className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => router.push('/')}
+            />
+          </div>
+          <div className="flex items-center justify-center min-h-screen">
+            <div className="animate-pulse text-2xl font-bold">Loading game...</div>
+          </div>
         </div>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="animate-pulse text-2xl font-bold">Loading game...</div>
-        </div>
-      </div>
+      </>
     );
   }
 
   if (!quiz && !quizData) {
     return (
-      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
-        {/* Logo */}
-        <div className="absolute top-0 left-2 transform -translate-y-1 z-20">
-          <img 
-            src="/Logo.png" 
-            alt="Hoot Logo" 
-            className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
-            onClick={() => router.push('/')}
-          />
-        </div>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="text-2xl font-bold mb-4">Game not found</div>
-            <Link href="/" className="text-blue-400 hover:underline">
-              Go back home
-            </Link>
+      <>
+        {signatureModal}
+        <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
+          {/* Logo */}
+          <div className="absolute top-0 left-2 transform -translate-y-1 z-20">
+            <img 
+              src="/Logo.png" 
+              alt="Hoot Logo" 
+              className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+              onClick={() => router.push('/')}
+            />
+          </div>
+          <div className="flex items-center justify-center min-h-screen">
+            <div className="text-center">
+              <div className="text-2xl font-bold mb-4">Game not found</div>
+              <Link href="/" className="text-blue-400 hover:underline">
+                Go back home
+              </Link>
+            </div>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
-      {/* Background network effect */}
-      <div
-        className="absolute inset-0 z-0 opacity-40"
-        style={{
-          backgroundImage: "url('/network-bg.svg')",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
-      />
+    <>
+      {signatureModal}
+      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
+        {/* Background network effect */}
+        <div
+          className="absolute inset-0 z-0 opacity-40"
+          style={{
+            backgroundImage: "url('/network-bg.svg')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        />
 
-      <div className="relative z-10 container mx-auto py-8 px-4 flex flex-col items-center">
+        <div className="relative z-10 container mx-auto py-8 px-4 flex flex-col items-center">
         {/* Connection Status Indicator */}
         {!isRealtimeConnected && (
           <div className="fixed top-4 right-4 z-50 bg-red-600/95 backdrop-blur-sm border border-red-400 rounded-lg p-4 shadow-2xl max-w-xs">
@@ -977,8 +1086,6 @@ function LobbyContent() {
                 ? "Loading..."
                 : isJoining
                 ? "Joining..."
-                : !loggedUser?.isAuthenticated || !loggedUser?.session
-                ? "Connect To Hoot to Join"
                 : "Join Quiz"}
             </button>
           </form>
@@ -1346,11 +1453,9 @@ function LobbyContent() {
             })()}
           </>
         )}
+        </div>
       </div>
-
-      {/* Signature confirmation modal */}
-      {signatureModal}
-    </div>
+    </>
   );
 }
 
