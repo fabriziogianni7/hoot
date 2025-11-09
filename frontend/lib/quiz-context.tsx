@@ -253,7 +253,17 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       console.log('Setting currentGame with quizId:', newGameState.quizId);
       setCurrentGame(newGameState)
 
-      return response.player_session_id
+      const playerSessionId = response.player_session_id
+
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('playerSessionId', playerSessionId)
+        } catch (storageError) {
+          console.warn('Failed to persist playerSessionId to localStorage', storageError)
+        }
+      }
+
+      return playerSessionId
     } catch (error) {
       console.error('Error joining game:', error)
       throw error
