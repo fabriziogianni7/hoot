@@ -267,7 +267,13 @@ function LobbyContent() {
           if (gameData?.creator_session_id) {
             setIsCreator(playerSessionId === gameData.creator_session_id);
           }
-        } else {
+        } else if (error?.code !== 'PGRST116') {
+          console.warn("Invalid cached playerSessionId; clearing to allow rejoin", {
+            playerSessionId,
+            gameSessionId,
+            error,
+            playerData
+          });
           // Player session not found or invalid, clear localStorage
           localStorage.removeItem("playerSessionId");
           setJoined(false);
