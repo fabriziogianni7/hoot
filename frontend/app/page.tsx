@@ -18,15 +18,7 @@ export default function Home() {
   const [isPinFocused, setIsPinFocused] = useState(false);
 
   // Use the shared authentication hook
-  const {
-    loggedUser,
-    isAuthLoading,
-    authError,
-    triggerAuth,
-    signatureModal,
-    authFlowState,
-    isMiniapp,
-  } = useAuth();
+  const { loggedUser, isAuthLoading, authError, triggerAuth, signatureModal, authFlowState } = useAuth();
 
   // Badge text state
   const [badgeText, setBadgeText] = useState<{
@@ -162,18 +154,17 @@ export default function Home() {
     }
   };
 
-  const isAuthReady = isMiniapp ? loggedUser?.isAuthenticated && authFlowState === "ready" : true;
+  const isAuthReady = loggedUser?.isAuthenticated && authFlowState === "ready";
 
   const handleAuthenticate = async () => {
-    if (isMiniapp && !isAuthReady) {
+    if (!isAuthReady) {
       return;
     }
     await triggerAuth(8453);
   };
 
-  const isAuthActionDisabled = isMiniapp
-    ? isAuthLoading || !isAuthReady
-    : isAuthLoading;
+  const isAuthActionDisabled =
+    isAuthLoading || !isAuthReady;
 
   return (
     <div
