@@ -45,40 +45,6 @@ export default function ResultsPage() {
   
   const quiz = getCurrentQuiz();
   
-  // Handle casting result
-  const handleCastResult = async () => {
-    if (!currentPlayer || !quiz) return;
-    
-    const correctAnswers = currentPlayer.answers.filter(a => a.isCorrect).length;
-    const totalQuestions = quiz.questions.length;
-    const playerRank = sortedPlayers.findIndex(p => p.id === currentPlayerId) + 1;
-    
-
-    // Create the cast text
-    const castText = `🎯 Just completed "${quiz.title}" quiz!\n\n` +
-      `📊 My Score: ${currentPlayer.score} points\n` +
-      `✅ Got ${correctAnswers}/${totalQuestions} questions right\n` +
-      `🏆 Ranked #${playerRank} out of ${sortedPlayers.length} players\n\n` +
-      `Play Hoot Quiz and test your knowledge! 🦉`;
-    
-    const quizUrl = `${window.location.origin}/`;
-
-    try {
-      // Use the new composeCast function
-      await sdk.actions.composeCast({ 
-        text: castText,
-        close: false,
-        channelKey: 'hoot',
-        embeds: [`${quizUrl}` as string]
-      });
-    } catch (error) {
-      console.error('Error casting:', error);
-      // Fallback to copy to clipboard
-      navigator.clipboard.writeText(castText);
-      alert('Cast text copied to clipboard!');
-    }
-  };
-  
   // Load quiz data and player answers from backend (only once on mount)
   useEffect(() => {
     const loadQuizData = async () => {
@@ -235,6 +201,40 @@ export default function ResultsPage() {
   // Get current player
   const currentPlayerId = localStorage.getItem("playerSessionId");
   const currentPlayer = currentGame.players.find(p => p.id === currentPlayerId);
+  
+  // Handle casting result
+  const handleCastResult = async () => {
+    if (!currentPlayer || !quiz) return;
+    
+    const correctAnswers = currentPlayer.answers.filter(a => a.isCorrect).length;
+    const totalQuestions = quiz.questions.length;
+    const playerRank = sortedPlayers.findIndex(p => p.id === currentPlayerId) + 1;
+    
+    // Create the cast text
+    const castText = `🎯 Just completed "${quiz.title}" quiz!\n\n` +
+      `📊 My Score: ${currentPlayer.score} points\n` +
+      `✅ Got ${correctAnswers}/${totalQuestions} questions right\n` +
+      `🏆 Ranked #${playerRank} out of ${sortedPlayers.length} players\n\n` +
+      `Play Hoot Quiz and test your knowledge! 🦉`;
+    
+    // URL della miniapp (home page)
+    const appUrl = `${window.location.origin}/`;
+    
+    try {
+      // Use the new composeCast function with embed
+      await sdk.actions.composeCast({ 
+        text: castText,
+        close: false,
+        channelKey: 'hoot',
+        embeds: [appUrl]
+      });
+    } catch (error) {
+      console.error('Error casting:', error);
+      // Fallback to copy to clipboard
+      navigator.clipboard.writeText(castText);
+      alert('Cast text copied to clipboard!');
+    }
+  };
   
   const handleDistributePrizes = async () => {
       if (!address || !quizData || !gameSessionId) {

@@ -18,7 +18,7 @@ export default function Home() {
   const [isPinFocused, setIsPinFocused] = useState(false);
 
   // Use the shared authentication hook
-  const { loggedUser, isAuthLoading, authError, triggerAuth, signatureModal } = useAuth();
+  const { loggedUser, isAuthLoading, authError, triggerAuth, signatureModal, authFlowState } = useAuth();
 
   // Badge text state
   const [badgeText, setBadgeText] = useState<{
@@ -155,9 +155,14 @@ export default function Home() {
   };
 
   const handleAuthenticate = async () => {
-    // Wallet already connected, just trigger auth
+    if (authFlowState === "signing" || authFlowState === "checking") {
+      return;
+    }
     await triggerAuth(8453);
   };
+
+  const isAuthActionDisabled =
+    isAuthLoading || authFlowState === "signing" || authFlowState === "checking";
 
   return (
     <div
@@ -449,24 +454,30 @@ export default function Home() {
         ) : (
           // User is not authenticated - show disabled button or prompt to connect
           <button
+            disabled={isAuthActionDisabled}
             onClick={() => handleAuthenticate()}
             style={{
               width: "100%",
               padding: "0.75rem",
-              backgroundColor: "#795AFF",
+              backgroundColor: isAuthActionDisabled ? "rgba(121, 90, 255, 0.4)" : "#795AFF",
               color: "white",
               border: "none",
               borderRadius: "0.5rem",
               fontSize: "1rem",
               fontWeight: "500",
               textAlign: "center",
-              cursor: "pointer",
+              cursor: isAuthActionDisabled ? "not-allowed" : "pointer",
+              opacity: isAuthActionDisabled ? 0.7 : 1,
               transition: "opacity 0.2s",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+            onMouseEnter={(e) => {
+              if (!isAuthActionDisabled) {
+                e.currentTarget.style.opacity = "0.8";
+              }
+            }}
             onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
           >
-            Connect To Hoot & Create Quiz
+            {isAuthActionDisabled ? "Connecting..." : "Connect To Hoot & Create Quiz"}
           </button>
         )}
 

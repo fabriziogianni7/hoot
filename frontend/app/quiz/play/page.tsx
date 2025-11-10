@@ -445,7 +445,7 @@ function PlayQuizContent() {
     // Non-creators wait for creator to advance via realtime update
   };
   
-  const handleNextQuestion = () => {
+  const handleNextQuestion = async () => {
     console.log("Moving to next question from:", currentQuestionIndex);
     
     // Only creator can advance questions
@@ -454,10 +454,20 @@ function PlayQuizContent() {
       return;
     }
     
+    const isLastQuestion = quiz ? currentQuestionIndex >= quiz.questions.length - 1 : false;
+    
     // Ferma il timer prima di passare alla prossima domanda
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
+    }
+    
+    if (isLastQuestion) {
+      console.log("Final question completed, showing results");
+      setNextQuestionCountdown(null);
+      
+      await nextQuestion();
+      return;
     }
     
     // Reset timer states
@@ -537,6 +547,7 @@ function PlayQuizContent() {
   }
   
   const correctAnswerIndex = currentQuestion.correctAnswer;
+  const isLastQuestion = currentQuestionIndex >= (quiz?.questions.length ?? 0) - 1;
   
   return (
     <>
@@ -782,7 +793,11 @@ function PlayQuizContent() {
                 }
               }}
             >
-              {timeLeft > 0 ? `Wait ${timeLeft}s...` : 'Next Question →'}
+              {timeLeft > 0 
+                ? `Wait ${timeLeft}s...` 
+                : isLastQuestion 
+                  ? 'Show Results →' 
+                  : 'Next Question →'}
             </button>
           </div>
         ) : (

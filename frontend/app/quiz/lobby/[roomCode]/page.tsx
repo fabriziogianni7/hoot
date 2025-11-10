@@ -856,8 +856,8 @@ function LobbyContent() {
     const buttonLabel = needsPrivyFlow
       ? "Connect with Privy"
       : miniappClient === "base"
-      ? "Continue with Base embedded wallet"
-      : "Continue with Farcaster wallet";
+      ? "Continue with Base account"
+      : "Continue with Farcaster account";
     const description = needsPrivyFlow
       ? "Connect or create a wallet with Privy to join the quiz lobby."
       : "Use the embedded miniapp wallet and sign a message to enter the lobby.";

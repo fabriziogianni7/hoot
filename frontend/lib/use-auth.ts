@@ -470,6 +470,9 @@ export function useAuth(): UseAuthReturn {
 
       // Only sign if we don't have a session
       if (!sessionData?.session) {
+        if (authFlowState === "signing") {
+          return;
+        }
         setAuthFlowState("signing");
         setIsAuthLoading(true);
         await signMsgAndSignInWithWeb3();
@@ -497,6 +500,9 @@ export function useAuth(): UseAuthReturn {
       } else {
         // Privy authenticated - ensure wallet is connected before signing
         if (!sessionData?.session) {
+          if (authFlowState === "signing") {
+            return;
+          }
           // Check if user has a wallet connected
           if (!privyUser?.wallet?.address) {
             console.log("⚠️ Privy authenticated but no wallet available");
@@ -515,7 +521,7 @@ export function useAuth(): UseAuthReturn {
       }
     }
   },
-    [isMiniapp, miniappClient, connections.length, sessionData, signMsgAndSignInWithWeb3, connectWallet, ready, authenticated, privyLogin, privyUser]
+    [isMiniapp, miniappClient, connections.length, sessionData, signMsgAndSignInWithWeb3, connectWallet, ready, authenticated, privyLogin, privyUser, authFlowState]
   );
 
   // Logout function
@@ -670,6 +676,9 @@ export function useAuth(): UseAuthReturn {
     // Trigger sign in if no session or if address changed or if wallet became disconnected
     if ((!sessionData || isAddressMismatch || !shouldSignIn) && !authError && !sessionError) {
       console.log("🔐 No valid session or wallet issue found, initiating sign in...");
+      if (authFlowState === "signing") {
+        return;
+      }
       signMsgAndSignInWithWeb3();
     }
   }, [
@@ -684,7 +693,8 @@ export function useAuth(): UseAuthReturn {
     isMiniapp,
     ready,
     authenticated,
-    privyUser
+    privyUser,
+    authFlowState
   ]);
 
   // Effect 3: When we have session data, create logged user

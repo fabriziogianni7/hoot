@@ -23,7 +23,7 @@ export default function SignatureConfirmationModal({
         <div className="space-y-6">
           <div className="text-center">
             <p className="text-gray-300 mb-4">
-              To continue, you'll need to sign a message with your wallet to authenticate.
+              To join Hoot! you'll need to sign a message with your wallet to authenticate.
             </p>
             <p className="text-sm text-gray-400">
               This is a standard security measure and won't cost any gas.
@@ -47,7 +47,7 @@ export default function SignatureConfirmationModal({
 
           <div className="text-center">
             <p className="text-xs text-gray-500">
-              Your signature is only used for authentication and won't be stored.
+              Your signature is only used for authentication.
             </p>
           </div>
         </div>
