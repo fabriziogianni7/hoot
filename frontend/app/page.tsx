@@ -18,14 +18,7 @@ export default function Home() {
   const [isPinFocused, setIsPinFocused] = useState(false);
 
   // Use the shared authentication hook
-  const {
-    loggedUser,
-    isAuthLoading,
-    authError,
-    triggerAuth,
-    signatureModal,
-    authFlowState,
-  } = useAuth();
+  const { loggedUser, isAuthLoading, authError, triggerAuth, signatureModal, authFlowState } = useAuth();
 
   // Badge text state
   const [badgeText, setBadgeText] = useState<{
@@ -466,16 +459,14 @@ export default function Home() {
             style={{
               width: "100%",
               padding: "0.75rem",
-              backgroundColor:
-                isAuthActionDisabled ? "rgba(121, 90, 255, 0.4)" : "#795AFF",
+              backgroundColor: isAuthActionDisabled ? "rgba(121, 90, 255, 0.4)" : "#795AFF",
               color: "white",
               border: "none",
               borderRadius: "0.5rem",
               fontSize: "1rem",
               fontWeight: "500",
               textAlign: "center",
-              cursor:
-                isAuthActionDisabled ? "not-allowed" : "pointer",
+              cursor: isAuthActionDisabled ? "not-allowed" : "pointer",
               opacity: isAuthActionDisabled ? 0.7 : 1,
               transition: "opacity 0.2s",
             }}
