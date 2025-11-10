@@ -154,15 +154,17 @@ export default function Home() {
     }
   };
 
+  const isAuthReady = loggedUser?.isAuthenticated && authFlowState === "ready";
+
   const handleAuthenticate = async () => {
-    if (authFlowState === "signing" || authFlowState === "checking") {
+    if (!isAuthReady) {
       return;
     }
     await triggerAuth(8453);
   };
 
   const isAuthActionDisabled =
-    isAuthLoading || authFlowState === "signing" || authFlowState === "checking";
+    isAuthLoading || !isAuthReady;
 
   return (
     <div
