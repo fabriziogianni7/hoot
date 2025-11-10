@@ -327,6 +327,7 @@ export function useLobbyMessagesRealtime(
   const [isConnected, setIsConnected] = useState(true);
   
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const [lobbyChannel, setLobbyChannel] = useState<RealtimeChannel | null>(null);
 
   useEffect(() => {
     if (!gameSessionId || !supabase) return;
@@ -337,9 +338,10 @@ export function useLobbyMessagesRealtime(
     if (channelRef.current) {
       supabase.removeChannel(channelRef.current);
       channelRef.current = null;
+      setLobbyChannel(null);
     }
 
-    channelRef.current = supabase
+    const newChannel = supabase
       .channel(`lobby_messages:${gameSessionId}`)
       .on(
         "broadcast",
@@ -379,12 +381,16 @@ export function useLobbyMessagesRealtime(
         }
       });
 
+    channelRef.current = newChannel;
+    setLobbyChannel(newChannel);
+
     return () => {
       console.log("Cleaning up lobby messages channel");
       isSubscribed = false;
       if (channelRef.current) {
         supabase.removeChannel(channelRef.current);
         channelRef.current = null;
+        setLobbyChannel(null);
       }
     };
   }, [gameSessionId, supabase]);
@@ -405,7 +411,7 @@ export function useLobbyMessagesRealtime(
   return {
     messages,
     isConnected,
-    channel: channelRef.current, // Expose channel for sending messages
+    channel: lobbyChannel, // Expose channel for sending messages
     addMessageLocal, // Function to add message locally
   };
 }
