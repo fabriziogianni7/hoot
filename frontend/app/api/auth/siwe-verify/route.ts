@@ -83,7 +83,7 @@ export async function POST(request: Request) {
         existingUserWithFid = users.users.find(
           (u) => u.user_metadata?.fid === fid
         );
-      }
+      } 
 
       if (existingUserWithFid) {
         // User with this FID exists
@@ -143,7 +143,10 @@ export async function POST(request: Request) {
         if (upsertError) {
           // If user already exists, try to get them instead
           if (upsertError?.code?.includes("email_exists")) {
-            const { data: users } = await supabaseAdmin.auth.admin.listUsers();
+            const { data: users } = await supabaseAdmin.auth.admin.listUsers({
+              page: 1,
+              perPage: 10000
+            });
             user = users.users.find(
               (u) =>
                 u.email === `${address.toLowerCase()}@wallet.hoot` ||

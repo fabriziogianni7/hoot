@@ -6,7 +6,7 @@ export const privyConfig: PrivyClientConfig = {
       createOnLogin: 'users-without-wallets'
     },
   },
-  loginMethods: ['wallet', 'email', 'sms'],
+  loginMethods: ['email'],
   appearance: {
     showWalletLoginFirst: true,
     theme: 'dark'
