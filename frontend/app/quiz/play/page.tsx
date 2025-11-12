@@ -704,18 +704,20 @@ function PlayQuizContent() {
             </div>
             
             <div 
-              className="text-2xl font-bold text-center text-gray-800 leading-relaxed"
+              className="font-bold text-center text-gray-800 leading-relaxed"
               style={{
-                maxHeight: '120px',
+                fontSize: 'clamp(1rem, 4vw, 1.5rem)', // Responsive font size: min 1rem, preferred 4vw, max 1.5rem
+                maxHeight: 'clamp(120px, 25vh, 200px)', // Responsive height: min 120px, preferred 25vh, max 200px
                 overflow: 'hidden',
                 wordWrap: 'break-word',
-                wordBreak: 'break-word'
+                wordBreak: 'break-word',
+                display: '-webkit-box',
+                WebkitLineClamp: 4, // Show max 4 lines
+                WebkitBoxOrient: 'vertical',
+                textOverflow: 'ellipsis'
               }}
             >
-              {currentQuestion.text.length > 150 ? 
-                `${currentQuestion.text.substring(0, 150)}...` : 
-                currentQuestion.text
-              }
+              {currentQuestion.text}
             </div>
           </div>
         </div>
@@ -854,19 +856,20 @@ function PlayQuizContent() {
                   <div 
                     className="w-full bg-transparent focus:outline-none text-center"
                     style={{
-                      fontSize: "1.25rem",
+                      fontSize: 'clamp(0.875rem, 3vw, 1.25rem)', // Responsive font size
                       fontWeight: "500",
                       cursor: isAnswered || showingResults ? "default" : "pointer",
-                      maxHeight: '60px',
+                      maxHeight: 'clamp(60px, 12vh, 100px)', // Responsive height
                       overflow: 'hidden',
                       wordWrap: 'break-word',
-                      wordBreak: 'break-word'
+                      wordBreak: 'break-word',
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2, // Show max 2 lines
+                      WebkitBoxOrient: 'vertical',
+                      textOverflow: 'ellipsis'
                     }}
                   >
-                    {option.length > 50 ? 
-                      `${option.substring(0, 50)}...` : 
-                      option
-                    }
+                    {option}
                   </div>
                 </div>
               );
