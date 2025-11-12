@@ -381,15 +381,15 @@ export default function ResultsPage() {
               </div>
               <div className="flex justify-between">
                 <span>1st Place (40%):</span>
-                <span>{(quizData.prize_amount * 0.36).toFixed(decimals)} {tokenSymbol}</span>
+                <span>{(quizData.prize_amount * 0.40).toFixed(decimals)} {tokenSymbol}</span>
               </div>
               <div className="flex justify-between">
                 <span>2nd Place (30%):</span>
-                <span>{(quizData.prize_amount * 0.27).toFixed(decimals)} {tokenSymbol}</span>
+                <span>{(quizData.prize_amount * 0.30).toFixed(decimals)} {tokenSymbol}</span>
               </div>
               <div className="flex justify-between">
                 <span>3rd Place (20%):</span>
-                <span>{(quizData.prize_amount * 0.18).toFixed(decimals)} {tokenSymbol}</span>
+                <span>{(quizData.prize_amount * 0.20).toFixed(decimals)} {tokenSymbol}</span>
               </div>
               <div className="flex justify-between text-gray-400">
                 <span>Treasury (10%):</span>
