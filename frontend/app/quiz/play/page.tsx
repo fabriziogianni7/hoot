@@ -766,13 +766,58 @@ function PlayQuizContent() {
               </div>
             </div>
             
-            {/* Show correct answer to creator */}
-            <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-4 text-center mb-4">
-              <p className="text-sm text-green-200 mb-2">Correct Answer:</p>
-              <p className="text-lg font-semibold text-green-100">
-                {currentQuestion.options[correctAnswerIndex]}
-              </p>
+            {/* Show answer options as players see them (without correct answer highlight) */}
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold mb-3 text-purple-200 text-center">
+                Answer Options
+              </h3>
+              <div className="flex flex-col gap-3">
+                {currentQuestion.options.map((option, index) => {
+                  const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
+                  const baseColor = colors[index % colors.length];
+                  
+                  return (
+                    <div 
+                      key={index}
+                      className="rounded p-4 text-white relative border-2"
+                      style={{ 
+                        backgroundColor: `${baseColor}40`,
+                        borderColor: baseColor,
+                        borderWidth: '2px',
+                      }}
+                    >
+                      <div 
+                        className="w-full bg-transparent focus:outline-none text-center"
+                        style={{
+                          fontSize: 'clamp(0.875rem, 3vw, 1.25rem)',
+                          fontWeight: "500",
+                          maxHeight: 'clamp(60px, 12vh, 100px)',
+                          overflow: 'hidden',
+                          wordWrap: 'break-word',
+                          wordBreak: 'break-word',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          textOverflow: 'ellipsis'
+                        }}
+                      >
+                        {option}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
+            
+            {/* Show correct answer to creator - only when timer reaches 0 */}
+            {timeLeft === 0 && (
+              <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-4 text-center mb-4">
+                <p className="text-sm text-green-200 mb-2">Correct Answer:</p>
+                <p className="text-lg font-semibold text-green-100">
+                  {currentQuestion.options[correctAnswerIndex]}
+                </p>
+              </div>
+            )}
             
             {/* Next Question button for creator */}
             <button
