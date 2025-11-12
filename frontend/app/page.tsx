@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { useAuth } from "@/lib/use-auth";
+import WalletModal from "@/components/WalletModal";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -30,6 +31,7 @@ export default function Home() {
     secondary: null,
     statusColor: "#fbbf24",
   });
+  const [showWalletModal, setShowWalletModal] = useState(false);
 
   // Initialize the miniapp
   useEffect(() => {
@@ -205,6 +207,12 @@ export default function Home() {
         }}
       >
         <div
+          onClick={() => {
+            // Only open wallet modal if user is authenticated and has a wallet
+            if (loggedUser?.isAuthenticated && loggedUser?.address) {
+              setShowWalletModal(true);
+            }
+          }}
           style={{
             backgroundColor: "#795AFF",
             color: "white",
@@ -214,6 +222,21 @@ export default function Home() {
             display: "flex",
             alignItems: "center",
             gap: "0.5rem",
+            cursor: loggedUser?.isAuthenticated && loggedUser?.address ? "pointer" : "default",
+            transition: "opacity 0.2s, transform 0.2s",
+            opacity: loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
+          }}
+          onMouseEnter={(e) => {
+            if (loggedUser?.isAuthenticated && loggedUser?.address) {
+              e.currentTarget.style.opacity = "0.9";
+              e.currentTarget.style.transform = "scale(1.02)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (loggedUser?.isAuthenticated && loggedUser?.address) {
+              e.currentTarget.style.opacity = "1";
+              e.currentTarget.style.transform = "scale(1)";
+            }
           }}
         >
           {/* Status dot */}
@@ -516,6 +539,11 @@ export default function Home() {
 
       {/* Signature confirmation modal */}
       {signatureModal}
+
+      {/* Wallet Modal */}
+      {showWalletModal && (
+        <WalletModal onClose={() => setShowWalletModal(false)} />
+      )}
     </div>
   );
 }

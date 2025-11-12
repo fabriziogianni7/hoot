@@ -571,7 +571,7 @@ export const USDC_ADDRESSES = {
   baseSepolia: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'  // Base Sepolia (using mainnet for now)
 } as const
 
-// ERC20 ABI for token operations (approve, balanceOf, allowance)
+// ERC20 ABI for token operations (approve, balanceOf, allowance, transfer)
 export const ERC20_ABI = [
   {
     "type": "function",
@@ -608,6 +608,16 @@ export const ERC20_ABI = [
     "inputs": [],
     "outputs": [{ "name": "", "type": "uint8", "internalType": "uint8" }],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "transfer",
+    "inputs": [
+      { "name": "to", "type": "address", "internalType": "address" },
+      { "name": "amount", "type": "uint256", "internalType": "uint256" }
+    ],
+    "outputs": [{ "name": "", "type": "bool", "internalType": "bool" }],
+    "stateMutability": "nonpayable"
   }
 ] as const
 
