@@ -36,6 +36,7 @@ interface UseAuthReturn {
   authFlowState: AuthFlowState;
   isMiniapp: boolean | null;
   miniappClient: MiniappClient | null;
+  isWalletReady: boolean;
 }
 
 /**
@@ -55,6 +56,7 @@ export function useAuth(): UseAuthReturn {
   const [isMiniapp, setIsMiniapp] = useState<boolean | null>(null);
   const [miniappClient, setMiniappClient] = useState<MiniappClient | null>(null);
   const [authFlowState, setAuthFlowState] = useState<AuthFlowState>("idle");
+  const [isWalletReady, setIsWalletReady] = useState(false);
 
   // Privy hooks
   const { ready, authenticated, user: privyUser, login: privyLogin, logout: privyLogout } = usePrivy();
@@ -91,6 +93,49 @@ export function useAuth(): UseAuthReturn {
     };
     checkMiniapp();
   }, []);
+
+  // Check if wallet is ready (polling mechanism for miniapp)
+  useEffect(() => {
+    if (isMiniapp === null) {
+      // Still checking miniapp status
+      setIsWalletReady(false);
+      return;
+    }
+
+    let walletReady = false;
+
+    if (isMiniapp) {
+      // Miniapp: wallet is ready when we have connections and address
+      walletReady = connections.length > 0 && !!address;
+    } else {
+      // External app: wallet is ready when Privy is ready and authenticated with wallet
+      walletReady = ready && authenticated && !!privyUser?.wallet?.address;
+    }
+
+    setIsWalletReady(walletReady);
+
+    // If wallet is not ready in miniapp, set up polling
+    if (isMiniapp && !walletReady) {
+      const pollInterval = setInterval(() => {
+        // Re-check wallet readiness
+        const currentReady = connections.length > 0 && !!address;
+        if (currentReady) {
+          setIsWalletReady(true);
+          clearInterval(pollInterval);
+        }
+      }, 500); // Poll every 500ms
+
+      // Cleanup after 30 seconds (max wait time)
+      const timeout = setTimeout(() => {
+        clearInterval(pollInterval);
+      }, 30000);
+
+      return () => {
+        clearInterval(pollInterval);
+        clearTimeout(timeout);
+      };
+    }
+  }, [isMiniapp, connections.length, address, ready, authenticated, privyUser]);
 
   const { data: ensName } = useEnsName({
     address,
@@ -454,6 +499,30 @@ export function useAuth(): UseAuthReturn {
 
     if (targetMode === "miniapp") {
       // Miniapp: use traditional wallet connection flow
+      // Check if wallet is ready before proceeding
+      if (!isWalletReady) {
+        console.log("⏳ Wallet not ready yet, waiting for wallet initialization...");
+        setAuthFlowState("checking");
+        setIsAuthLoading(true);
+        // Don't set error, just wait - the UI will show appropriate message
+        // Clear any previous errors when waiting for wallet
+        if (authError && authError.includes("Wallet is initializing")) {
+          // Error already set, keep it
+        } else {
+          setAuthError(null); // Clear error when waiting
+        }
+        
+        // Wait for wallet to be ready (polling handled by useEffect)
+        // Return early and let the user retry when wallet is ready
+        return;
+      }
+      
+      // Wallet is ready, clear any initialization errors
+      if (authError && authError.includes("Wallet is initializing")) {
+        setAuthError(null);
+      }
+
+      // Wallet is ready, proceed with connection if needed
       if (connections.length === 0) {
         console.log("🔌 Connecting wallet for miniapp...");
         try {
@@ -521,7 +590,7 @@ export function useAuth(): UseAuthReturn {
       }
     }
   },
-    [isMiniapp, miniappClient, connections.length, sessionData, signMsgAndSignInWithWeb3, connectWallet, ready, authenticated, privyLogin, privyUser, authFlowState]
+    [isMiniapp, miniappClient, connections.length, sessionData, signMsgAndSignInWithWeb3, connectWallet, ready, authenticated, privyLogin, privyUser, authFlowState, isWalletReady]
   );
 
   // Logout function
@@ -778,5 +847,6 @@ export function useAuth(): UseAuthReturn {
     authFlowState,
     isMiniapp,
     miniappClient,
+    isWalletReady,
   };
 }

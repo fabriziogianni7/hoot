@@ -36,6 +36,7 @@ function LobbyContent() {
     isMiniapp,
     miniappClient,
     signatureModal,
+    isWalletReady,
   } = useAuth();
   const [countdown, setCountdown] = useState<number | null>(null);
   const [playerName, setPlayerName] = useState("");
@@ -123,10 +124,12 @@ function LobbyContent() {
   }, [setFrameReady, isFrameReady]);
 
   // Auto-trigger authentication for embedded miniapps that already provide a wallet
+  // Wait for wallet to be ready before attempting authentication
   useEffect(() => {
     if (authReady) return;
     if (isMiniapp === null) return;
     if (hasTriggeredAuth) return;
+    if (!isWalletReady && isMiniapp) return; // Wait for wallet to be ready
 
     if (isMiniapp && miniappClient && miniappClient !== "telegram") {
       const attemptAuth = async () => {
@@ -140,7 +143,7 @@ function LobbyContent() {
       attemptAuth();
       setHasTriggeredAuth(true);
     }
-  }, [authReady, hasTriggeredAuth, isMiniapp, miniappClient, triggerAuth]);
+  }, [authReady, hasTriggeredAuth, isMiniapp, miniappClient, triggerAuth, isWalletReady]);
 
   // Load game session if room code is provided
   useEffect(() => {
@@ -853,6 +856,7 @@ function LobbyContent() {
     const isProcessing =
       authFlowState === "checking" || authFlowState === "signing" || isAuthLoading;
     const environmentPending = isMiniapp === null;
+    const walletInitializing = !needsPrivyFlow && !isWalletReady && !environmentPending;
     const buttonLabel = needsPrivyFlow
       ? "Connect with Privy"
       : miniappClient === "base"
@@ -861,13 +865,20 @@ function LobbyContent() {
     const description = needsPrivyFlow
       ? "Connect or create a wallet with Privy to join the quiz lobby."
       : "Use the embedded miniapp wallet and sign a message to enter the lobby.";
-    const displayDescription = environmentPending ? "Checking your environment..." : description;
+    const displayDescription = environmentPending 
+      ? "Checking your environment..." 
+      : walletInitializing
+      ? "Waiting for wallet to initialize..."
+      : description;
     const footerMessage = environmentPending
       ? "Hang tight while we detect the client capabilities."
+      : walletInitializing
+      ? "Please wait while your wallet loads. This usually takes a few seconds."
       : needsPrivyFlow
-      ? "You’ll be prompted by Privy to connect or create a wallet."
-      : "We’ll request a signature from your embedded wallet to confirm the session.";
-    const showSpinner = isProcessing || environmentPending;
+      ? "You'll be prompted by Privy to connect or create a wallet."
+      : "We'll request a signature from your embedded wallet to confirm the session.";
+    const showSpinner = isProcessing || environmentPending || walletInitializing;
+    const isButtonDisabled = walletInitializing || environmentPending;
 
     return (
       <>
@@ -885,16 +896,23 @@ function LobbyContent() {
             <div className="max-w-md w-full bg-purple-900/40 border border-purple-700/60 rounded-2xl p-8 text-center space-y-5">
               <h1 className="text-2xl font-bold">Connect your wallet</h1>
               <p className="text-sm text-gray-300">{displayDescription}</p>
-              {authError && (
+              {authError && !walletInitializing && (
                 <div className="bg-red-500/20 border border-red-500 rounded-lg p-3 text-sm text-red-200">
                   {authError}
+                </div>
+              )}
+              {walletInitializing && (
+                <div className="bg-blue-500/20 border border-blue-500 rounded-lg p-3 text-sm text-blue-200">
+                  Your wallet is loading. Please wait a moment...
                 </div>
               )}
               {showSpinner ? (
                 <div className="flex flex-col items-center gap-2 text-sm text-gray-300">
                   <div className="w-6 h-6 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
                   <span>
-                    {authFlowState === "signing"
+                    {walletInitializing
+                      ? "Waiting for wallet..."
+                      : authFlowState === "signing"
                       ? "Awaiting signature..."
                       : "Preparing authentication..."}
                   </span>
@@ -902,12 +920,17 @@ function LobbyContent() {
               ) : (
                 <button
                   onClick={() => handleAuthClick(needsPrivyFlow ? "privy" : "miniapp")}
-                  className="w-full py-2 bg-purple-600 hover:bg-purple-700 rounded text-white font-medium transition-colors"
+                  disabled={isButtonDisabled}
+                  className={`w-full py-2 rounded text-white font-medium transition-colors ${
+                    isButtonDisabled
+                      ? "bg-gray-600 cursor-not-allowed opacity-50"
+                      : "bg-purple-600 hover:bg-purple-700"
+                  }`}
                 >
                   {buttonLabel}
                 </button>
               )}
-              {authFlowState === "error" && (
+              {authFlowState === "error" && !walletInitializing && (
                 <p className="text-xs text-red-300">
                   Something went wrong. Please try again.
                 </p>
