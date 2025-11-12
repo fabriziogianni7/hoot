@@ -19,7 +19,7 @@ export default function Home() {
   const [isPinFocused, setIsPinFocused] = useState(false);
 
   // Use the shared authentication hook
-  const { loggedUser, isAuthLoading, authError, triggerAuth, signatureModal, authFlowState } = useAuth();
+  const { loggedUser, isAuthLoading, authError, triggerAuth, signatureModal, authFlowState, isMiniapp, isWalletReady } = useAuth();
 
   // Badge text state
   const [badgeText, setBadgeText] = useState<{
@@ -163,8 +163,13 @@ export default function Home() {
     await triggerAuth(8453);
   };
 
+  // Check if wallet is ready (for miniapp context)
+  const walletNotReady = isMiniapp && !isWalletReady;
   const isAuthActionDisabled =
-    isAuthLoading || authFlowState === "signing" || authFlowState === "checking";
+    isAuthLoading || 
+    authFlowState === "signing" || 
+    authFlowState === "checking" ||
+    walletNotReady;
 
   return (
     <div
@@ -476,32 +481,50 @@ export default function Home() {
           </Link>
         ) : (
           // User is not authenticated - show disabled button or prompt to connect
-          <button
-            disabled={isAuthActionDisabled}
-            onClick={() => handleAuthenticate()}
-            style={{
-              width: "100%",
-              padding: "0.75rem",
-              backgroundColor: isAuthActionDisabled ? "rgba(121, 90, 255, 0.4)" : "#795AFF",
-              color: "white",
-              border: "none",
-              borderRadius: "0.5rem",
-              fontSize: "1rem",
-              fontWeight: "500",
-              textAlign: "center",
-              cursor: isAuthActionDisabled ? "not-allowed" : "pointer",
-              opacity: isAuthActionDisabled ? 0.7 : 1,
-              transition: "opacity 0.2s",
-            }}
-            onMouseEnter={(e) => {
-              if (!isAuthActionDisabled) {
-                e.currentTarget.style.opacity = "0.8";
-              }
-            }}
-            onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
-          >
-            {isAuthActionDisabled ? "Connecting..." : "Connect To Hoot & Create Quiz"}
-          </button>
+          <div style={{ width: "100%" }}>
+            <button
+              disabled={isAuthActionDisabled}
+              onClick={() => handleAuthenticate()}
+              style={{
+                width: "100%",
+                padding: "0.75rem",
+                backgroundColor: isAuthActionDisabled ? "rgba(121, 90, 255, 0.4)" : "#795AFF",
+                color: "white",
+                border: "none",
+                borderRadius: "0.5rem",
+                fontSize: "1rem",
+                fontWeight: "500",
+                textAlign: "center",
+                cursor: isAuthActionDisabled ? "not-allowed" : "pointer",
+                opacity: isAuthActionDisabled ? 0.7 : 1,
+                transition: "opacity 0.2s",
+              }}
+              onMouseEnter={(e) => {
+                if (!isAuthActionDisabled) {
+                  e.currentTarget.style.opacity = "0.8";
+                }
+              }}
+              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+            >
+              {walletNotReady 
+                ? "Waiting for wallet..." 
+                : isAuthActionDisabled 
+                ? "Connecting..." 
+                : "Connect To Hoot & Create Quiz"}
+            </button>
+            {walletNotReady && (
+              <p
+                style={{
+                  marginTop: "0.5rem",
+                  fontSize: "0.75rem",
+                  color: "#9ca3af",
+                  textAlign: "center",
+                }}
+              >
+                Please wait while your wallet initializes...
+              </p>
+            )}
+          </div>
         )}
 
         {/* Help text */}

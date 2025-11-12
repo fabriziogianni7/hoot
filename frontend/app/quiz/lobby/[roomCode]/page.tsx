@@ -110,9 +110,15 @@ function LobbyContent() {
   const authReady = Boolean(loggedUser?.isAuthenticated && authFlowState === "ready");
   const needsPrivyFlow = (isMiniapp === false) || miniappClient === "telegram";
   const handleAuthClick = (mode: "miniapp" | "privy") => {
+    // Set hasTriggeredAuth to prevent auto-trigger from interfering
     setHasTriggeredAuth(true);
     triggerAuth(8453, mode).catch((err) => {
       console.error("Error triggering authentication flow:", err);
+      // If auth fails, allow retry by resetting hasTriggeredAuth
+      // But only if we're in error state (not just waiting for wallet)
+      if (authFlowState === "error") {
+        // Don't reset, let user retry manually
+      }
     });
   };
 
@@ -128,22 +134,41 @@ function LobbyContent() {
   useEffect(() => {
     if (authReady) return;
     if (isMiniapp === null) return;
-    if (hasTriggeredAuth) return;
-    if (!isWalletReady && isMiniapp) return; // Wait for wallet to be ready
+    if (!isMiniapp || miniappClient === "telegram") return;
 
-    if (isMiniapp && miniappClient && miniappClient !== "telegram") {
+    // Wait for wallet to be ready before attempting authentication
+    if (!isWalletReady) {
+      console.log("⏳ Waiting for wallet to be ready before auto-triggering auth...");
+      return;
+    }
+
+    // Wallet is ready, attempt authentication automatically
+    // Trigger authentication if:
+    // 1. We haven't triggered auth yet, OR
+    // 2. We're in error state (allow retry), OR
+    // 3. We're in checking state and wallet just became ready (user clicked before wallet was ready)
+    const shouldTriggerAuth = 
+      !hasTriggeredAuth || 
+      authFlowState === "error" || 
+      (authFlowState === "checking" && isWalletReady);
+
+    if (shouldTriggerAuth) {
       const attemptAuth = async () => {
         try {
+          console.log("🚀 Wallet ready! Auto-triggering authentication...");
           await triggerAuth(8453, "miniapp");
+          setHasTriggeredAuth(true);
         } catch (err) {
           console.error("Error triggering miniapp authentication:", err);
+          // On error, allow manual retry by not preventing future auto-triggers
+          // But set hasTriggeredAuth to prevent infinite loops
+          setHasTriggeredAuth(true);
         }
       };
 
       attemptAuth();
-      setHasTriggeredAuth(true);
     }
-  }, [authReady, hasTriggeredAuth, isMiniapp, miniappClient, triggerAuth, isWalletReady]);
+  }, [authReady, hasTriggeredAuth, isMiniapp, miniappClient, triggerAuth, isWalletReady, authFlowState]);
 
   // Load game session if room code is provided
   useEffect(() => {
