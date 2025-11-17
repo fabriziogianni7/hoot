@@ -45,7 +45,8 @@ function LobbyContent() {
   const [error, setError] = useState("");
   const [hasTriggeredAuth, setHasTriggeredAuth] = useState(false);
 
-  const roomCodeFromUrl = params.roomCode as string;
+  const roomCodeFromUrl =
+    typeof params.roomCode === "string" ? params.roomCode.toUpperCase() : "";
   const [isLoadingGame, setIsLoadingGame] = useState(true);
   const [gameData, setGameData] = useState<{
     id: string;
