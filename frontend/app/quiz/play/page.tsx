@@ -448,11 +448,11 @@ function PlayQuizContent() {
   const handleNextQuestion = async () => {
     console.log("Moving to next question from:", currentQuestionIndex);
     
-    // Only creator can advance questions
-    if (!isCreator) {
-      console.log("Non-creator waiting for question advance from host");
-      return;
-    }
+    // // Only creator can advance questions
+    // if (!isCreator) {
+    //   console.log("Non-creator waiting for question advance from host");
+    //   return;
+    // }
     
     const isLastQuestion = quiz ? currentQuestionIndex >= quiz.questions.length - 1 : false;
     
