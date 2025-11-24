@@ -13,11 +13,17 @@ export async function extractPdfText(file: File): Promise<string> {
     
     // Set worker source for browser environment
     if (typeof window !== "undefined") {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+      // Use local worker file from public folder (more reliable than CDN)
+      // If local file doesn't exist, it will fallback to the default CDN
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdfjs/pdf.worker.min.mjs"
     }
 
     const arrayBuffer = await file.arrayBuffer()
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+    const loadingTask = pdfjsLib.getDocument({ 
+      data: arrayBuffer,
+      useSystemFonts: true,
+      verbosity: 0, // Suppress warnings
+    })
     const pdf = await loadingTask.promise
 
     let text = ""
