@@ -8,6 +8,9 @@ import { useQuiz } from "@/lib/quiz-context";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { useAuth } from "@/lib/use-auth";
 import WalletModal from "@/components/WalletModal";
+import { generateQuizViaAI } from "@/lib/supabase-client";
+import { extractPdfText, extractTextFile } from "@/lib/utils";
+import type { GenerateQuizResponse } from "@/lib/backend-types";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -32,6 +35,16 @@ export default function Home() {
     statusColor: "#fbbf24",
   });
   const [showWalletModal, setShowWalletModal] = useState(false);
+  const [showMethodModal, setShowMethodModal] = useState(false);
+  const [showAiModal, setShowAiModal] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiForm, setAiForm] = useState({
+    topic: "",
+    questionCount: 5,
+    difficulty: "medium" as "easy" | "medium" | "hard",
+    context: "",
+    documents: [] as { name: string; content: string }[],
+  });
 
   // Initialize the miniapp
   useEffect(() => {
@@ -161,6 +174,89 @@ export default function Home() {
       return;
     }
     await triggerAuth(8453);
+  };
+
+  const handleGenerateQuiz = async () => {
+    if (!aiForm.topic.trim()) {
+      return;
+    }
+
+    try {
+      setIsGenerating(true);
+
+      const response: GenerateQuizResponse = await generateQuizViaAI(
+        aiForm.topic,
+        aiForm.questionCount,
+        aiForm.difficulty,
+        aiForm.context || undefined,
+        aiForm.documents.length > 0 ? aiForm.documents : undefined
+      );
+
+      if (response.success && response.quiz) {
+        // Encode the quiz data in the URL to pass to admin page
+        const quizData = encodeURIComponent(JSON.stringify({
+          title: response.quiz.title || aiForm.topic,
+          description: response.quiz.description,
+          questions: response.quiz.questions,
+        }));
+        
+        // Navigate to admin page with quiz data
+        router.push(`/quiz/admin?aiQuiz=${quizData}`);
+      }
+    } catch (err) {
+      console.error("Error generating quiz:", err);
+      setIsGenerating(false);
+      setShowAiModal(false);
+      // Show error - could add error state here
+    }
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    const newDocuments: { name: string; content: string }[] = [];
+
+    for (let i = 0; i < Math.min(files.length, 3 - aiForm.documents.length); i++) {
+      const file = files[i];
+      if (file.size > 5 * 1024 * 1024) {
+        continue;
+      }
+
+      try {
+        let content: string;
+        if (file.type === "application/pdf") {
+          content = await extractPdfText(file);
+        } else if (file.type.startsWith("text/")) {
+          content = await extractTextFile(file);
+        } else {
+          continue;
+        }
+
+        newDocuments.push({
+          name: file.name,
+          content,
+        });
+      } catch (err) {
+        console.error(`Error processing file ${file.name}:`, err);
+      }
+    }
+
+    if (newDocuments.length > 0) {
+      setAiForm({
+        ...aiForm,
+        documents: [...aiForm.documents, ...newDocuments],
+      });
+    }
+
+    event.target.value = "";
+  };
+
+  const handleRemoveDocument = (index: number) => {
+    setAiForm({
+      ...aiForm,
+      documents: aiForm.documents.filter((_, i) => i !== index),
+    });
   };
 
   // Check if wallet is ready (for miniapp context)
@@ -454,9 +550,10 @@ export default function Home() {
             Loading...
           </div>
         ) : loggedUser?.isAuthenticated && loggedUser?.session ? (
-          // User is authenticated - show clickable link
-          <Link
-            href="/quiz/admin"
+          // User is authenticated - show button that opens modal
+          <button
+            onClick={() => setShowMethodModal(true)}
+            disabled={gamePin.trim().length === 6}
             style={{
               width: "100%",
               padding: "0.75rem",
@@ -467,23 +564,21 @@ export default function Home() {
               color: "white",
               border: "none",
               borderRadius: "0.5rem",
-              cursor: "pointer",
+              cursor: gamePin.trim().length === 6 ? "not-allowed" : "pointer",
               fontSize: "1rem",
               fontWeight: "500",
               marginBottom: "0",
               textAlign: "center",
-              textDecoration: "none",
               opacity: gamePin.trim().length === 6 ? 0.7 : 1,
-              pointerEvents: gamePin.trim().length === 6 ? "none" : "auto",
             }}
           >
             Create Quiz
-          </Link>
+          </button>
         ) : (
           // User is not authenticated - show disabled button or prompt to connect
           <div style={{ width: "100%" }}>
             <button
-              disabled={isAuthActionDisabled}
+              disabled={!!isAuthActionDisabled}
               onClick={() => handleAuthenticate()}
               style={{
                 width: "100%",
@@ -566,6 +661,502 @@ export default function Home() {
       {/* Wallet Modal */}
       {showWalletModal && (
         <WalletModal onClose={() => setShowWalletModal(false)} />
+      )}
+
+      {/* Method Chooser Modal */}
+      {showMethodModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            zIndex: 50,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isGenerating) {
+              setShowMethodModal(false);
+            }
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#000",
+              border: "1px solid white",
+              borderTopLeftRadius: "0.5rem",
+              borderTopRightRadius: "0.5rem",
+              padding: "1.5rem",
+              width: "100%",
+              maxWidth: "28rem",
+              margin: "0 1rem",
+              marginBottom: 0,
+              position: "relative",
+            }}
+          >
+            <button
+              onClick={() => {
+                if (!isGenerating) {
+                  setShowMethodModal(false);
+                }
+              }}
+              disabled={isGenerating}
+              style={{
+                position: "absolute",
+                top: "1rem",
+                right: "1rem",
+                color: isGenerating ? "#6b7280" : "white",
+                background: "none",
+                border: "none",
+                cursor: isGenerating ? "not-allowed" : "pointer",
+                fontSize: "1.25rem",
+              }}
+            >
+              ×
+            </button>
+            <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+              <h3
+                style={{
+                  color: "white",
+                  fontSize: "1.125rem",
+                  fontWeight: 600,
+                  marginBottom: "0.5rem",
+                }}
+              >
+                Create Quiz
+              </h3>
+              <p style={{ color: "#d1d5db", fontSize: "0.875rem" }}>
+                Choose how you want to create your quiz
+              </p>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              {/* AI Option - First/Primary */}
+              <button
+                onClick={() => {
+                  setShowMethodModal(false);
+                  setShowAiModal(true);
+                }}
+                disabled={isGenerating}
+                style={{
+                  width: "100%",
+                  padding: "1rem",
+                  backgroundColor: "rgba(121, 90, 255, 0.4)",
+                  border: "2px solid #795AFF",
+                  borderRadius: "0.5rem",
+                  color: "white",
+                  cursor: isGenerating ? "not-allowed" : "pointer",
+                  opacity: isGenerating ? 0.5 : 1,
+                  textAlign: "left",
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: "1.125rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <span>✨</span>
+                  <span>Create with AI (Recommended)</span>
+                </div>
+                <div style={{ fontSize: "0.875rem", color: "#c084fc", marginTop: "0.25rem" }}>
+                  Generate quiz questions automatically using AI
+                </div>
+              </button>
+
+              {/* Manual Option */}
+              <button
+                onClick={() => {
+                  setShowMethodModal(false);
+                  router.push("/quiz/admin");
+                }}
+                disabled={isGenerating}
+                style={{
+                  width: "100%",
+                  padding: "1rem",
+                  backgroundColor: "rgba(121, 90, 255, 0.2)",
+                  border: "1px solid #4b5563",
+                  borderRadius: "0.5rem",
+                  color: "white",
+                  cursor: isGenerating ? "not-allowed" : "pointer",
+                  opacity: isGenerating ? 0.5 : 1,
+                  textAlign: "left",
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: "1.125rem" }}>
+                  Build Manually
+                </div>
+                <div style={{ fontSize: "0.875rem", color: "#d1d5db", marginTop: "0.25rem" }}>
+                  Create quiz questions one by one
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Generation Modal */}
+      {showAiModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            zIndex: 50,
+            overflowY: "auto",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isGenerating) {
+              setShowAiModal(false);
+            }
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#000",
+              border: "1px solid white",
+              borderTopLeftRadius: "0.5rem",
+              borderTopRightRadius: "0.5rem",
+              padding: "1.5rem",
+              width: "100%",
+              maxWidth: "28rem",
+              margin: "0 1rem",
+              marginBottom: 0,
+              marginTop: "2rem",
+              position: "relative",
+            }}
+          >
+            <button
+              onClick={() => {
+                if (!isGenerating) {
+                  setShowAiModal(false);
+                }
+              }}
+              disabled={isGenerating}
+              style={{
+                position: "absolute",
+                top: "1rem",
+                right: "1rem",
+                color: isGenerating ? "#6b7280" : "white",
+                background: "none",
+                border: "none",
+                cursor: isGenerating ? "not-allowed" : "pointer",
+                fontSize: "1.25rem",
+              }}
+            >
+              ×
+            </button>
+            <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+              <h3
+                style={{
+                  color: "white",
+                  fontSize: "1.125rem",
+                  fontWeight: 600,
+                  marginBottom: "0.5rem",
+                }}
+              >
+                Generate Quiz with AI
+              </h3>
+              <p style={{ color: "#d1d5db", fontSize: "0.875rem" }}>
+                Let AI create your quiz questions
+              </p>
+            </div>
+
+            {isGenerating ? (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: "3rem 1rem",
+                  gap: "1rem",
+                }}
+              >
+                <div
+                  style={{
+                    width: "3rem",
+                    height: "3rem",
+                    border: "4px solid rgba(121, 90, 255, 0.3)",
+                    borderTopColor: "#795AFF",
+                    borderRadius: "50%",
+                    animation: "spin 1s linear infinite",
+                  }}
+                />
+                <p style={{ color: "white", fontSize: "1rem" }}>
+                  Generating your quiz...
+                </p>
+                <style>{`
+                  @keyframes spin {
+                    to { transform: rotate(360deg); }
+                  }
+                `}</style>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+                {/* Topic Input */}
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      color: "white",
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Topic <span style={{ color: "#ef4444" }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={aiForm.topic}
+                    onChange={(e) =>
+                      setAiForm({ ...aiForm, topic: e.target.value })
+                    }
+                    placeholder="e.g., Ethereum, Web3, History of Bitcoin"
+                    disabled={isGenerating}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem 1rem",
+                      backgroundColor: "#1f2937",
+                      border: "1px solid #4b5563",
+                      borderRadius: "0.5rem",
+                      color: "white",
+                      fontSize: "0.875rem",
+                    }}
+                  />
+                </div>
+
+                {/* Question Count Slider */}
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      color: "white",
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Number of Questions: {aiForm.questionCount}
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={aiForm.questionCount}
+                    onChange={(e) =>
+                      setAiForm({
+                        ...aiForm,
+                        questionCount: parseInt(e.target.value),
+                      })
+                    }
+                    disabled={isGenerating}
+                    style={{
+                      width: "100%",
+                      height: "0.5rem",
+                      backgroundColor: "#374151",
+                      borderRadius: "0.25rem",
+                      outline: "none",
+                    }}
+                  />
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      fontSize: "0.75rem",
+                      color: "#9ca3af",
+                      marginTop: "0.25rem",
+                    }}
+                  >
+                    <span>1</span>
+                    <span>10</span>
+                  </div>
+                </div>
+
+                {/* Difficulty Level */}
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      color: "white",
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Difficulty Level
+                  </label>
+                  <select
+                    value={aiForm.difficulty}
+                    onChange={(e) =>
+                      setAiForm({
+                        ...aiForm,
+                        difficulty: e.target.value as "easy" | "medium" | "hard",
+                      })
+                    }
+                    disabled={isGenerating}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem 1rem",
+                      backgroundColor: "#1f2937",
+                      border: "1px solid #4b5563",
+                      borderRadius: "0.5rem",
+                      color: "white",
+                      fontSize: "0.875rem",
+                    }}
+                  >
+                    <option value="easy">Easy 😇</option>
+                    <option value="medium">Medium 🤔</option>
+                    <option value="hard">Hard 🤬</option>
+                  </select>
+                </div>
+
+                {/* Optional Context */}
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      color: "white",
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Additional Instructions (Optional)
+                  </label>
+                  <textarea
+                    value={aiForm.context}
+                    onChange={(e) =>
+                      setAiForm({ ...aiForm, context: e.target.value })
+                    }
+                    placeholder="e.g., Focus on technical details, Make questions challenging"
+                    disabled={isGenerating}
+                    rows={3}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem 1rem",
+                      backgroundColor: "#1f2937",
+                      border: "1px solid #4b5563",
+                      borderRadius: "0.5rem",
+                      color: "white",
+                      fontSize: "0.875rem",
+                      resize: "none",
+                    }}
+                  />
+                </div>
+
+                {/* File Upload */}
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      color: "white",
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    Upload Documents (Optional)
+                    <span
+                      style={{
+                        color: "#9ca3af",
+                        fontSize: "0.75rem",
+                        marginLeft: "0.5rem",
+                      }}
+                    >
+                      PDF or text files, max 3 files, 5MB each
+                    </span>
+                  </label>
+                  <input
+                    type="file"
+                    accept=".pdf,.txt,.md"
+                    multiple
+                    onChange={handleFileUpload}
+                    disabled={isGenerating || aiForm.documents.length >= 3}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem 1rem",
+                      backgroundColor: "#1f2937",
+                      border: "1px solid #4b5563",
+                      borderRadius: "0.5rem",
+                      color: "white",
+                      fontSize: "0.875rem",
+                    }}
+                  />
+                  {aiForm.documents.length > 0 && (
+                    <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                      {aiForm.documents.map((doc, index) => (
+                        <div
+                          key={index}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            backgroundColor: "#1f2937",
+                            borderRadius: "0.5rem",
+                            padding: "0.5rem",
+                          }}
+                        >
+                          <span
+                            style={{
+                              color: "white",
+                              fontSize: "0.875rem",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              flex: 1,
+                            }}
+                          >
+                            {doc.name}
+                          </span>
+                          <button
+                            onClick={() => handleRemoveDocument(index)}
+                            disabled={isGenerating}
+                            style={{
+                              marginLeft: "0.5rem",
+                              color: "#ef4444",
+                              background: "none",
+                              border: "none",
+                              cursor: isGenerating ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Generate Button */}
+                <button
+                  onClick={handleGenerateQuiz}
+                  disabled={isGenerating || !aiForm.topic.trim()}
+                  style={{
+                    width: "100%",
+                    padding: "1rem",
+                    backgroundColor:
+                      isGenerating || !aiForm.topic.trim()
+                        ? "rgba(121, 90, 255, 0.3)"
+                        : "#795AFF",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "0.5rem",
+                    fontSize: "1rem",
+                    fontWeight: 600,
+                    cursor:
+                      isGenerating || !aiForm.topic.trim()
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity: isGenerating || !aiForm.topic.trim() ? 0.5 : 1,
+                  }}
+                >
+                  Generate Quiz
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

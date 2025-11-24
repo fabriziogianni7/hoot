@@ -117,4 +117,25 @@ export interface SubmitAnswerResponse {
   answer_id: string
 }
 
+export interface GenerateQuizRequest {
+  topic: string
+  question_count: number
+  difficulty?: "easy" | "medium" | "hard"
+  context?: string
+  documents?: Array<{ name: string; content: string }>
+}
+
+export interface GenerateQuizResponse {
+  success: boolean
+  quiz: {
+    title: string
+    description: string
+    questions: Array<{
+      question_text: string
+      options: string[]
+      correct_answer_index: number
+      time_limit: number
+    }>
+  }
+}
 
