@@ -12,6 +12,8 @@ import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import Link from "next/link";
 import { useAuth } from "@/lib/use-auth";
 import { usePlayerSessionsRealtime, useLobbyMessagesRealtime } from "@/lib/use-realtime-hooks";
+import { NETWORK_TOKENS } from "@/lib/token-config";
+import { ZERO_ADDRESS } from "@/lib/contracts";
 
 function LobbyContent() {
   const router = useRouter();
@@ -58,6 +60,9 @@ function LobbyContent() {
       title: string;
       description: string;
       created_at: string;
+      prize_amount?: number;
+      prize_token?: string | null;
+      network_id?: string | null;
     };
   } | null>(null);
   const [quizData, setQuizData] = useState<{
@@ -108,6 +113,36 @@ function LobbyContent() {
   const { messages, isConnected: isMessagesConnected, channel: messagesChannel, addMessageLocal } = useLobbyMessagesRealtime(gameSessionId);
 
   const quiz = getCurrentQuiz() || quizData;
+  const prizeAmount = Number(gameData?.quizzes?.prize_amount ?? 0);
+  const prizeTokenAddress = (gameData?.quizzes?.prize_token ??
+    ZERO_ADDRESS) as `0x${string}`;
+  const normalizedPrizeToken = prizeTokenAddress.toLowerCase();
+  const quizNetworkId = Number(gameData?.quizzes?.network_id || 8453);
+  const tokensForNetwork = NETWORK_TOKENS[quizNetworkId] || [];
+  const matchedToken =
+    tokensForNetwork.find(
+      (token) => token.address.toLowerCase() === normalizedPrizeToken
+    ) ||
+    (prizeTokenAddress === ZERO_ADDRESS
+      ? tokensForNetwork.find((token) => token.address === ZERO_ADDRESS)
+      : undefined);
+  const prizeTokenSymbol =
+    prizeTokenAddress === ZERO_ADDRESS
+      ? matchedToken?.symbol || "ETH"
+      : matchedToken?.symbol || "Token";
+  const prizeTokenName =
+    prizeTokenAddress === ZERO_ADDRESS
+      ? matchedToken?.name || "Ethereum"
+      : matchedToken?.name || "Custom token";
+  const shortPrizeToken =
+    prizeTokenAddress !== ZERO_ADDRESS
+      ? `${prizeTokenAddress.slice(0, 6)}...${prizeTokenAddress.slice(-4)}`
+      : null;
+  const formattedPrizeAmount =
+    prizeAmount > 0
+      ? prizeAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })
+      : "0";
+  const showPrizePool = prizeAmount > 0;
   const authReady = Boolean(loggedUser?.isAuthenticated && authFlowState === "ready");
   const needsPrivyFlow = (isMiniapp === false) || miniappClient === "telegram";
   const handleAuthClick = (mode: "miniapp" | "privy") => {
@@ -1227,6 +1262,25 @@ function LobbyContent() {
                   </div>
                 </div>
                 
+                <div>
+                  <p className="text-gray-300 mb-2">Prize pool:</p>
+                  {showPrizePool ? (
+                    <div className="bg-purple-950/30 border border-purple-700/50 rounded-lg p-3 flex flex-col gap-1">
+                      <span className="text-2xl font-bold text-white">
+                        {formattedPrizeAmount} {prizeTokenSymbol}
+                      </span>
+                      <span className="text-xs text-gray-300">
+                        {prizeTokenName}
+                        {shortPrizeToken ? ` • ${shortPrizeToken}` : ""}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="bg-purple-950/20 border border-purple-700/40 rounded-lg p-3 text-sm text-gray-300">
+                      Quiz creator hasn&apos;t funded a prize yet.
+                    </div>
+                  )}
+                </div>
+
                 <div className="pt-2 border-t border-purple-700/50">
                   Status:{" "}
                   <span className="capitalize">

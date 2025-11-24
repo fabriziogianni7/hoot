@@ -16,9 +16,9 @@ import {
 import {
   HOOT_QUIZ_MANAGER_ABI,
   ZERO_ADDRESS,
-  USDC_ADDRESSES,
   ERC20_ABI,
 } from "@/lib/contracts";
+import { NETWORK_TOKENS, getDefaultTokenForNetwork } from "@/lib/token-config";
 import { parseEther, parseUnits } from "viem";
 import ShareBox from "@/components/ShareBox";
 import { sdk } from "@farcaster/miniapp-sdk";
@@ -83,11 +83,12 @@ function AdminPageContent() {
   const [showTooltip, setShowTooltip] = useState(false);
   const [showQuizOptions, setShowQuizOptions] = useState(false);
   const [bountyAmount, setBountyAmount] = useState("10");
-  const [selectedCurrency, setSelectedCurrency] = useState<
-    "usdc" | "eth" | "custom"
-  >("usdc");
-  const [customTokenAddress, _setCustomTokenAddress] = useState("");
+  const [selectedCurrency, setSelectedCurrency] = useState<string>("usdc");
   const [quizTransaction, setQuizTransaction] = useState<string>("");
+
+  // Get available tokens for current network
+  const availableTokens = NETWORK_TOKENS[chain?.id || 8453] || []
+  const selectedToken = availableTokens.find(token => token.id === selectedCurrency)
   const [_approvalTransaction, setApprovalTransaction] = useState<string>("");
   const [hootContractAddress, setHootContractAddress] = useState<string>("");
   const [creationStep, setCreationStep] = useState<CreationStep>(CreationStep.NONE);
@@ -174,6 +175,16 @@ function AdminPageContent() {
     setHootContractAddress(hootAddress);
   }, [chain]);
 
+  // Set default token when network changes
+  useEffect(() => {
+    if (chain?.id) {
+      const defaultToken = getDefaultTokenForNetwork(chain.id);
+      if (defaultToken) {
+        setSelectedCurrency(defaultToken.id);
+      }
+    }
+  }, [chain?.id]);
+
   // Check if the current user has previously created quizzes
   useEffect(() => {
     let cancelled = false;
@@ -259,21 +270,14 @@ function AdminPageContent() {
     loadForReuse();
   }, [searchParams, supabase, loadedFromReuseId]);
 
-  // Determine ERC20 token address based on selected currency
+  // Determine ERC20 token address based on selected token
   const getTokenAddress = (): `0x${string}` | undefined => {
-    if (selectedCurrency === "usdc") {
-      return (
-        chain?.id === 8453 ? USDC_ADDRESSES.base : USDC_ADDRESSES.baseSepolia
-      ) as `0x${string}`;
-    } else if (selectedCurrency === "custom" && customTokenAddress) {
-      return customTokenAddress as `0x${string}`;
-    }
-    return undefined;
+    if (!selectedToken) return undefined
+    return selectedToken.address
   };
 
   const tokenAddress = getTokenAddress();
 
-  // TODO: use wagmi hook specific for ERC20
   // Read ERC20 token balance
   const { data: erc20Balance, refetch: refetchErc20Balance } = useReadContract({
     address: tokenAddress,
@@ -281,17 +285,17 @@ function AdminPageContent() {
     functionName: "balanceOf",
     args: address ? [address] : undefined,
     query: {
-      enabled: !!address && !!tokenAddress && selectedCurrency !== "eth",
+      enabled: !!address && !!tokenAddress && !selectedToken?.isNative,
     },
   });
 
-  // Read ERC20 token decimals
+  // Read ERC20 token decimals (fallback to config decimals)
   const { data: tokenDecimals } = useReadContract({
     address: tokenAddress,
     abi: ERC20_ABI,
     functionName: "decimals",
     query: {
-      enabled: !!tokenAddress && selectedCurrency !== "eth",
+      enabled: !!tokenAddress && !selectedToken?.isNative,
     },
   });
 
@@ -300,12 +304,13 @@ function AdminPageContent() {
     quizId: string,
     tokenAddress: string,
     amount: string,
-    decimals: number = 18
+    decimals?: number
   ) => {
     const isETH = tokenAddress === ZERO_ADDRESS;
+    const tokenDecimals = selectedToken?.decimals || decimals || 18;
 
     // Parse amount based on token type
-    const amountWei = isETH ? parseEther(amount) : parseUnits(amount, decimals);
+    const amountWei = isETH ? parseEther(amount) : parseUnits(amount, tokenDecimals);
 
     console.log("Creating quiz on-chain:", {
       hootContractAddress,
@@ -340,17 +345,17 @@ function AdminPageContent() {
     correctAnswer: 0,
   });
 
-  // Compute display balance based on selected currency
+  // Compute display balance based on selected token
   const displayBalance: string = (() => {
-    if (selectedCurrency === "eth" && ethBalance) {
+    if (selectedToken?.isNative && ethBalance) {
       return ethBalance.formatted;
     } else if (
-      (selectedCurrency === "usdc" || selectedCurrency === "custom") &&
+      selectedToken && !selectedToken.isNative &&
       erc20Balance !== undefined &&
-      tokenDecimals !== undefined
+      (tokenDecimals !== undefined || selectedToken.decimals)
     ) {
-      // Format ERC20 balance using the token's decimals
-      const decimals = Number(tokenDecimals);
+      // Format ERC20 balance using token decimals (from contract or config)
+      const decimals = tokenDecimals || selectedToken.decimals;
       const formattedBalance = (
         Number(erc20Balance) / Math.pow(10, decimals)
       ).toString();
@@ -359,26 +364,26 @@ function AdminPageContent() {
     return "0";
   })();
 
-  // Refetch ERC20 balance when currency or chain changes TODO: use wagmi
+  // Refetch ERC20 balance when token or chain changes
   useEffect(() => {
     if (
-      (selectedCurrency === "usdc" || selectedCurrency === "custom") &&
+      selectedToken && !selectedToken.isNative &&
       refetchErc20Balance
     ) {
       refetchErc20Balance();
     }
-  }, [selectedCurrency, chain?.id, refetchErc20Balance]);
+  }, [selectedToken?.id, chain?.id, refetchErc20Balance]);
 
-  // Update default amount when currency changes
+  // Update default amount when token changes
   useEffect(() => {
-    if (selectedCurrency === "usdc") {
+    if (selectedToken?.id === "usdc") {
       setBountyAmount("10");
-    } else if (selectedCurrency === "eth") {
+    } else if (selectedToken?.isNative) {
       setBountyAmount("0.001");
-    } else if (selectedCurrency === "custom") {
+    } else {
       setBountyAmount("100");
     }
-  }, [selectedCurrency]);
+  }, [selectedToken]);
 
   // Effetto per caricare la domanda corrente quando cambia l'indice
   useEffect(() => {
@@ -574,39 +579,31 @@ function AdminPageContent() {
       let tokenAddress: string;
       let decimals: number;
 
-      if (selectedCurrency === "eth") {
+      if (selectedToken?.isNative) {
         tokenAddress = ZERO_ADDRESS;
         decimals = 18;
 
         // Check ETH balance
         if (ethBalance && parseFloat(ethBalance.formatted) < bountyAmountNum) {
           setError(
-            `Insufficient ETH balance. You have ${ethBalance.formatted} ETH but need ${bountyAmount} ETH`
+            `Insufficient ${selectedToken.symbol} balance. You have ${ethBalance.formatted} ${selectedToken.symbol} but need ${bountyAmount} ${selectedToken.symbol}`
           );
           return;
         }
-      } else if (selectedCurrency === "usdc") {
-        tokenAddress =
-          chain?.id === 8453 ? USDC_ADDRESSES.base : USDC_ADDRESSES.baseSepolia;
-        decimals = 6;
+      } else if (selectedToken) {
+        tokenAddress = selectedToken.address;
+        decimals = tokenDecimals ? Number(tokenDecimals) : selectedToken.decimals;
 
-        // Check USDC balance
-        const usdcBalanceNum = parseFloat(displayBalance);
-        if (usdcBalanceNum < bountyAmountNum) {
+        // Check token balance
+        const tokenBalanceNum = parseFloat(displayBalance);
+        if (tokenBalanceNum < bountyAmountNum) {
           setError(
-            `Insufficient USDC balance. You have ${displayBalance} USDC but need ${bountyAmount} USDC`
+            `Insufficient ${selectedToken.symbol} balance. You have ${displayBalance} ${selectedToken.symbol} but need ${bountyAmount} ${selectedToken.symbol}`
           );
           return;
         }
-      } else if (selectedCurrency === "custom") {
-        if (!customTokenAddress || customTokenAddress.trim() === "") {
-          setError("Please enter a valid token contract address");
-          return;
-        }
-        tokenAddress = customTokenAddress.trim();
-        decimals = tokenDecimals ? Number(tokenDecimals) : 18;
       } else {
-        setError("Invalid currency selection");
+        setError("Invalid token selection");
         return;
       }
 
@@ -1329,75 +1326,34 @@ function AdminPageContent() {
                   </button>
                 </div>
 
-                {/* Currency Selector - temp commented*/}
+                {/* Currency Selector */}
                 <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
                   <label className="block text-white text-sm font-medium mb-2">
                     Bounty Currency
                   </label>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setSelectedCurrency("usdc")}
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        selectedCurrency === "usdc"
-                          ? "bg-purple-600/40 text-white"
-                          : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                      }`}
-                    >
-                      USDC
-                    </button>
-                    <button
-                      onClick={() => setSelectedCurrency("eth")}
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        selectedCurrency === "eth"
-                          ? "bg-purple-600/40 text-white"
-                          : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                      }`}
-                    >
-                      ETH
-                    </button>
-                    {/* temp commenting custom */}
-                    {/* <button
-                      onClick={() => setSelectedCurrency('custom')}
-                      className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                        selectedCurrency === 'custom'
-                          ? 'bg-purple-600/40 text-white'
-                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                      }`}
-                    >
-                      Custom
-                    </button> */}
+                  <div className="flex gap-2 flex-wrap">
+                    {availableTokens.map((token) => (
+                      <button
+                        key={token.id}
+                        onClick={() => setSelectedCurrency(token.id)}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          selectedCurrency === token.id
+                            ? "bg-purple-600/40 text-white"
+                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+                        }`}
+                      >
+                        {token.symbol}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                {/* Custom Token Address Input - Temporary disabled!*/}
-                {/* {selectedCurrency === 'custom' && (
-                  <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
-                    <label className="block text-white text-sm font-medium mb-2">
-                      Token Contract Address
-                    </label>
-                    <input
-                      type="text"
-                      value={customTokenAddress}
-                      onChange={(e) => setCustomTokenAddress(e.target.value)}
-                      placeholder="0x..."
-                      maxLength={42}
-                      className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded text-white focus:outline-none focus:border-purple-500"
-                    />
-                    <div className="text-xs text-gray-400 mt-1">
-                      Enter the ERC20 token contract address
-                    </div>
-                  </div>
-                )} */}
 
                 {/* Quiz Bounty Amount Input */}
                 <div className="p-3 bg-purple-600/20 rounded-lg">
                   <label className="block text-white text-sm font-medium mb-2">
                     Quiz Bounty (
-                    {selectedCurrency === "usdc"
-                      ? "USDC"
-                      : selectedCurrency === "eth"
-                      ? "ETH"
-                      : "Tokens"}
+                    {selectedToken?.symbol || "Tokens"}
                     )
                   </label>
                   <input
@@ -1408,9 +1364,9 @@ function AdminPageContent() {
                     onChange={(e) => setBountyAmount(e.target.value)}
                     className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded text-white focus:outline-none focus:border-purple-500"
                     placeholder={
-                      selectedCurrency === "usdc"
+                      selectedToken?.id === "usdc"
                         ? "10"
-                        : selectedCurrency === "eth"
+                        : selectedToken?.isNative
                         ? "0.001"
                         : "100"
                     }
@@ -1418,13 +1374,9 @@ function AdminPageContent() {
                   <div className="text-xs text-gray-400 mt-1">
                     Current balance:{" "}
                     {parseFloat(displayBalance).toFixed(
-                      selectedCurrency === "eth" ? 4 : 2
+                      selectedToken?.isNative ? 4 : 2
                     )}{" "}
-                    {selectedCurrency === "usdc"
-                      ? "USDC"
-                      : selectedCurrency === "eth"
-                      ? "ETH"
-                      : "Tokens"}
+                    {selectedToken?.symbol || "Tokens"}
                   </div>
                 </div>
               </div>
