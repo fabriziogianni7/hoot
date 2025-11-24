@@ -1,51 +1,82 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useAccount, useBalance, useSendTransaction, useWriteContract, useReadContract } from "wagmi";
+import { useState, useEffect, useMemo } from "react";
+import {
+  useAccount,
+  useBalance,
+  useSendTransaction,
+  useWriteContract,
+  useReadContract,
+  useReadContracts,
+} from "wagmi";
 import { parseEther, formatEther, parseUnits, formatUnits, isAddress } from "viem";
 import { useAuth } from "@/lib/use-auth";
 import QRCode from "react-qr-code";
-import { USDC_ADDRESSES, ERC20_ABI } from "@/lib/contracts";
+import { ERC20_ABI } from "@/lib/contracts";
+import {
+  getTokensForNetwork,
+  getDefaultTokenForNetwork,
+  TokenConfig,
+} from "@/lib/token-config";
 
 interface WalletModalProps {
   onClose: () => void;
 }
 
 type ViewMode = "main" | "send" | "receive";
-type TokenType = "ETH" | "USDC";
 
 export default function WalletModal({ onClose }: WalletModalProps) {
   const { address, chain } = useAccount();
   const { loggedUser } = useAuth();
-  
-  // Token selection
-  const [selectedToken, setSelectedToken] = useState<TokenType>("ETH");
-  
-  // Get USDC address based on chain
-  const usdcAddress = chain?.id === 8453 
-    ? USDC_ADDRESSES.base 
-    : USDC_ADDRESSES.baseSepolia;
 
-  // ETH balance
-  const { data: ethBalance } = useBalance({ address });
-  
-  // USDC balance and decimals
-  const { data: usdcBalance } = useReadContract({
-    address: usdcAddress as `0x${string}`,
-    abi: ERC20_ABI,
-    functionName: "balanceOf",
-    args: address ? [address] : undefined,
+  const chainId = chain?.id ?? 8453;
+  const tokensForNetwork = useMemo(() => getTokensForNetwork(chainId), [chainId]);
+  const defaultToken = useMemo(
+    () => getDefaultTokenForNetwork(chainId) ?? tokensForNetwork[0],
+    [chainId, tokensForNetwork]
+  );
+
+  const [selectedTokenId, setSelectedTokenId] = useState<string>(defaultToken?.id ?? "eth");
+
+  useEffect(() => {
+    if (defaultToken) {
+      setSelectedTokenId(defaultToken.id);
+    }
+  }, [defaultToken]);
+
+  const selectedToken = tokensForNetwork.find((token) => token.id === selectedTokenId) ?? defaultToken;
+
+  const erc20Tokens = useMemo(
+    () => tokensForNetwork.filter((token) => !token.isNative),
+    [tokensForNetwork]
+  );
+
+  // ETH balance (native)
+  const { data: nativeBalance } = useBalance({ address });
+
+  const erc20Contracts = useMemo(() => {
+    if (!address) return [];
+    return erc20Tokens.map((token) => ({
+      address: token.address as `0x${string}`,
+      abi: ERC20_ABI,
+      functionName: "balanceOf",
+      args: [address as `0x${string}`],
+    }));
+  }, [erc20Tokens, address]);
+
+  const { data: erc20BalancesData } = useReadContracts({
+    contracts: erc20Contracts,
     query: {
-      enabled: !!address,
+      enabled: erc20Contracts.length > 0,
     },
   });
 
-  const { data: usdcDecimals } = useReadContract({
-    address: usdcAddress as `0x${string}`,
+  const { data: erc20Decimals } = useReadContract({
+    address: selectedToken && !selectedToken.isNative ? selectedToken.address : undefined,
     abi: ERC20_ABI,
     functionName: "decimals",
     query: {
-      enabled: true,
+      enabled: !!selectedToken && !selectedToken.isNative,
     },
   });
 
@@ -62,23 +93,74 @@ export default function WalletModal({ onClose }: WalletModalProps) {
   // Get wallet address from loggedUser or wagmi
   const walletAddress = address || loggedUser?.address;
 
+  const tokenBalances = useMemo(() => {
+    const map: Record<string, string> = {};
+    tokensForNetwork.forEach((token) => {
+      if (token.isNative) {
+        map[token.id] = nativeBalance ? formatEther(nativeBalance.value) : "0";
+      } else {
+        const idx = erc20Tokens.findIndex((t) => t.id === token.id);
+        const balanceResult = erc20BalancesData?.[idx]?.result as bigint | undefined;
+        map[token.id] = balanceResult
+          ? formatUnits(balanceResult, token.decimals)
+          : "0";
+      }
+    });
+    return map;
+  }, [tokensForNetwork, nativeBalance, erc20Tokens, erc20BalancesData]);
+
+  const decimals = selectedToken?.isNative
+    ? 18
+    : erc20Decimals
+    ? Number(erc20Decimals)
+    : selectedToken?.decimals ?? 18;
+
   // Get current balance based on selected token
   const getCurrentBalance = () => {
-    if (selectedToken === "ETH") {
-      return ethBalance ? formatEther(ethBalance.value) : "0";
-    } else {
-      return usdcBalance && usdcDecimals 
-        ? formatUnits(usdcBalance, Number(usdcDecimals))
-        : "0";
-    }
+    if (!selectedToken) return "0";
+    return tokenBalances[selectedToken.id] ?? "0";
+  };
+
+  const formatBalanceDisplay = (balance: string, token?: TokenConfig | null) => {
+    const precision = token?.isNative ? 4 : 2;
+    const numericBalance = parseFloat(balance);
+    if (Number.isNaN(numericBalance)) return (0).toFixed(precision);
+    return numericBalance.toFixed(precision);
   };
 
   // Format balance for display
-  const formattedBalance = (() => {
-    const balance = getCurrentBalance();
-    const decimals = selectedToken === "ETH" ? 4 : 2;
-    return parseFloat(balance).toFixed(decimals);
-  })();
+  const formattedBalance = formatBalanceDisplay(getCurrentBalance(), selectedToken);
+
+  const TokenSelector = () => (
+    <div className="bg-gray-900 rounded-lg p-3">
+      <div className="flex flex-col gap-2">
+        {tokensForNetwork.map((token) => {
+          const tokenBalance = formatBalanceDisplay(tokenBalances[token.id] ?? "0", token);
+          const isSelected = selectedTokenId === token.id;
+          return (
+            <button
+              key={token.id}
+              onClick={() => setSelectedTokenId(token.id)}
+              className={`w-full rounded-lg border px-4 py-3 text-left transition-colors flex items-center justify-between gap-4 ${
+                isSelected
+                  ? "border-[#795AFF] bg-[#795AFF]/10 text-white"
+                  : "border-gray-800 text-gray-300 hover:text-white hover:border-gray-600"
+              }`}
+            >
+              <div>
+                <p className="font-semibold">{token.symbol}</p>
+                <p className="text-xs text-gray-400">{token.name}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-semibold text-white">{tokenBalance}</p>
+                <p className="text-xs text-gray-400">{token.symbol}</p>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 
   // Format address for display
   const formattedAddress = walletAddress
@@ -120,7 +202,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
     }
 
     try {
-      if (selectedToken === "ETH") {
+      if (selectedToken?.isNative) {
         // Send ETH
         sendTransaction(
           {
@@ -139,17 +221,17 @@ export default function WalletModal({ onClose }: WalletModalProps) {
             },
           }
         );
-      } else {
-        // Send USDC
-        if (!usdcDecimals) {
+      } else if (selectedToken) {
+        // Send ERC20
+        if (!decimals) {
           setLocalError("Unable to get token decimals");
           return;
         }
 
-        const amountInUnits = parseUnits(sendAmount, Number(usdcDecimals));
+        const amountInUnits = parseUnits(sendAmount, decimals);
         
         await writeContractAsync({
-          address: usdcAddress as `0x${string}`,
+          address: selectedToken.address as `0x${string}`,
           abi: ERC20_ABI,
           functionName: "transfer",
           args: [sendTo as `0x${string}`, amountInUnits],
@@ -190,9 +272,9 @@ export default function WalletModal({ onClose }: WalletModalProps) {
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-bold text-white">
             {viewMode === "send" 
-              ? `Send ${selectedToken}` 
+              ? `Send ${selectedToken?.symbol ?? ""}` 
               : viewMode === "receive" 
-              ? `Receive ${selectedToken}` 
+              ? `Receive ${selectedToken?.symbol ?? ""}` 
               : "Wallet"}
           </h3>
           <button
@@ -209,34 +291,13 @@ export default function WalletModal({ onClose }: WalletModalProps) {
         {viewMode === "main" && (
           <div className="space-y-6">
             {/* Token Selector */}
-            <div className="flex gap-2 bg-gray-900 rounded-lg p-1">
-              <button
-                onClick={() => setSelectedToken("ETH")}
-                className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-                  selectedToken === "ETH"
-                    ? "bg-[#795AFF] text-white"
-                    : "text-gray-400 hover:text-white"
-                }`}
-              >
-                ETH
-              </button>
-              <button
-                onClick={() => setSelectedToken("USDC")}
-                className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-                  selectedToken === "USDC"
-                    ? "bg-[#795AFF] text-white"
-                    : "text-gray-400 hover:text-white"
-                }`}
-              >
-                USDC
-              </button>
-            </div>
+            <TokenSelector />
 
             {/* Balance Display */}
             <div className="bg-gray-900 rounded-lg p-4 text-center">
               <p className="text-gray-400 text-sm mb-1">Balance</p>
               <p className="text-2xl font-bold text-white">
-                {formattedBalance} {selectedToken}
+                {formattedBalance} {selectedToken?.symbol ?? ""}
               </p>
             </div>
 
@@ -287,28 +348,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
             </button>
 
             {/* Token Selector in Send View */}
-            <div className="flex gap-2 bg-gray-900 rounded-lg p-1">
-              <button
-                onClick={() => setSelectedToken("ETH")}
-                className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-                  selectedToken === "ETH"
-                    ? "bg-[#795AFF] text-white"
-                    : "text-gray-400 hover:text-white"
-                }`}
-              >
-                ETH
-              </button>
-              <button
-                onClick={() => setSelectedToken("USDC")}
-                className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-                  selectedToken === "USDC"
-                    ? "bg-[#795AFF] text-white"
-                    : "text-gray-400 hover:text-white"
-                }`}
-              >
-                USDC
-              </button>
-            </div>
+            <TokenSelector />
 
             {/* Recipient Address */}
             <div>
@@ -325,7 +365,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
             {/* Amount */}
             <div>
               <label className="block text-sm text-gray-300 mb-2">
-                Amount ({selectedToken})
+                Amount ({selectedToken?.symbol ?? ""})
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -333,7 +373,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
                   value={sendAmount}
                   onChange={(e) => setSendAmount(e.target.value)}
                   placeholder="0.0"
-                  step={selectedToken === "ETH" ? "0.000001" : "0.01"}
+                  step={selectedToken?.isNative ? "0.000001" : "0.01"}
                   min="0"
                   className="flex-1 px-3 py-2 bg-gray-900 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#795AFF]"
                 />
@@ -348,7 +388,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
                 </button>
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                Available: {formattedBalance} {selectedToken}
+                Available: {formattedBalance} {selectedToken?.symbol ?? ""}
               </p>
             </div>
 
@@ -367,7 +407,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
               disabled={isSending || !sendTo || !sendAmount}
               className="w-full bg-[#795AFF] hover:bg-[#6a4de6] disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors"
             >
-              {isSending ? `Sending ${selectedToken}...` : `Send ${selectedToken}`}
+              {isSending ? `Sending ${selectedToken?.symbol ?? ""}...` : `Send ${selectedToken?.symbol ?? ""}`}
             </button>
 
             {/* Success Message */}
@@ -394,28 +434,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
             </button>
 
             {/* Token Selector in Receive View */}
-            <div className="flex gap-2 bg-gray-900 rounded-lg p-1">
-              <button
-                onClick={() => setSelectedToken("ETH")}
-                className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-                  selectedToken === "ETH"
-                    ? "bg-[#795AFF] text-white"
-                    : "text-gray-400 hover:text-white"
-                }`}
-              >
-                ETH
-              </button>
-              <button
-                onClick={() => setSelectedToken("USDC")}
-                className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-                  selectedToken === "USDC"
-                    ? "bg-[#795AFF] text-white"
-                    : "text-gray-400 hover:text-white"
-                }`}
-              >
-                USDC
-              </button>
-            </div>
+            <TokenSelector />
 
             {/* Address Display */}
             <div className="bg-gray-900 rounded-lg p-6 text-center">
@@ -443,7 +462,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
 
             {/* Info */}
             <p className="text-gray-400 text-xs text-center">
-              Share this address to receive {selectedToken}. Only send {selectedToken} on Base network.
+              Share this address to receive {selectedToken?.symbol ?? ""}. Only send {selectedToken?.symbol ?? ""} on this network.
             </p>
           </div>
         )}

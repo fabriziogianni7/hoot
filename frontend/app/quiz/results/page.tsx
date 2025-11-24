@@ -8,6 +8,7 @@ import { useAccount } from "wagmi";
 import Link from "next/link";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { USDC_ADDRESSES, ZERO_ADDRESS } from "@/lib/contracts";
+import { NETWORK_TOKENS } from "@/lib/token-config";
 
 export default function ResultsPage() {
   const router = useRouter();
@@ -360,16 +361,27 @@ export default function ResultsPage() {
         
         {/* Prize Distribution Section - Only show for paid quizzes */}
         {quizData && quizData.prize_amount > 0 && (() => {
-          // Determine token symbol based on prize_token
-          // prize_token is null or ZERO_ADDRESS for ETH, otherwise it's the token address
-          const isETH = !quizData.prize_token || 
-            quizData.prize_token.toLowerCase() === ZERO_ADDRESS.toLowerCase();
-          const isUSDC = !isETH && quizData.prize_token &&
-            (quizData.prize_token.toLowerCase() === USDC_ADDRESSES.base.toLowerCase() ||
-             quizData.prize_token.toLowerCase() === USDC_ADDRESSES.baseSepolia.toLowerCase());
-          const tokenSymbol = isUSDC ? "USDC" : "ETH";
-          const decimals = isUSDC ? 2 : 6; // USDC has 2 decimals, ETH has 6 for better precision
-          
+          const prizeToken = quizData.prize_token;
+
+          const isETH =
+            !prizeToken ||
+            prizeToken.toLowerCase() === ZERO_ADDRESS.toLowerCase();
+
+          const allTokens = Object.values(NETWORK_TOKENS).flat();
+
+          const matchingToken = allTokens.find((token) => {
+            if (token.isNative) {
+              return isETH;
+            }
+            return (
+              prizeToken &&
+              token.address.toLowerCase() === prizeToken.toLowerCase()
+            );
+          });
+
+          const tokenSymbol = matchingToken?.symbol ?? (isETH ? "ETH" : "TOKEN");
+          const decimals = matchingToken?.decimals ?? (isETH ? 6 : 2);
+
           return (
           <div className="bg-purple-600/20 border border-purple-500 rounded-lg p-6 mb-8 w-full max-w-md">
             <h3 className="text-xl font-semibold mb-4 text-center text-purple-200">Prize Distribution</h3>
@@ -377,23 +389,23 @@ export default function ResultsPage() {
             <div className="mb-4 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span>Total Prize Pool:</span>
-                <span className="font-bold">{quizData.prize_amount.toFixed(decimals)} {tokenSymbol}</span>
+                <span className="font-bold">{quizData.prize_amount.toFixed(2)} {tokenSymbol}</span>
               </div>
               <div className="flex justify-between">
                 <span>1st Place (40%):</span>
-                <span>{(quizData.prize_amount * 0.40).toFixed(decimals)} {tokenSymbol}</span>
+                <span>{(quizData.prize_amount * 0.40).toFixed(2)} {tokenSymbol}</span>
               </div>
               <div className="flex justify-between">
                 <span>2nd Place (30%):</span>
-                <span>{(quizData.prize_amount * 0.30).toFixed(decimals)} {tokenSymbol}</span>
+                <span>{(quizData.prize_amount * 0.30).toFixed(2)} {tokenSymbol}</span>
               </div>
               <div className="flex justify-between">
                 <span>3rd Place (20%):</span>
-                <span>{(quizData.prize_amount * 0.20).toFixed(decimals)} {tokenSymbol}</span>
+                <span>{(quizData.prize_amount * 0.20).toFixed(2)} {tokenSymbol}</span>
               </div>
               <div className="flex justify-between text-gray-400">
                 <span>Treasury (10%):</span>
-                <span>{(quizData.prize_amount * 0.1).toFixed(decimals)} {tokenSymbol}</span>
+                <span>{(quizData.prize_amount * 0.1).toFixed(2)} {tokenSymbol}</span>
               </div>
             </div>
             
