@@ -226,6 +226,50 @@ function AdminPageContent() {
     };
   }, [supabase, address, loggedUser?.fid]);
 
+  // Load AI-generated quiz if query param is present
+  useEffect(() => {
+    const aiQuizData = searchParams?.get('aiQuiz');
+    if (aiQuizData && !loadedFromReuseId) {
+      try {
+        const decoded = JSON.parse(decodeURIComponent(aiQuizData));
+        console.log('AI Quiz Data Received:', decoded);
+        
+        if (decoded.title && decoded.questions) {
+          setQuizTitle(decoded.title || 'Name your Quiz');
+          
+          const normalizedQuestions: QuizQuestion[] = decoded.questions.map((q: {
+            question_text: string;
+            options: string[];
+            correct_answer_index: number;
+            time_limit: number;
+          }) => {
+            console.log('Processing question:', {
+              question_text: q.question_text,
+              options: q.options,
+              correct_answer_index: q.correct_answer_index,
+            });
+            
+            return {
+              text: q.question_text,
+              options: q.options.map((option: string) => ({
+                text: option,
+                color: 'hover:opacity-80',
+              })),
+              correctAnswer: q.correct_answer_index,
+            };
+          });
+          
+          console.log('Normalized Questions:', normalizedQuestions);
+          setQuestions(normalizedQuestions);
+          setCurrentQuestionIndex(0);
+          setLoadedFromReuseId('ai-generated'); // Mark as loaded to prevent re-loading
+        }
+      } catch (e) {
+        console.error('Failed to load AI quiz data:', e);
+      }
+    }
+  }, [searchParams, loadedFromReuseId]);
+
   // Load quiz for reuse if query param is present
   useEffect(() => {
     const reuseId = searchParams?.get('reuse');
@@ -389,7 +433,13 @@ function AdminPageContent() {
   useEffect(() => {
     if (currentQuestionIndex < questions.length) {
       // Stiamo modificando una domanda esistente
-      setCurrentQuestion(questions[currentQuestionIndex]);
+      const question = questions[currentQuestionIndex];
+      console.log('Loading question at index', currentQuestionIndex, ':', {
+        text: question.text,
+        options: question.options.map(opt => opt.text),
+        correctAnswer: question.correctAnswer,
+      });
+      setCurrentQuestion(question);
     } else {
       // Stiamo creando una nuova domanda
       setCurrentQuestion({

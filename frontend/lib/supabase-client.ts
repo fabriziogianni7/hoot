@@ -32,4 +32,26 @@ export async function callEdgeFunction<TRequest, TResponse>(
   return response.data as TResponse
 }
 
+// Helper function to generate quiz via AI
+import type { GenerateQuizRequest, GenerateQuizResponse } from './backend-types'
+
+export async function generateQuizViaAI(
+  topic: string,
+  questionCount: number,
+  difficulty: "easy" | "medium" | "hard",
+  context?: string,
+  documents?: Array<{ name: string; content: string }>
+): Promise<GenerateQuizResponse> {
+  return callEdgeFunction<GenerateQuizRequest, GenerateQuizResponse>(
+    'generate-quiz',
+    {
+      topic,
+      question_count: questionCount,
+      difficulty,
+      context,
+      documents,
+    }
+  )
+}
+
 
