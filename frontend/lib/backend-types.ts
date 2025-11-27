@@ -14,6 +14,7 @@ export interface Quiz {
   user_id: string | null
   status: 'pending' | 'active' | 'completed' | 'cancelled'
   created_at?: string
+  scheduled_start_time?: string | null
   started_at?: string | null
   ended_at?: string | null
 }
@@ -79,6 +80,7 @@ export interface CreateQuizRequest {
   creator_address: string
   network_id: string
   user_fid?: string | null
+  scheduled_start_time?: string
 }
 
 export interface CreateQuizResponse {

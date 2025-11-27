@@ -14,6 +14,7 @@ export interface CreateQuizRequest {
   network_id?: string
   user_fid?: string
   user_id?: string // Auth user ID from Supabase auth.users
+  scheduled_start_time?: string // ISO timestamp for automatic start
 }
 
 export interface JoinGameRequest {

@@ -23,7 +23,16 @@ interface QuizContextType {
   currentGame: GameState | null
   setCurrentQuiz: (quiz: Quiz) => void
   setCurrentGame: (game: GameState | null) => void
-  createQuizOnBackend: (quiz: Quiz, contractAddress?: string | undefined , networkId?: number | undefined, userFid?: string | undefined, userAddress?: string | undefined, prizeAmount?: number, prizeToken?: string | undefined ) => Promise<string>
+  createQuizOnBackend: (
+    quiz: Quiz, 
+    contractAddress?: string | undefined,
+    networkId?: number | undefined,
+    userFid?: string | undefined,
+    userAddress?: string | undefined,
+    prizeAmount?: number,
+    prizeToken?: string | undefined,
+    scheduledStartTime?: string
+  ) => Promise<string>
   startGame: (quizId: string, customRoomCode?: string) => Promise<string>
   joinGame: (playerName: string, walletAddress?: string, providedRoomCode?: string) => Promise<string>
   submitAnswer: (playerId: string, questionId: string, answer: number, timeToAnswer: number) => Promise<SubmitAnswerResponse>
@@ -96,7 +105,8 @@ export function QuizProvider({ children }: { children: ReactNode }) {
     userFid?: string | undefined,
     userAddress?: string | undefined,
     prizeAmount?: number,
-    prizeToken?: string | undefined
+    prizeToken?: string | undefined,
+    scheduledStartTime?: string
   ): Promise<string> => {
     try {
       // Validate required fields
@@ -121,7 +131,8 @@ export function QuizProvider({ children }: { children: ReactNode }) {
         contract_address: contractAddress,
         creator_address: userAddress,
         network_id: networkId.toString(),
-        user_fid: userFid
+        user_fid: userFid,
+        scheduled_start_time: scheduledStartTime
       }
 
       const response = await callEdgeFunction<CreateQuizRequest, CreateQuizResponse>(
