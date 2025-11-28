@@ -83,7 +83,7 @@ function convertBackendGameToGameState(
       answers: [] // Answers will be fetched separately if needed
     })),
     startTime: gameSession.started_at ? new Date(gameSession.started_at).getTime() : Date.now(),
-    questionStartTime: null
+    questionStartTime: gameSession.question_started_at ? new Date(gameSession.question_started_at).getTime() : null
   }
 }
 
@@ -269,6 +269,19 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       if (typeof window !== 'undefined') {
         try {
           localStorage.setItem('playerSessionId', playerSessionId)
+          const joinedDuringQuestion =
+            !response.session_reused &&
+            response.game_session.status === 'in_progress' &&
+            !!response.game_session.question_started_at
+
+          if (joinedDuringQuestion) {
+            localStorage.setItem(
+              'spectateUntilQuestionIndex',
+              String(response.game_session.current_question_index + 1)
+            )
+          } else {
+            localStorage.removeItem('spectateUntilQuestionIndex')
+          }
         } catch (storageError) {
           console.warn('Failed to persist playerSessionId to localStorage', storageError)
         }

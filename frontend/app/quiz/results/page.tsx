@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
 import { useAccount } from "wagmi";
@@ -9,10 +9,19 @@ import Link from "next/link";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { USDC_ADDRESSES, ZERO_ADDRESS } from "@/lib/contracts";
 import { NETWORK_TOKENS } from "@/lib/token-config";
+import type { Quiz as QuizType, GameState as GameStateType } from "@/lib/types";
 
 export default function ResultsPage() {
   const router = useRouter();
-  const { currentGame, getCurrentQuiz, endGame, gameSessionId, setCurrentGame } = useQuiz();
+  const searchParams = useSearchParams();
+  const {
+    currentGame,
+    getCurrentQuiz,
+    endGame,
+    gameSessionId,
+    setCurrentGame,
+    setCurrentQuiz,
+  } = useQuiz();
   const { address } = useAccount();
   const { supabase } = useSupabase();
   
@@ -44,7 +53,101 @@ export default function ResultsPage() {
   
   const [finalPlayers, setFinalPlayers] = useState<PlayerSession[]>([]);
   
+  const queryGameId = searchParams.get("game");
+  const queryQuizId = searchParams.get("quizId");
+  const effectiveGameSessionId = gameSessionId || queryGameId;
   const quiz = getCurrentQuiz();
+
+  useEffect(() => {
+    const hydrateQuiz = async () => {
+      if (quiz || !queryQuizId) return;
+
+      const { data: quizRow, error: quizError } = await supabase
+        .from("quizzes")
+        .select("*")
+        .eq("id", queryQuizId)
+        .single();
+
+      if (quizError || !quizRow) {
+        console.error("Failed to load quiz for results:", quizError);
+        return;
+      }
+
+      const { data: questionsData, error: questionsError } = await supabase
+        .from("questions")
+        .select("*")
+        .eq("quiz_id", queryQuizId)
+        .order("order_index", { ascending: true });
+
+      if (questionsError) {
+        console.error("Failed to load quiz questions for results:", questionsError);
+        return;
+      }
+
+      const convertedQuiz: QuizType = {
+        id: quizRow.id,
+        title: quizRow.title,
+        description: quizRow.description || "",
+        questions: (questionsData || []).map((q: any) => ({
+          id: q.id,
+          text: q.question_text,
+          options: q.options,
+          correctAnswer: q.correct_answer_index,
+          timeLimit: q.time_limit || 15,
+        })),
+        createdAt: quizRow.created_at ? new Date(quizRow.created_at) : new Date(),
+      };
+
+      setCurrentQuiz(convertedQuiz);
+    };
+
+    hydrateQuiz();
+  }, [quiz, queryQuizId, setCurrentQuiz, supabase]);
+
+  useEffect(() => {
+    const hydrateGame = async () => {
+      if (currentGame || !effectiveGameSessionId) return;
+
+      const fallbackQuizId = getCurrentQuiz()?.id || queryQuizId;
+      if (!fallbackQuizId) return;
+
+      const { data: playersData, error: playersError } = await supabase
+        .from("player_sessions")
+        .select("id, player_name, total_score, joined_at")
+        .eq("game_session_id", effectiveGameSessionId)
+        .order("joined_at", { ascending: true });
+
+      if (playersError) {
+        console.error("Failed to hydrate game state for results:", playersError);
+        return;
+      }
+
+      const hydratedGame: GameStateType = {
+        quizId: fallbackQuizId,
+        status: "finished",
+        currentQuestionIndex: 0,
+        players: (playersData || []).map((player) => ({
+          id: player.id,
+          name: player.player_name,
+          score: player.total_score,
+          answers: [],
+        })),
+        startTime: null,
+        questionStartTime: null,
+      };
+
+      setCurrentGame(hydratedGame);
+    };
+
+    hydrateGame();
+  }, [
+    currentGame,
+    effectiveGameSessionId,
+    queryQuizId,
+    getCurrentQuiz,
+    setCurrentGame,
+    supabase,
+  ]);
   
   // Load quiz data and player answers from backend (only once on mount)
   useEffect(() => {
@@ -68,11 +171,11 @@ export default function ResultsPage() {
         }
 
         // Fetch creator session ID from game session
-        if (gameSessionId) {
+        if (effectiveGameSessionId) {
           const { data: gameSession } = await supabase
             .from('game_sessions')
             .select('creator_session_id')
-            .eq('id', gameSessionId)
+            .eq('id', effectiveGameSessionId)
             .single();
           
           if (gameSession?.creator_session_id) {
@@ -145,17 +248,17 @@ export default function ResultsPage() {
     
     loadQuizData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quiz, address, supabase, gameSessionId]);
+  }, [quiz, address, supabase, effectiveGameSessionId]);
   
   // Fetch final player scores (one-time fetch, no realtime)
   useEffect(() => {
     const fetchFinalScores = async () => {
-      if (!gameSessionId) return;
+      if (!effectiveGameSessionId) return;
       
       const { data, error } = await supabase
         .from('player_sessions')
         .select('id, player_name, wallet_address, total_score, joined_at')
-        .eq('game_session_id', gameSessionId)
+        .eq('game_session_id', effectiveGameSessionId)
         .order('total_score', { ascending: false });
       
       if (!error && data) {
@@ -167,14 +270,14 @@ export default function ResultsPage() {
     };
     
     fetchFinalScores();
-  }, [gameSessionId, supabase]);
+  }, [effectiveGameSessionId, supabase]);
   
   // Redirect if no game is active
   useEffect(() => {
-    if (!currentGame || currentGame.status !== "finished") {
-      router.push("/");
-    }
-  }, [currentGame, router]);
+    if (currentGame && currentGame.status === "finished") return;
+    if (effectiveGameSessionId) return;
+    router.push("/");
+  }, [currentGame, effectiveGameSessionId, router]);
   
   if (!currentGame || !quiz) {
     return (
@@ -238,7 +341,7 @@ export default function ResultsPage() {
   };
   
   const handleDistributePrizes = async () => {
-      if (!address || !quizData || !gameSessionId) {
+      if (!address || !quizData || !effectiveGameSessionId) {
         return;
       }
     
@@ -248,7 +351,7 @@ export default function ResultsPage() {
     
     try {
       const requestBody = {
-        game_session_id: gameSessionId,
+        game_session_id: effectiveGameSessionId,
         creator_wallet_address: address
       };
       

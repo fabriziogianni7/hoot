@@ -99,6 +99,7 @@ export interface JoinGameResponse {
   success: boolean
   player_session_id: string
   is_creator: boolean
+  session_reused: boolean
   game_session: GameSession
   quiz: Quiz
   players: PlayerSession[]
