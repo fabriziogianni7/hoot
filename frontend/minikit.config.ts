@@ -35,7 +35,7 @@ export const minikitConfig = {
     ogTitle: "",
     ogDescription: "",
     ogImageUrl: `${ROOT_URL}/hero_hoot_1.png`,
-    canonicalDomain: "hoot-five.vercel.app",      
+    canonicalDomain: "hoot-quiz.com",      
   }
 } as const;
 

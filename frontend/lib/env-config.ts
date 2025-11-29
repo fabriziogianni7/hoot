@@ -95,7 +95,7 @@ const ENVIRONMENT_CONFIGS: Record<Environment, EnvConfig> = {
       anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     },
     app: {
-      url: 'https://hoot-five.vercel.app'
+      url: 'https://hoot-quiz.com'
     }
   }
 }
