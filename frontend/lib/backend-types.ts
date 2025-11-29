@@ -17,6 +17,7 @@ export interface Quiz {
   scheduled_start_time?: string | null
   started_at?: string | null
   ended_at?: string | null
+  is_private?: boolean | null
 }
 
 export interface Question {
@@ -81,6 +82,7 @@ export interface CreateQuizRequest {
   network_id: string
   user_fid?: string | null
   scheduled_start_time?: string
+  is_private?: boolean
 }
 
 export interface CreateQuizResponse {

@@ -99,7 +99,8 @@ async function createQuiz(supabase: ReturnType<typeof initSupabaseClient>, reque
       user_fid: request.user_fid || null,
       user_id: request.user_id || null,
       status: QUIZ_STATUS.PENDING,
-      scheduled_start_time: request.scheduled_start_time ? new Date(request.scheduled_start_time).toISOString() : null
+      scheduled_start_time: request.scheduled_start_time ? new Date(request.scheduled_start_time).toISOString() : null,
+      is_private: request.is_private ?? false
     })
     .select()
     .single()

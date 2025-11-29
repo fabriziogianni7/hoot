@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
+import { useSupabase } from "@/lib/supabase-context";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { useAuth } from "@/lib/use-auth";
 import WalletModal from "@/components/WalletModal";
@@ -16,13 +17,23 @@ export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
   const [gamePin, setGamePin] = useState("");
   const router = useRouter();
+  const { supabase } = useSupabase();
   const [error, setError] = useState("");
   const { findGameByRoomCode } = useQuiz();
   const [isJoining, setIsJoining] = useState(false);
   const [isPinFocused, setIsPinFocused] = useState(false);
 
   // Use the shared authentication hook
-  const { loggedUser, isAuthLoading, authError, triggerAuth, signatureModal, authFlowState, isMiniapp, isWalletReady } = useAuth();
+  const {
+    loggedUser,
+    isAuthLoading,
+    authError,
+    triggerAuth,
+    signatureModal,
+    authFlowState,
+    isMiniapp,
+    isWalletReady,
+  } = useAuth();
 
   // Badge text state
   const [badgeText, setBadgeText] = useState<{
@@ -46,6 +57,190 @@ export default function Home() {
     documents: [] as { name: string; content: string }[],
   });
 
+  type NextPublicSession = {
+    quizId: string;
+    title: string;
+    scheduled_start_time: string;
+    room_code: string | null;
+  };
+
+  const [nextSession, setNextSession] = useState<NextPublicSession | null>(
+    null
+  );
+  const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
+
+  // Fetch next upcoming public quiz (and its room code)
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchNextSession = async () => {
+      try {
+        console.log("[Home] Fetching next public quiz session...");
+        const nowIso = new Date().toISOString();
+        // First, find the next public scheduled quiz
+        const { data: quizzes, error: quizError } = await supabase
+          .from("quizzes")
+          .select("id,title,scheduled_start_time,is_private,status")
+          .eq("is_private", false)
+          .not("scheduled_start_time", "is", null)
+          .gt("scheduled_start_time", nowIso)
+          .in("status", ["pending", "starting"])
+          .order("scheduled_start_time", { ascending: true })
+          .limit(1);
+
+        if (quizError) {
+          console.error("Error fetching next public quiz:", quizError);
+          return;
+        }
+
+        const quizRow = (quizzes || [])[0] as
+          | {
+              id: string;
+              title: string;
+              scheduled_start_time: string | null;
+            }
+          | undefined;
+
+        console.log("[Home] Next quiz candidate:", quizRow);
+
+        if (!quizRow || !quizRow.scheduled_start_time) {
+          console.log("[Home] No suitable quiz found for banner.");
+          if (!cancelled) {
+            setNextSession(null);
+            setTimeRemainingMs(null);
+          }
+          return;
+        }
+
+        // Then, find a waiting/starting game session for that quiz to get the room code
+        const { data: sessions, error: sessionError } = await supabase
+          .from("game_sessions")
+          .select("room_code,status,created_at")
+          .eq("quiz_id", quizRow.id)
+          .in("status", ["waiting", "starting"])
+          .order("created_at", { ascending: true })
+          .limit(1);
+
+        if (sessionError) {
+          console.error("Error fetching game session for quiz:", sessionError);
+          return;
+        }
+
+        const sessionRow = (sessions || [])[0] as
+          | { room_code: string; status: string }
+          | undefined;
+
+        console.log("[Home] Session candidate for quiz:", sessionRow);
+
+        if (!sessionRow) {
+          // No active session yet – don't show banner
+          console.log(
+            "[Home] No waiting/starting session for quiz; hiding banner."
+          );
+          if (!cancelled) {
+            setNextSession(null);
+            setTimeRemainingMs(null);
+          }
+          return;
+        }
+
+        const scheduledTime = new Date(quizRow.scheduled_start_time).getTime();
+        const diff = scheduledTime - Date.now();
+        if (diff <= 0) {
+          console.log(
+            "[Home] Scheduled quiz time already passed; hiding banner."
+          );
+          if (!cancelled) {
+            setNextSession(null);
+            setTimeRemainingMs(null);
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          console.log("[Home] Setting nextSession/banner data", {
+            quizId: quizRow.id,
+            title: quizRow.title,
+            scheduled_start_time: quizRow.scheduled_start_time,
+            room_code: sessionRow.room_code ?? null,
+            diffMs: diff,
+          });
+          setNextSession({
+            quizId: quizRow.id,
+            title: quizRow.title,
+            scheduled_start_time: quizRow.scheduled_start_time,
+            room_code: sessionRow.room_code ?? null,
+          });
+          setTimeRemainingMs(diff);
+        }
+      } catch (err) {
+        console.error(
+          "Unexpected error loading next public quiz session:",
+          err
+        );
+      }
+    };
+
+    console.log("[Home] useEffect[supabase] running", {
+      hasSupabase: Boolean(supabase),
+    });
+
+    if (!supabase) {
+      console.warn("[Home] Supabase client not available, skipping fetch.");
+      return;
+    }
+    console.log("ciao");
+    fetchNextSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Countdown timer for the next session
+  useEffect(() => {
+    if (!nextSession || !nextSession.scheduled_start_time) {
+      return;
+    }
+
+    const scheduledTime = new Date(nextSession.scheduled_start_time).getTime();
+
+    const update = () => {
+      const diff = scheduledTime - Date.now();
+      if (diff <= 0) {
+        setTimeRemainingMs(0);
+        return false;
+      }
+      setTimeRemainingMs(diff);
+      return true;
+    };
+
+    // Run once immediately
+    if (!update()) return;
+
+    const interval = setInterval(() => {
+      const keepRunning = update();
+      if (!keepRunning) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [nextSession]);
+
+  const formatTimeRemaining = (ms: number) => {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const parts = [
+      hours.toString().padStart(2, "0"),
+      minutes.toString().padStart(2, "0"),
+      seconds.toString().padStart(2, "0"),
+    ];
+    return parts.join(":");
+  };
+
   // Initialize the miniapp
   useEffect(() => {
     if (!isFrameReady) {
@@ -65,8 +260,9 @@ export default function Home() {
         console.error("❌ Error initializing Farcaster SDK:", error);
       }
     };
-
-    initializeFarcasterSDK();
+    if (!isFrameReady) {
+      initializeFarcasterSDK();
+    }
 
     // Cleanup function to reset the background color when component unmounts
     return () => {
@@ -130,11 +326,13 @@ export default function Home() {
         statusColor = "#ef4444"; // Red for not connected
       }
 
-      setBadgeText({ primary:primary, secondary:secondary || null, statusColor:statusColor });
+      setBadgeText({
+        primary: primary,
+        secondary: secondary || null,
+        statusColor: statusColor,
+      });
     }
   }, [loggedUser]);
-
-  
 
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,12 +392,14 @@ export default function Home() {
 
       if (response.success && response.quiz) {
         // Encode the quiz data in the URL to pass to admin page
-        const quizData = encodeURIComponent(JSON.stringify({
-          title: response.quiz.title || aiForm.topic,
-          description: response.quiz.description,
-          questions: response.quiz.questions,
-        }));
-        
+        const quizData = encodeURIComponent(
+          JSON.stringify({
+            title: response.quiz.title || aiForm.topic,
+            description: response.quiz.description,
+            questions: response.quiz.questions,
+          })
+        );
+
         // Navigate to admin page with quiz data
         router.push(`/quiz/admin?aiQuiz=${quizData}`);
       }
@@ -211,13 +411,19 @@ export default function Home() {
     }
   };
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
     const newDocuments: { name: string; content: string }[] = [];
 
-    for (let i = 0; i < Math.min(files.length, 3 - aiForm.documents.length); i++) {
+    for (
+      let i = 0;
+      i < Math.min(files.length, 3 - aiForm.documents.length);
+      i++
+    ) {
       const file = files[i];
       if (file.size > 5 * 1024 * 1024) {
         continue;
@@ -262,8 +468,8 @@ export default function Home() {
   // Check if wallet is ready (for miniapp context)
   const walletNotReady = isMiniapp && !isWalletReady;
   const isAuthActionDisabled =
-    isAuthLoading || 
-    authFlowState === "signing" || 
+    isAuthLoading ||
+    authFlowState === "signing" ||
     authFlowState === "checking" ||
     walletNotReady;
 
@@ -323,9 +529,13 @@ export default function Home() {
             display: "flex",
             alignItems: "center",
             gap: "0.5rem",
-            cursor: loggedUser?.isAuthenticated && loggedUser?.address ? "pointer" : "default",
+            cursor:
+              loggedUser?.isAuthenticated && loggedUser?.address
+                ? "pointer"
+                : "default",
             transition: "opacity 0.2s, transform 0.2s",
-            opacity: loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
+            opacity:
+              loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
           }}
           onMouseEnter={(e) => {
             if (loggedUser?.isAuthenticated && loggedUser?.address) {
@@ -430,12 +640,14 @@ export default function Home() {
             borderRadius: "0.75rem",
             padding: "1.5rem",
             marginBottom: "1.5rem",
-            border: gamePin.trim().length === 6 
-              ? "3px solid rgba(121, 90, 255, 0.8)" 
-              : "3px solid rgba(121, 90, 255, 0.2)",
-            boxShadow: gamePin.trim().length === 6
-              ? "0 8px 32px rgba(121, 90, 255, 0.4)"
-              : "0 8px 32px rgba(121, 90, 255, 0.1)",
+            border:
+              gamePin.trim().length === 6
+                ? "3px solid rgba(121, 90, 255, 0.8)"
+                : "3px solid rgba(121, 90, 255, 0.2)",
+            boxShadow:
+              gamePin.trim().length === 6
+                ? "0 8px 32px rgba(121, 90, 255, 0.4)"
+                : "0 8px 32px rgba(121, 90, 255, 0.1)",
             transition: "border 0.2s ease, boxShadow 0.2s ease",
           }}
         >
@@ -583,7 +795,9 @@ export default function Home() {
               style={{
                 width: "100%",
                 padding: "0.75rem",
-                backgroundColor: isAuthActionDisabled ? "rgba(121, 90, 255, 0.4)" : "#795AFF",
+                backgroundColor: isAuthActionDisabled
+                  ? "rgba(121, 90, 255, 0.4)"
+                  : "#795AFF",
                 color: "white",
                 border: "none",
                 borderRadius: "0.5rem",
@@ -601,10 +815,10 @@ export default function Home() {
               }}
               onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
             >
-              {walletNotReady 
-                ? "Waiting for wallet..." 
-                : isAuthActionDisabled 
-                ? "Connecting..." 
+              {walletNotReady
+                ? "Waiting for wallet..."
+                : isAuthActionDisabled
+                ? "Connecting..."
                 : "Connect To Hoot & Create Quiz"}
             </button>
             {walletNotReady && (
@@ -629,11 +843,6 @@ export default function Home() {
             color: "#6b7280",
             fontSize: "0.875rem",
             lineHeight: "1.5",
-            position: "fixed",
-            bottom: "30px",
-            left: 0,
-            right: 0,
-            width: "100%",
           }}
         >
           <p>
@@ -731,7 +940,9 @@ export default function Home() {
               </p>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
+            >
               {/* AI Option - First/Primary */}
               <button
                 onClick={() => {
@@ -751,11 +962,25 @@ export default function Home() {
                   textAlign: "left",
                 }}
               >
-                <div style={{ fontWeight: 600, fontSize: "1.125rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: "1.125rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
                   <span>✨</span>
                   <span>Create with AI (Recommended)</span>
                 </div>
-                <div style={{ fontSize: "0.875rem", color: "#c084fc", marginTop: "0.25rem" }}>
+                <div
+                  style={{
+                    fontSize: "0.875rem",
+                    color: "#c084fc",
+                    marginTop: "0.25rem",
+                  }}
+                >
                   Generate quiz questions automatically using AI
                 </div>
               </button>
@@ -782,7 +1007,13 @@ export default function Home() {
                 <div style={{ fontWeight: 600, fontSize: "1.125rem" }}>
                   Build Manually
                 </div>
-                <div style={{ fontSize: "0.875rem", color: "#d1d5db", marginTop: "0.25rem" }}>
+                <div
+                  style={{
+                    fontSize: "0.875rem",
+                    color: "#d1d5db",
+                    marginTop: "0.25rem",
+                  }}
+                >
                   Create quiz questions one by one
                 </div>
               </button>
@@ -892,7 +1123,13 @@ export default function Home() {
                 `}</style>
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "1rem",
+                }}
+              >
                 {/* Topic Input */}
                 <div>
                   <label
@@ -991,7 +1228,10 @@ export default function Home() {
                     onChange={(e) =>
                       setAiForm({
                         ...aiForm,
-                        difficulty: e.target.value as "easy" | "medium" | "hard",
+                        difficulty: e.target.value as
+                          | "easy"
+                          | "medium"
+                          | "hard",
                       })
                     }
                     disabled={isGenerating}
@@ -1084,7 +1324,14 @@ export default function Home() {
                     }}
                   />
                   {aiForm.documents.length > 0 && (
-                    <div style={{ marginTop: "0.5rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    <div
+                      style={{
+                        marginTop: "0.5rem",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "0.5rem",
+                      }}
+                    >
                       {aiForm.documents.map((doc, index) => (
                         <div
                           key={index}
@@ -1158,6 +1405,112 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Next upcoming public quiz banner */}
+      {nextSession &&
+        nextSession.room_code &&
+        timeRemainingMs !== null &&
+        timeRemainingMs > 0 && (
+          <div
+            style={{
+              position: "fixed",
+              left: 0,
+              right: 0,
+              bottom: 0,
+              padding: "0.75rem 1rem",
+              background:
+                "linear-gradient(90deg, rgba(121,90,255,0.95), rgba(30,64,175,0.95))",
+              borderTop: "1px solid rgba(255,255,255,0.2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "0.75rem",
+              zIndex: 40,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.15rem",
+                minWidth: 0,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "0.7rem",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  color: "#e5e7eb",
+                  opacity: 0.9,
+                }}
+              >
+                Next quiz starting soon
+              </span>
+              <div
+                style={{
+                  fontSize: "0.95rem",
+                  fontWeight: 600,
+                  color: "white",
+                  whiteSpace: "nowrap",
+                  textOverflow: "ellipsis",
+                  overflow: "hidden",
+                  maxWidth: "14rem",
+                }}
+              >
+                {nextSession.title}
+              </div>
+              <div
+                style={{
+                  fontSize: "0.8rem",
+                  color: "#e5e7eb",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "0.35rem",
+                  alignItems: "center",
+                }}
+              >
+                <span>
+                  Starts in{" "}
+                  <span
+                    style={{
+                      fontFamily: "monospace",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {formatTimeRemaining(timeRemainingMs)}
+                  </span>
+                </span>
+                <span
+                  style={{
+                    opacity: 0.8,
+                  }}
+                >
+                  • Room {nextSession.room_code}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                router.push(`/quiz/lobby/${nextSession.room_code}`)
+              }
+              style={{
+                whiteSpace: "nowrap",
+                padding: "0.55rem 1rem",
+                borderRadius: "9999px",
+                border: "1px solid rgba(255,255,255,0.9)",
+                backgroundColor: "rgba(17,24,39,0.9)",
+                color: "white",
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Go to lobby
+            </button>
+          </div>
+        )}
     </div>
   );
 }

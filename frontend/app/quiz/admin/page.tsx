@@ -87,6 +87,7 @@ function AdminPageContent() {
   const [quizTransaction, setQuizTransaction] = useState<string>("");
   const [scheduledStartTime, setScheduledStartTime] = useState<string>("");
   const [isScheduled, setIsScheduled] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
 
   // Get available tokens for current network
   const availableTokens = NETWORK_TOKENS[chain?.id || 8453] || []
@@ -814,7 +815,8 @@ function AdminPageContent() {
         address, // user address
         0, // prize amount (will be updated later for bounty quizzes)
         undefined, // prize token (will be updated later for bounty quizzes)
-        scheduledStartIso
+        scheduledStartIso,
+        isPrivate
       );
 
       console.log("Quiz saved to backend with ID:", backendQuizId);
@@ -1333,6 +1335,25 @@ function AdminPageContent() {
                 {creationStep}
               </div>
             )}
+
+            {/* Privacy configuration */}
+            <div className="mb-4 bg-purple-600/10 border border-purple-500/40 rounded-lg p-4 text-sm text-white">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isPrivate}
+                  onChange={(e) => setIsPrivate(e.target.checked)}
+                  className="h-4 w-4 rounded border-white/40 bg-transparent mt-0.5"
+                  disabled={creationStep !== CreationStep.NONE}
+                />
+                <div>
+                  <span className="font-medium block">Make this quiz private</span>
+                  <p className="text-gray-300 text-xs mt-1">
+                    Private quizzes will not be shown on the home page banner. Only players with the room code can join.
+                  </p>
+                </div>
+              </label>
+            </div>
 
             {/* Scheduled start configuration */}
             <div className="mb-6 bg-purple-600/10 border border-purple-500/40 rounded-lg p-4 text-sm text-white">

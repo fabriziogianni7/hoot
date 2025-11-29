@@ -31,7 +31,8 @@ interface QuizContextType {
     userAddress?: string | undefined,
     prizeAmount?: number,
     prizeToken?: string | undefined,
-    scheduledStartTime?: string
+    scheduledStartTime?: string,
+    isPrivate?: boolean
   ) => Promise<string>
   startGame: (quizId: string, customRoomCode?: string) => Promise<string>
   joinGame: (playerName: string, walletAddress?: string, providedRoomCode?: string) => Promise<string>
@@ -106,7 +107,8 @@ export function QuizProvider({ children }: { children: ReactNode }) {
     userAddress?: string | undefined,
     prizeAmount?: number,
     prizeToken?: string | undefined,
-    scheduledStartTime?: string
+    scheduledStartTime?: string,
+    isPrivate?: boolean
   ): Promise<string> => {
     try {
       // Validate required fields
@@ -132,7 +134,8 @@ export function QuizProvider({ children }: { children: ReactNode }) {
         creator_address: userAddress,
         network_id: networkId.toString(),
         user_fid: userFid,
-        scheduled_start_time: scheduledStartTime
+        scheduled_start_time: scheduledStartTime,
+        is_private: isPrivate
       }
 
       const response = await callEdgeFunction<CreateQuizRequest, CreateQuizResponse>(
