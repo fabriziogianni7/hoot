@@ -59,6 +59,7 @@ export interface GameSession {
     prize_token: string | null
     contract_address: string | null
     contract_tx_hash: string | null
+    prize_distribution_tx_hash?: string | null
     creator_address: string
     network_id: string | null
     user_fid: string | null

@@ -7,11 +7,15 @@ import { useSupabase } from "@/lib/supabase-context";
 import { useAccount } from "wagmi";
 import Link from "next/link";
 import { sdk } from "@farcaster/miniapp-sdk";
-import { USDC_ADDRESSES, ZERO_ADDRESS } from "@/lib/contracts";
+import { ZERO_ADDRESS } from "@/lib/contracts";
 import { NETWORK_TOKENS } from "@/lib/token-config";
 import type { Quiz as QuizType, GameState as GameStateType } from "@/lib/types";
 
-export default function ResultsPageClient() {
+interface ResultsPageClientProps {
+  roomCode?: string;
+}
+
+export default function ResultsPageClient({ roomCode }: ResultsPageClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const {
@@ -29,6 +33,7 @@ export default function ResultsPageClient() {
   const [distributionStatus, setDistributionStatus] = useState("");
   const [distributionError, setDistributionError] = useState("");
   const [txHash, setTxHash] = useState("");
+  const [allowManualFallback, setAllowManualFallback] = useState(false);
 
   const [quizData, setQuizData] = useState<{
     id: string;
@@ -36,7 +41,8 @@ export default function ResultsPageClient() {
     prize_token: string | null;
     creator_address: string;
     status: string;
-    contract_tx_hash?: string;
+    contract_tx_hash?: string | null;
+    prize_distribution_tx_hash?: string | null;
   } | null>(null);
 
   const [isCreator, setIsCreator] = useState(false);
@@ -52,20 +58,77 @@ export default function ResultsPageClient() {
   };
 
   const [finalPlayers, setFinalPlayers] = useState<PlayerSession[]>([]);
+  const [roomCodeGameInfo, setRoomCodeGameInfo] = useState<{
+    gameSessionId: string;
+    quizId: string;
+  } | null>(null);
 
   const queryGameId = searchParams.get("game");
   const queryQuizId = searchParams.get("quizId");
-  const effectiveGameSessionId = gameSessionId || queryGameId;
+
+  const derivedGameSessionId = roomCodeGameInfo?.gameSessionId || null;
+  const derivedQuizId = roomCodeGameInfo?.quizId || null;
+
+  const effectiveGameSessionId =
+    gameSessionId || derivedGameSessionId || queryGameId;
   const quiz = getCurrentQuiz();
+
+  // Resolve room code → game_session + quiz for direct URL access
+  useEffect(() => {
+    if (!roomCode || !supabase) return;
+    if (roomCodeGameInfo) return;
+
+    const normalizedRoomCode = roomCode.toUpperCase();
+
+    const resolveRoom = async () => {
+      try {
+        console.log("[Results] Resolving room code for results", {
+          roomCode: normalizedRoomCode,
+        });
+
+        const { data, error } = await supabase
+          .from("game_sessions")
+          .select("id, quiz_id")
+          .eq("room_code", normalizedRoomCode)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        if (error || !data) {
+          console.error(
+            "[Results] Failed to resolve room code for results:",
+            error,
+          );
+          return;
+        }
+
+        console.log("[Results] Resolved room code", {
+          roomCode: normalizedRoomCode,
+          game_session_id: data.id,
+          quiz_id: data.quiz_id,
+        });
+
+        setRoomCodeGameInfo({
+          gameSessionId: data.id,
+          quizId: data.quiz_id,
+        });
+      } catch (err) {
+        console.error("[Results] Unexpected error resolving room code:", err);
+      }
+    };
+
+    resolveRoom();
+  }, [roomCode, supabase, roomCodeGameInfo]);
 
   useEffect(() => {
     const hydrateQuiz = async () => {
-      if (quiz || !queryQuizId) return;
+      const targetQuizId = quiz?.id || derivedQuizId || queryQuizId;
+      if (quiz || !targetQuizId) return;
 
       const { data: quizRow, error: quizError } = await supabase
         .from("quizzes")
         .select("*")
-        .eq("id", queryQuizId)
+        .eq("id", targetQuizId)
         .single();
 
       if (quizError || !quizRow) {
@@ -76,7 +139,7 @@ export default function ResultsPageClient() {
       const { data: questionsData, error: questionsError } = await supabase
         .from("questions")
         .select("*")
-        .eq("quiz_id", queryQuizId)
+        .eq("quiz_id", targetQuizId)
         .order("order_index", { ascending: true });
 
       if (questionsError) {
@@ -102,13 +165,14 @@ export default function ResultsPageClient() {
     };
 
     hydrateQuiz();
-  }, [quiz, queryQuizId, setCurrentQuiz, supabase]);
+  }, [quiz, queryQuizId, derivedQuizId, setCurrentQuiz, supabase]);
 
   useEffect(() => {
     const hydrateGame = async () => {
       if (currentGame || !effectiveGameSessionId) return;
 
-      const fallbackQuizId = getCurrentQuiz()?.id || queryQuizId;
+      const fallbackQuizId =
+        getCurrentQuiz()?.id || derivedQuizId || queryQuizId;
       if (!fallbackQuizId) return;
 
       const { data: playersData, error: playersError } = await supabase
@@ -158,17 +222,34 @@ export default function ResultsPageClient() {
         const { data, error } = await supabase
           .from("quizzes")
           .select(
-            "id, prize_amount, prize_token, creator_address, status, contract_tx_hash",
+            "id, prize_amount, prize_token, creator_address, status, contract_tx_hash, prize_distribution_tx_hash",
           )
           .eq("id", currentGame.quizId)
           .single();
 
         if (!error && data) {
+          console.log("[Results] Loaded quiz data", {
+            id: data.id,
+            status: data.status,
+            contract_tx_hash: data.contract_tx_hash,
+            prize_distribution_tx_hash: data.prize_distribution_tx_hash,
+          });
+
           setQuizData(data);
+
+          if (data.prize_distribution_tx_hash) {
+            console.log(
+              "[Results] Found existing prize_distribution_tx_hash on initial load",
+              data.prize_distribution_tx_hash,
+            );
+            setTxHash(data.prize_distribution_tx_hash);
+          }
 
           // Check if current user is creator
           if (address && data.creator_address) {
-            setIsCreator(address.toLowerCase() === data.creator_address.toLowerCase());
+            setIsCreator(
+              address.toLowerCase() === data.creator_address.toLowerCase(),
+            );
           }
         }
 
@@ -276,12 +357,116 @@ export default function ResultsPageClient() {
     fetchFinalScores();
   }, [effectiveGameSessionId, supabase]);
 
-  // Redirect if no game is active
+  // Poll for prize distribution status (fallback when realtime/webhook is unreliable)
   useEffect(() => {
+    if (!supabase || !quizData) return;
+    if (
+      quizData.status === "completed" &&
+      quizData.prize_distribution_tx_hash
+    ) {
+      // Already completed with a recorded tx hash; no need to poll
+      return;
+    }
+
+    // Only poll for quizzes that actually have a prize
+    if (!quizData.prize_amount || quizData.prize_amount <= 0) {
+      return;
+    }
+
+    let attempts = 0;
+    let cancelled = false;
+
+    // While polling, show a status message
+    setDistributionStatus((prev) =>
+      prev || "Distributing prizes... (checking on-chain status)",
+    );
+    setAllowManualFallback(false);
+
+    const interval = setInterval(async () => {
+      if (cancelled) return;
+
+      attempts += 1;
+
+      try {
+        console.log("[Results] Polling quiz prize status", {
+          quizId: quizData.id,
+          attempt: attempts,
+        });
+
+        const { data, error } = await supabase
+          .from("quizzes")
+          .select(
+            "id, status, prize_distribution_tx_hash, contract_tx_hash, prize_amount, prize_token, creator_address",
+          )
+          .eq("id", quizData.id)
+          .single();
+
+        if (error) {
+          console.error(
+            "[Results] Error polling quiz prize status:",
+            error,
+          );
+        } else if (data) {
+          console.log("[Results] Poll result", {
+            id: data.id,
+            status: data.status,
+            prize_distribution_tx_hash: data.prize_distribution_tx_hash,
+          });
+
+          setQuizData((prev) =>
+            prev ? { ...prev, ...data } : { ...data },
+          );
+
+          if (data.prize_distribution_tx_hash) {
+            setTxHash(data.prize_distribution_tx_hash);
+          }
+
+          // Stop polling once distribution hash is present and status is completed
+          if (
+            data.status === "completed" &&
+            data.prize_distribution_tx_hash
+          ) {
+            console.log(
+              "[Results] Prize distribution detected via polling; stopping",
+            );
+            setDistributionStatus("Prizes distributed successfully!");
+            clearInterval(interval);
+            cancelled = true;
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("[Results] Unexpected error while polling:", err);
+      }
+
+      if (attempts >= 15 && !cancelled) {
+        console.log(
+          "[Results] Max polling attempts reached without distribution; enabling manual fallback",
+        );
+        clearInterval(interval);
+        cancelled = true;
+        setAllowManualFallback(true);
+        setDistributionStatus(
+          "Automatic distribution not detected. You can distribute prizes manually.",
+        );
+      }
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [supabase, quizData]);
+
+  // Redirect if no game is active (for non-roomCode usage only)
+  useEffect(() => {
+    // When using /quiz/results/[roomCode], never auto-redirect to home.
+    if (roomCode) return;
+
     if (currentGame && currentGame.status === "finished") return;
     if (effectiveGameSessionId) return;
     router.push("/");
-  }, [currentGame, effectiveGameSessionId, router]);
+  }, [currentGame, effectiveGameSessionId, router, roomCode]);
 
   if (!currentGame || !quiz) {
     return (
@@ -310,6 +495,27 @@ export default function ResultsPageClient() {
   // Get current player
   const currentPlayerId = localStorage.getItem("playerSessionId");
   const currentPlayer = currentGame.players.find((p) => p.id === currentPlayerId);
+
+  const maxWinners = 5;
+  const winnerIds = sortedPlayers.slice(0, maxWinners).map((p) => p.id);
+
+  const isPrizeDistributed =
+    !!quizData &&
+    (quizData.status === "completed" ||
+      !!quizData.prize_distribution_tx_hash);
+
+  console.log("[Results] Banner debug", {
+    hasQuizData: !!quizData,
+    quizId: quizData?.id,
+    quizStatus: quizData?.status,
+    prizeDistributionTxHash: quizData?.prize_distribution_tx_hash,
+    isPrizeDistributed,
+  });
+
+  const isWinner =
+    !!currentPlayerId &&
+    winnerIds.includes(currentPlayerId) &&
+    isPrizeDistributed;
 
   // Handle casting result
   const handleCastResult = async () => {
@@ -379,26 +585,29 @@ export default function ResultsPageClient() {
       }
 
       if (result?.success) {
-        setDistributionStatus("Prizes distributed successfully!");
+        const message: string =
+          typeof result.message === "string" && result.message.length > 0
+            ? result.message
+            : "Prizes distributed successfully.";
 
-        // Set transaction hash if available (from the backend response or quiz data)
-        if (result.contract_address) {
-          // Refresh quiz data to get the updated transaction hash
-          const { data: updatedQuiz } = await supabase
-            .from("quizzes")
-            .select("contract_tx_hash")
-            .eq("id", quizData.id)
-            .single();
+        setDistributionStatus(message);
 
-          if (updatedQuiz?.contract_tx_hash) {
-            setTxHash(updatedQuiz.contract_tx_hash);
-          }
+        if (result.prize_distribution_tx_hash) {
+          setTxHash(result.prize_distribution_tx_hash);
         }
 
-        // Refresh the page to show updated status
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
+        // Optimistically mark quiz as completed with distribution hash;
+        // realtime subscription will keep this in sync.
+        if (quizData) {
+          setQuizData({
+            ...quizData,
+            status: "completed",
+            prize_distribution_tx_hash:
+              result.prize_distribution_tx_hash ??
+              quizData.prize_distribution_tx_hash ??
+              null,
+          });
+        }
       } else {
         const errorMessage = result?.error || "Failed to distribute prizes";
         console.error("❌ Backend returned error:", errorMessage);
@@ -440,6 +649,12 @@ export default function ResultsPageClient() {
               {currentPlayer.answers.filter((a) => a.isCorrect).length} correct
               answers out of {quiz.questions.length}
             </div>
+          </div>
+        )}
+
+        {isPrizeDistributed && isWinner && (
+          <div className="bg-green-700/40 border border-green-500 rounded-lg p-3 mb-8 w-full max-w-md text-center">
+            <p className="text-green-100 font-medium">You received a prize.</p>
           </div>
         )}
 
@@ -500,6 +715,10 @@ export default function ResultsPageClient() {
             });
 
             const tokenSymbol = matchingToken?.symbol ?? (isETH ? "ETH" : "TOKEN");
+
+            const prizesDistributedForQuiz =
+              quizData.status === "completed" &&
+              !!quizData.prize_distribution_tx_hash;
 
             return (
               <div className="bg-purple-600/20 border border-purple-500 rounded-lg p-6 mb-8 w-full max-w-md">
@@ -567,26 +786,38 @@ export default function ResultsPageClient() {
                 )}
 
                 {isCreator ? (
-                  <button
-                    onClick={handleDistributePrizes}
-                    disabled={isDistributing || !address}
-                    className="w-full py-3 rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    style={{
-                      backgroundColor: isDistributing ? "#16a34a" : "#22c55e", // green-600 when loading, green-500 when ready
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isDistributing) {
-                        e.currentTarget.style.backgroundColor = "#16a34a"; // green-600 on hover
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isDistributing) {
-                        e.currentTarget.style.backgroundColor = "#22c55e"; // green-500 normal state
-                      }
-                    }}
-                  >
-                    {isDistributing ? "Distributing Prizes..." : "Distribute Prizes"}
-                  </button>
+                  prizesDistributedForQuiz ? (
+                    <div className="w-full py-3 bg-gray-700 rounded text-white font-medium text-center">
+                      Prizes have already been distributed
+                    </div>
+                  ) : allowManualFallback ? (
+                    <button
+                      onClick={handleDistributePrizes}
+                      disabled={isDistributing || !address}
+                      className="w-full py-3 rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      style={{
+                        backgroundColor: isDistributing ? "#16a34a" : "#22c55e", // green-600 when loading, green-500 when ready
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isDistributing) {
+                          e.currentTarget.style.backgroundColor = "#16a34a"; // green-600 on hover
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isDistributing) {
+                          e.currentTarget.style.backgroundColor = "#22c55e"; // green-500 normal state
+                        }
+                      }}
+                    >
+                      {isDistributing
+                        ? "Distributing Prizes..."
+                        : "Distribute Prizes"}
+                    </button>
+                  ) : (
+                    <div className="w-full py-3 bg-gray-700 rounded text-white font-medium text-center">
+                      Distributing prizes... (waiting for confirmation)
+                    </div>
+                  )
                 ) : (
                   <div className="w-full py-3 bg-gray-600 rounded text-white font-medium text-center">
                     Only the quiz creator can distribute prizes
@@ -595,12 +826,6 @@ export default function ResultsPageClient() {
               </div>
             );
           })()}
-
-        {quizData && quizData.status === "completed" && (
-          <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-4 mb-8 w-full max-w-md text-center">
-            <p className="text-purple-200">✓ Prizes have been distributed!</p>
-          </div>
-        )}
 
         <div className="flex flex-col gap-4 w-full max-w-md">
           {/* Cast Result Button */}
