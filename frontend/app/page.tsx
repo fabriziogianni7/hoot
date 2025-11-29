@@ -1971,7 +1971,7 @@ export default function Home() {
               calendar.
             </p>
             <img
-              src="/base-open-external.png"
+              src="/base-open-external.jpeg"
               alt="Tap the three dots and select Open in external browser"
               style={{
                 width: "100%",
