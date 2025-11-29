@@ -1809,29 +1809,32 @@ export default function Home() {
                       <span>Add to calendar</span>
                     </div>
                   </div>
-                  <AddToCalendarButton
-                    name={nextSession.title}
-                    options={["Google", "Apple", "Outlook.com", "iCal"]}
-                    startDate={eventStartIso.toISOString().slice(0, 10)}
-                    startTime={eventStartIso.toISOString().slice(11, 16)}
-                    endDate={eventEndIso.toISOString().slice(0, 10)}
-                    endTime={eventEndIso.toISOString().slice(11, 16)}
-                    timeZone={
-                      typeof window !== "undefined"
-                        ? Intl.DateTimeFormat().resolvedOptions().timeZone
-                        : "UTC"
-                    }
-                    description={`Join the Hoot quiz – Room ${nextSession.room_code}`}
-                    location={eventUrl}
-                    buttonStyle="round"
-                    trigger="click"
-                  />
+                  {/* On web: full calendar widget */}
+                  {!isMiniapp && (
+                    <AddToCalendarButton
+                      name={nextSession.title}
+                      options={["Google", "Apple", "Outlook.com", "iCal"]}
+                      startDate={eventStartIso.toISOString().slice(0, 10)}
+                      startTime={eventStartIso.toISOString().slice(11, 16)}
+                      endDate={eventEndIso.toISOString().slice(0, 10)}
+                      endTime={eventEndIso.toISOString().slice(11, 16)}
+                      timeZone={
+                        typeof window !== "undefined"
+                          ? Intl.DateTimeFormat().resolvedOptions().timeZone
+                          : "UTC"
+                      }
+                      description={`Join the Hoot quiz – Room ${nextSession.room_code}`}
+                      location={eventUrl}
+                      buttonStyle="round"
+                      trigger="click"
+                    />
+                  )}
+                  {/* In MiniApps: open external calendar URL instead */}
                   {isMiniapp && googleCalendarUrl && (
                     <button
                       type="button"
                       onClick={() => openExternalUrl(googleCalendarUrl)}
                       style={{
-                        marginTop: "0.75rem",
                         width: "100%",
                         padding: "0.6rem 0.9rem",
                         borderRadius: "9999px",
@@ -1844,7 +1847,7 @@ export default function Home() {
                         cursor: "pointer",
                       }}
                     >
-                      Open in browser (Google Calendar)
+                      Open calendar in browser
                     </button>
                   )}
                 </div>
