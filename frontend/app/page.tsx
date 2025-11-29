@@ -47,6 +47,7 @@ export default function Home() {
     statusColor: "#fbbf24",
   });
   const [showWalletModal, setShowWalletModal] = useState(false);
+  const [showQuickMenu, setShowQuickMenu] = useState(false);
   const [showMethodModal, setShowMethodModal] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -538,7 +539,7 @@ export default function Home() {
         }}
       />
 
-      {/* Farcaster Auth in top right corner */}
+      {/* Farcaster Auth / Quick Menu trigger in top right corner */}
       <div
         style={{
           position: "absolute",
@@ -547,13 +548,9 @@ export default function Home() {
           zIndex: 10,
         }}
       >
-        <div
-          onClick={() => {
-            // Only open wallet modal if user is authenticated and has a wallet
-            if (loggedUser?.isAuthenticated && loggedUser?.address) {
-              setShowWalletModal(true);
-            }
-          }}
+        <button
+          type="button"
+          onClick={() => setShowQuickMenu(true)}
           style={{
             backgroundColor: "#795AFF",
             color: "white",
@@ -563,25 +560,19 @@ export default function Home() {
             display: "flex",
             alignItems: "center",
             gap: "0.5rem",
-            cursor:
-              loggedUser?.isAuthenticated && loggedUser?.address
-                ? "pointer"
-                : "default",
+            cursor: "pointer",
             transition: "opacity 0.2s, transform 0.2s",
             opacity:
               loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
+            border: "none",
           }}
           onMouseEnter={(e) => {
-            if (loggedUser?.isAuthenticated && loggedUser?.address) {
-              e.currentTarget.style.opacity = "0.9";
-              e.currentTarget.style.transform = "scale(1.02)";
-            }
+            e.currentTarget.style.opacity = "0.9";
+            e.currentTarget.style.transform = "scale(1.02)";
           }}
           onMouseLeave={(e) => {
-            if (loggedUser?.isAuthenticated && loggedUser?.address) {
-              e.currentTarget.style.opacity = "1";
-              e.currentTarget.style.transform = "scale(1)";
-            }
+            e.currentTarget.style.opacity = "1";
+            e.currentTarget.style.transform = "scale(1)";
           }}
         >
           {/* Status dot */}
@@ -608,7 +599,17 @@ export default function Home() {
                 </div>
               )}
           </div>
-        </div>
+          {/* Burger / menu icon */}
+          <div
+            style={{
+              marginLeft: "0.25rem",
+              fontSize: "1rem",
+              opacity: 0.9,
+            }}
+          >
+            ☰
+          </div>
+        </button>
       </div>
 
       {/* Logo and description */}
@@ -904,6 +905,167 @@ export default function Home() {
       {/* Wallet Modal */}
       {showWalletModal && (
         <WalletModal onClose={() => setShowWalletModal(false)} />
+      )}
+
+      {/* Quick Menu Bottom Sheet */}
+      {showQuickMenu && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            zIndex: 60,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowQuickMenu(false);
+            }
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#000",
+              border: "1px solid white",
+              borderTopLeftRadius: "0.75rem",
+              borderTopRightRadius: "0.75rem",
+              padding: "1.5rem",
+              width: "100%",
+              maxWidth: "28rem",
+              margin: "0 1rem",
+              marginBottom: 0,
+              position: "relative",
+            }}
+          >
+            <button
+              onClick={() => setShowQuickMenu(false)}
+              style={{
+                position: "absolute",
+                top: "1rem",
+                right: "1rem",
+                color: "white",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: "1.25rem",
+              }}
+            >
+              ×
+            </button>
+
+            <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+              <h3
+                style={{
+                  color: "white",
+                  fontSize: "1.125rem",
+                  fontWeight: 600,
+                  marginBottom: "0.5rem",
+                }}
+              >
+                Quick Actions
+              </h3>
+              <p style={{ color: "#d1d5db", fontSize: "0.875rem" }}>
+                Jump to your quizzes or open your wallet
+              </p>
+            </div>
+
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
+            >
+              {/* Your Quizzes */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQuickMenu(false);
+                  router.push("/quiz/admin/my-quizzes");
+                }}
+                style={{
+                  width: "100%",
+                  padding: "1rem",
+                  backgroundColor: "rgba(121, 90, 255, 0.4)",
+                  border: "2px solid #795AFF",
+                  borderRadius: "0.5rem",
+                  color: "white",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: "1.125rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <span>📚</span>
+                  <span>Your quizzes</span>
+                </div>
+                <div
+                  style={{
+                    fontSize: "0.875rem",
+                    color: "#c084fc",
+                    marginTop: "0.25rem",
+                  }}
+                >
+                  View and manage the quizzes you have created
+                </div>
+              </button>
+
+              {/* Wallet */}
+              <button
+                type="button"
+                onClick={() => {
+                  // Mirror the existing badge behavior:
+                  // only open wallet if the user is authenticated and has a wallet address
+                  if (loggedUser?.isAuthenticated && loggedUser?.address) {
+                    setShowQuickMenu(false);
+                    setShowWalletModal(true);
+                  }
+                }}
+                style={{
+                  width: "100%",
+                  padding: "1rem",
+                  backgroundColor: "rgba(31, 41, 55, 0.9)",
+                  border: "1px solid #4b5563",
+                  borderRadius: "0.5rem",
+                  color: "white",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  opacity:
+                    loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: "1.125rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <span>👛</span>
+                  <span>Wallet</span>
+                </div>
+                <div
+                  style={{
+                    fontSize: "0.875rem",
+                    color: "#d1d5db",
+                    marginTop: "0.25rem",
+                  }}
+                >
+                  {loggedUser?.isAuthenticated && loggedUser?.address
+                    ? "Open your wallet to view balances and activity"
+                    : "Connect and create your wallet first to open it here"}
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Method Chooser Modal */}
