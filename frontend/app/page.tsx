@@ -62,6 +62,7 @@ export default function Home() {
   const [isAddingMiniApp, setIsAddingMiniApp] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showReminderSheet, setShowReminderSheet] = useState(false);
+  const [showBaseBrowserHint, setShowBaseBrowserHint] = useState(false);
   const [aiForm, setAiForm] = useState({
     topic: "",
     questionCount: 5,
@@ -1833,7 +1834,12 @@ export default function Home() {
                   {isMiniapp && googleCalendarUrl && (
                     <button
                       type="button"
-                      onClick={() => openExternalUrl(googleCalendarUrl)}
+                      onClick={() => {
+                        openExternalUrl(googleCalendarUrl);
+                        if (isBaseMiniapp) {
+                          setShowBaseBrowserHint(true);
+                        }
+                      }}
                       style={{
                         width: "100%",
                         padding: "0.6rem 0.9rem",
@@ -1897,6 +1903,85 @@ export default function Home() {
             </div>
           </div>
         )}
+
+      {/* Base app hint: how to open in external browser */}
+      {isBaseMiniapp && showBaseBrowserHint && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.75)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 70,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowBaseBrowserHint(false);
+            }
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#000",
+              borderRadius: "0.75rem",
+              border: "1px solid rgba(255,255,255,0.4)",
+              maxWidth: "22rem",
+              width: "90%",
+              padding: "1.25rem",
+              textAlign: "center",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setShowBaseBrowserHint(false)}
+              style={{
+                position: "absolute",
+                top: "1rem",
+                right: "1.25rem",
+                color: "white",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: "1.25rem",
+              }}
+            >
+              ×
+            </button>
+            <h4
+              style={{
+                color: "white",
+                fontSize: "1rem",
+                fontWeight: 600,
+                marginBottom: "0.5rem",
+              }}
+            >
+              Open in external browser
+            </h4>
+            <p
+              style={{
+                color: "#d1d5db",
+                fontSize: "0.85rem",
+                marginBottom: "0.75rem",
+              }}
+            >
+              In the Base app, tap the three dots in the top right and choose{" "}
+              <strong>“Open in external browser”</strong> to add the event to your
+              calendar.
+            </p>
+            <img
+              src="/base-open-external.png"
+              alt="Tap the three dots and select Open in external browser"
+              style={{
+                width: "100%",
+                borderRadius: "0.5rem",
+                border: "1px solid rgba(255,255,255,0.2)",
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Next upcoming public quiz banner */}
       {nextSession &&
