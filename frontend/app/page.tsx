@@ -62,7 +62,6 @@ export default function Home() {
   const [isAddingMiniApp, setIsAddingMiniApp] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showReminderSheet, setShowReminderSheet] = useState(false);
-  const [showBaseBrowserHint, setShowBaseBrowserHint] = useState(false);
   const [showBaseProceedModal, setShowBaseProceedModal] = useState(false);
   const [aiForm, setAiForm] = useState({
     topic: "",
@@ -1906,7 +1905,7 @@ export default function Home() {
           </div>
         )}
 
-      {/* Base app: confirm before opening browser */}
+      {/* Base app: confirm + explainer before opening browser */}
       {isBaseMiniapp && showBaseProceedModal && (
         <div
           style={{
@@ -1928,108 +1927,12 @@ export default function Home() {
               width: "90%",
               padding: "1.25rem",
               textAlign: "center",
-            }}
-          >
-            <h4
-              style={{
-                color: "white",
-                fontSize: "1rem",
-                fontWeight: 600,
-                marginBottom: "0.5rem",
-              }}
-            >
-              Proceed to browser?
-            </h4>
-            <p
-              style={{
-                color: "#d1d5db",
-                fontSize: "0.85rem",
-                marginBottom: "0.75rem",
-              }}
-            >
-              We will open Google Calendar in a new tab inside the Base app.
-            </p>
-            <div
-              style={{
-                display: "flex",
-                gap: "0.75rem",
-                justifyContent: "center",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setShowBaseProceedModal(false)}
-                style={{
-                  padding: "0.5rem 1rem",
-                  borderRadius: "9999px",
-                  border: "1px solid #4b5563",
-                  backgroundColor: "rgba(17,24,39,0.9)",
-                  color: "white",
-                  fontSize: "0.85rem",
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowBaseProceedModal(false);
-                  if (googleCalendarUrl) {
-                    openExternalUrl(googleCalendarUrl);
-                    setShowBaseBrowserHint(true);
-                  }
-                }}
-                style={{
-                  padding: "0.5rem 1rem",
-                  borderRadius: "9999px",
-                  border: "1px solid rgba(255,255,255,0.7)",
-                  backgroundColor: "#795AFF",
-                  color: "white",
-                  fontSize: "0.85rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                }}
-              >
-                Proceed
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Base app hint: how to open in external browser */}
-      {isBaseMiniapp && showBaseBrowserHint && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0,0,0,0.75)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 70,
-          }}
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setShowBaseBrowserHint(false);
-            }
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#000",
-              borderRadius: "0.75rem",
-              border: "1px solid rgba(255,255,255,0.4)",
-              maxWidth: "22rem",
-              width: "90%",
-              padding: "1.25rem",
-              textAlign: "center",
+              position: "relative",
             }}
           >
             <button
               type="button"
-              onClick={() => setShowBaseBrowserHint(false)}
+              onClick={() => setShowBaseProceedModal(false)}
               style={{
                 position: "absolute",
                 top: "1rem",
@@ -2062,7 +1965,7 @@ export default function Home() {
             >
               In the Base app, tap the three dots in the top right and choose{" "}
               <strong>“Open in external browser”</strong> to add the event to your
-              calendar.
+              calendar. Then come back to Hoot.
             </p>
             <img
               src="/base-open-external.jpeg"
@@ -2071,8 +1974,30 @@ export default function Home() {
                 width: "100%",
                 borderRadius: "0.5rem",
                 border: "1px solid rgba(255,255,255,0.2)",
+                marginBottom: "0.9rem",
               }}
             />
+            <button
+              type="button"
+              onClick={() => {
+                setShowBaseProceedModal(false);
+                if (googleCalendarUrl) {
+                  openExternalUrl(googleCalendarUrl);
+                }
+              }}
+              style={{
+                padding: "0.6rem 1.4rem",
+                borderRadius: "9999px",
+                border: "1px solid rgba(255,255,255,0.7)",
+                backgroundColor: "#795AFF",
+                color: "white",
+                fontSize: "0.9rem",
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              Proceed
+            </button>
           </div>
         </div>
       )}
