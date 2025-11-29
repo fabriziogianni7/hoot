@@ -27,7 +27,7 @@ export const minikitConfig = {
     splashImageUrl: `${ROOT_URL}/Icon_hoot.png`,
     splashBackgroundColor: "#000000",
     homeUrl: ROOT_URL,
-    webhookUrl: `${ROOT_URL}/api/webhook`,
+    webhookUrl: `https://api.neynar.com/f/app/f2711f07-1fd0-40ac-acc6-4736a6187075/event`,
     primaryCategory: "social",
     tags: ["marketing", "ads", "quickstart", "waitlist"],
     heroImageUrl: `${ROOT_URL}/hero_hoot_1.png`, 
@@ -35,7 +35,7 @@ export const minikitConfig = {
     ogTitle: "",
     ogDescription: "",
     ogImageUrl: `${ROOT_URL}/hero_hoot_1.png`,
-    canonicalDomain: "hoot-quiz.com",      
+    canonicalDomain: "hoot-quiz.com"  
   }
 } as const;
 

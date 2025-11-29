@@ -33,6 +33,7 @@ export default function Home() {
     signatureModal,
     authFlowState,
     isMiniapp,
+    miniappClient,
     isWalletReady,
   } = useAuth();
 
@@ -50,6 +51,7 @@ export default function Home() {
   const [showQuickMenu, setShowQuickMenu] = useState(false);
   const [showMethodModal, setShowMethodModal] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
+  const [isAddingMiniApp, setIsAddingMiniApp] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiForm, setAiForm] = useState({
     topic: "",
@@ -73,6 +75,8 @@ export default function Home() {
     null
   );
   const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
+
+  const isFarcasterMiniapp = Boolean(isMiniapp && miniappClient === "farcaster");
 
   // Fetch next upcoming public quiz (and its room code)
   useEffect(() => {
@@ -441,6 +445,22 @@ export default function Home() {
       setIsGenerating(false);
       setShowAiModal(false);
       // Show error - could add error state here
+    }
+  };
+
+  const handleNotifyMeClick = async () => {
+    if (!isFarcasterMiniapp || isAddingMiniApp) {
+      return;
+    }
+
+    try {
+      setIsAddingMiniApp(true);
+      await sdk.actions.addMiniApp();
+      console.log("✅ Requested to add Mini App via Farcaster");
+    } catch (error) {
+      console.error("❌ Failed to add Mini App via Farcaster", error);
+    } finally {
+      setIsAddingMiniApp(false);
     }
   };
 
@@ -1695,25 +1715,55 @@ export default function Home() {
                 )}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                router.push(`/quiz/lobby/${nextSession.room_code}`)
-              }
+            <div
               style={{
-                whiteSpace: "nowrap",
-                padding: "0.55rem 1rem",
-                borderRadius: "9999px",
-                border: "1px solid rgba(255,255,255,0.9)",
-                backgroundColor: "rgba(17,24,39,0.9)",
-                color: "white",
-                fontSize: "0.85rem",
-                fontWeight: 600,
-                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                flexShrink: 0,
               }}
             >
-              Go to lobby
-            </button>
+              {isFarcasterMiniapp && (
+                <button
+                  type="button"
+                  onClick={handleNotifyMeClick}
+                  disabled={isAddingMiniApp}
+                  style={{
+                    whiteSpace: "nowrap",
+                    padding: "0.45rem 0.9rem",
+                    borderRadius: "9999px",
+                    border: "1px solid rgba(255,255,255,0.7)",
+                    backgroundColor: "rgba(17,24,39,0.7)",
+                    color: "white",
+                    fontSize: "0.8rem",
+                    fontWeight: 500,
+                    cursor: isAddingMiniApp ? "not-allowed" : "pointer",
+                    opacity: isAddingMiniApp ? 0.7 : 1,
+                  }}
+                >
+                  {isAddingMiniApp ? "Adding..." : "🥋 Notify me"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() =>
+                  router.push(`/quiz/lobby/${nextSession.room_code}`)
+                }
+                style={{
+                  whiteSpace: "nowrap",
+                  padding: "0.55rem 1rem",
+                  borderRadius: "9999px",
+                  border: "1px solid rgba(255,255,255,0.9)",
+                  backgroundColor: "rgba(17,24,39,0.9)",
+                  color: "white",
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Go to lobby
+              </button>
+            </div>
           </div>
         )}
     </div>
