@@ -63,6 +63,7 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showReminderSheet, setShowReminderSheet] = useState(false);
   const [showBaseBrowserHint, setShowBaseBrowserHint] = useState(false);
+  const [showBaseProceedModal, setShowBaseProceedModal] = useState(false);
   const [aiForm, setAiForm] = useState({
     topic: "",
     questionCount: 5,
@@ -1835,9 +1836,10 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => {
-                        openExternalUrl(googleCalendarUrl);
                         if (isBaseMiniapp) {
-                          setShowBaseBrowserHint(true);
+                          setShowBaseProceedModal(true);
+                        } else {
+                          openExternalUrl(googleCalendarUrl);
                         }
                       }}
                       style={{
@@ -1903,6 +1905,98 @@ export default function Home() {
             </div>
           </div>
         )}
+
+      {/* Base app: confirm before opening browser */}
+      {isBaseMiniapp && showBaseProceedModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.75)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 70,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#000",
+              borderRadius: "0.75rem",
+              border: "1px solid rgba(255,255,255,0.4)",
+              maxWidth: "22rem",
+              width: "90%",
+              padding: "1.25rem",
+              textAlign: "center",
+            }}
+          >
+            <h4
+              style={{
+                color: "white",
+                fontSize: "1rem",
+                fontWeight: 600,
+                marginBottom: "0.5rem",
+              }}
+            >
+              Proceed to browser?
+            </h4>
+            <p
+              style={{
+                color: "#d1d5db",
+                fontSize: "0.85rem",
+                marginBottom: "0.75rem",
+              }}
+            >
+              We will open Google Calendar in a new tab inside the Base app.
+            </p>
+            <div
+              style={{
+                display: "flex",
+                gap: "0.75rem",
+                justifyContent: "center",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowBaseProceedModal(false)}
+                style={{
+                  padding: "0.5rem 1rem",
+                  borderRadius: "9999px",
+                  border: "1px solid #4b5563",
+                  backgroundColor: "rgba(17,24,39,0.9)",
+                  color: "white",
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBaseProceedModal(false);
+                  if (googleCalendarUrl) {
+                    openExternalUrl(googleCalendarUrl);
+                    setShowBaseBrowserHint(true);
+                  }
+                }}
+                style={{
+                  padding: "0.5rem 1rem",
+                  borderRadius: "9999px",
+                  border: "1px solid rgba(255,255,255,0.7)",
+                  backgroundColor: "#795AFF",
+                  color: "white",
+                  fontSize: "0.85rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                Proceed
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Base app hint: how to open in external browser */}
       {isBaseMiniapp && showBaseBrowserHint && (
