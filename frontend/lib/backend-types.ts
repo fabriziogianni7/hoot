@@ -9,6 +9,7 @@ export interface Quiz {
   creator_address: string
   contract_address: string | null
   contract_tx_hash: string | null
+  prize_distribution_tx_hash: string | null
   network_id: string | null
   user_fid: string | null
   user_id: string | null

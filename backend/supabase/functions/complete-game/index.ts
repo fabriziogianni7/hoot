@@ -8,10 +8,6 @@ import {
   HOOT_QUIZ_MANAGER_ABI,
   ERC20_ABI,
   ZERO_ADDRESS,
-  TREASURY_FEE_PCT,
-  FIRST_PLACE_PCT,
-  SECOND_PLACE_PCT,
-  THIRD_PLACE_PCT,
   GAME_STATUS,
   QUIZ_STATUS
 } from '../_shared/constants.ts'
@@ -28,6 +24,8 @@ async function fetchGameSession(supabase: ReturnType<typeof initSupabaseClient>,
         prize_amount,
         prize_token,
         contract_address,
+        contract_tx_hash,
+        prize_distribution_tx_hash,
         creator_address,
         status
       )
@@ -69,24 +67,6 @@ async function fetchPlayerSessions(supabase: ReturnType<typeof initSupabaseClien
 
   if (error) throw new Error('Failed to fetch players')
   return data || []
-}
-
-async function validateGameCompletion(
-  supabase: ReturnType<typeof initSupabaseClient>,
-  playerSessions: PlayerSession[],
-  totalQuestions: number
-): Promise<boolean> {
-  for (const playerSession of playerSessions) {
-    const { data: answers, error } = await supabase
-      .from('answers')
-      .select('question_id')
-      .eq('player_session_id', playerSession.id)
-
-    if (error || !answers || answers.length < totalQuestions) {
-      return false
-    }
-  }
-  return true
 }
 
 async function markGameAsCompleted(supabase: ReturnType<typeof initSupabaseClient>, gameSessionId: string) {
@@ -294,7 +274,7 @@ async function updateQuizWithTransaction(
     .from('quizzes')
     .update({ 
       status: QUIZ_STATUS.COMPLETED,
-      contract_tx_hash: txHash
+      prize_distribution_tx_hash: txHash
     })
     .eq('id', quizId)
 }
@@ -307,23 +287,91 @@ serve(async (req) => {
   try {
     console.log('🎯 complete-game function called')
     const supabase = initSupabaseClient(req, true)
-    const requestBody = await req.json()
+    const requestBody = await req.json() as unknown
     console.log('📥 Request body:', JSON.stringify(requestBody, null, 2))
-    
-    const { game_session_id, creator_wallet_address }: CompleteGameRequest = requestBody
 
-    // Validate required fields
-    console.log('🔍 Validating required fields...')
-    const validationError = validateRequired({ game_session_id, creator_wallet_address })
-    if (validationError) {
-      console.error('❌ Validation error:', validationError)
-      return errorResponse(validationError, 400)
+    // Detect whether this is a Supabase DB webhook payload or the old direct API payload
+    let gameSessionId: string
+    let creatorWalletAddress: string | null = null
+    let isWebhookPayload = false
+
+    const looksLikeWebhook =
+      requestBody &&
+      typeof requestBody === 'object' &&
+      'record' in requestBody &&
+      'old_record' in requestBody &&
+      'type' in requestBody &&
+      'table' in requestBody
+
+    if (looksLikeWebhook) {
+      isWebhookPayload = true
+      const { type, table, record, old_record } = requestBody as {
+        type: string
+        table: string
+        record: any
+        old_record: any
+      }
+
+      console.log('🔔 Detected DB webhook payload')
+      console.log('Webhook type:', type, 'table:', table)
+
+      // Only handle UPDATEs on game_sessions
+      if (type !== 'UPDATE' || table !== 'game_sessions') {
+        console.log('ℹ️ Ignoring webhook: not a game_sessions UPDATE')
+        return successResponse({
+          success: true,
+          message: 'Event ignored: not a game_sessions UPDATE'
+        })
+      }
+
+      if (!record || !record.id) {
+        console.error('❌ Invalid webhook payload: missing record.id')
+        return errorResponse('Invalid webhook payload: record.id is required', 400)
+      }
+
+      const newStatus = record.status
+      const oldStatus = old_record?.status
+      console.log('🔄 Status transition:', oldStatus, '->', newStatus)
+
+      // Only run prize distribution when the game transitions to COMPLETED
+      if (newStatus !== GAME_STATUS.COMPLETED) {
+        console.log('⏭ Game not completed yet, skipping prize distribution')
+        return successResponse({
+          success: true,
+          message: 'Game not completed yet - no action taken'
+        })
+      }
+
+      if (oldStatus === GAME_STATUS.COMPLETED) {
+        console.log('⏭ Game already completed before this update, skipping')
+        return successResponse({
+          success: true,
+          message: 'Game already completed - no action taken'
+        })
+      }
+
+      gameSessionId = record.id
+      // For webhook calls we trust Supabase and skip creator wallet auth
+    } else {
+      console.log('🔍 Detected direct API payload')
+      const { game_session_id, creator_wallet_address }: CompleteGameRequest = requestBody as CompleteGameRequest
+
+      // Validate required fields for direct API calls
+      console.log('🔍 Validating required fields...')
+      const validationError = validateRequired({ game_session_id, creator_wallet_address })
+      if (validationError) {
+        console.error('❌ Validation error:', validationError)
+        return errorResponse(validationError, 400)
+      }
+      console.log('✅ Validation passed')
+
+      gameSessionId = game_session_id
+      creatorWalletAddress = creator_wallet_address
     }
-    console.log('✅ Validation passed')
 
     // Fetch game session with quiz details
-    console.log('🔍 Fetching game session:', game_session_id)
-    const gameSession = await fetchGameSession(supabase, game_session_id)
+    console.log('🔍 Fetching game session:', gameSessionId)
+    const gameSession = await fetchGameSession(supabase, gameSessionId)
     if (!gameSession) {
       console.error('❌ Game session not found')
       return errorResponse('Game session not found', 404)
@@ -335,31 +383,41 @@ serve(async (req) => {
       quiz_title: gameSession.quizzes?.title,
       prize_amount: gameSession.quizzes?.prize_amount,
       contract_address: gameSession.quizzes?.contract_address,
+      contract_tx_hash: gameSession.quizzes?.contract_tx_hash,
+      prize_distribution_tx_hash: gameSession.quizzes?.prize_distribution_tx_hash,
       creator_address: gameSession.quizzes?.creator_address
     })
 
-    // Verify creator authorization
-    console.log('🔍 Verifying creator authorization...')
-    console.log('Creator from DB:', gameSession.quizzes?.creator_address)
-    console.log('Creator from request:', creator_wallet_address)
-    const authError = verifyCreatorAuthorization(gameSession, creator_wallet_address)
-    if (authError) {
-      console.error('❌ Authorization error:', authError)
-      return errorResponse(authError, 403)
+    // Verify creator authorization only for direct API calls
+    if (!isWebhookPayload) {
+      console.log('🔍 Verifying creator authorization...')
+      console.log('Creator from DB:', gameSession.quizzes?.creator_address)
+      console.log('Creator from request:', creatorWalletAddress)
+      const authError = creatorWalletAddress
+        ? verifyCreatorAuthorization(gameSession, creatorWalletAddress)
+        : 'Missing creator wallet address'
+
+      if (authError) {
+        console.error('❌ Authorization error:', authError)
+        return errorResponse(authError, 403)
+      }
+      console.log('✅ Creator authorized')
+    } else {
+      console.log('🔓 Webhook payload: skipping creator authorization (trusted internal call)')
     }
-    console.log('✅ Creator authorized')
 
     // Check if prizes have already been distributed
-    const prizesAlreadyDistributed = gameSession.quizzes?.status === QUIZ_STATUS.COMPLETED || 
-                                      gameSession.quizzes?.contract_tx_hash
+    const prizesAlreadyDistributed =
+      gameSession.quizzes?.status === QUIZ_STATUS.COMPLETED ||
+      !!gameSession.quizzes?.prize_distribution_tx_hash
     if (prizesAlreadyDistributed) {
       console.log('⚠️ Prizes already distributed')
       console.log('Quiz status:', gameSession.quizzes?.status)
-      console.log('Contract tx hash:', gameSession.quizzes?.contract_tx_hash)
+      console.log('Prize distribution tx hash:', gameSession.quizzes?.prize_distribution_tx_hash)
       return successResponse({ 
         success: true, 
         message: 'Prizes already distributed',
-        contract_tx_hash: gameSession.quizzes?.contract_tx_hash
+        prize_distribution_tx_hash: gameSession.quizzes?.prize_distribution_tx_hash
       })
     }
 
@@ -369,7 +427,7 @@ serve(async (req) => {
     console.log('✅ Questions fetched:', questions.length)
     
     console.log('🔍 Fetching player sessions...')
-    const playerSessions = await fetchPlayerSessions(supabase, game_session_id)
+    const playerSessions = await fetchPlayerSessions(supabase, gameSessionId)
     console.log('✅ Player sessions fetched:', playerSessions.length)
     console.log('Players:', playerSessions.map(p => ({
       id: p.id,
@@ -378,22 +436,16 @@ serve(async (req) => {
       score: p.total_score
     })))
 
-    // Validate all players have completed
-    console.log('🔍 Validating game completion...')
-    const allCompleted = await validateGameCompletion(supabase, playerSessions, questions.length)
-    if (!allCompleted) {
-      console.error('❌ Not all players have completed the game')
-      return errorResponse('Not all players have completed the game', 400)
-    }
-    console.log('✅ All players completed')
+    // We rely on game_sessions.status = 'completed' to know the game is done.
+    console.log('ℹ️ Skipping strict game completion validation; proceeding based on status=completed')
 
     // Mark game as completed (if not already)
     if (gameSession.status !== GAME_STATUS.COMPLETED) {
-      console.log('🔍 Marking game as completed...')
-      await markGameAsCompleted(supabase, game_session_id)
+      console.log('🔍 Marking game as completed in game_sessions...')
+      await markGameAsCompleted(supabase, gameSessionId)
       console.log('✅ Game marked as completed')
     } else {
-      console.log('⚠️ Game already marked as completed, skipping update')
+      console.log('⚠️ Game already marked as completed in game_sessions, skipping update')
     }
 
     // Calculate top players (up to 5 winners)
@@ -476,7 +528,7 @@ serve(async (req) => {
       scores,
       contract_address: contractAddress,
       prize_distributed: prizeDistributed,
-      ...(txHash && { contract_tx_hash: txHash })
+      ...(txHash && { prize_distribution_tx_hash: txHash })
     }
     console.log('📤 Sending success response:', JSON.stringify(responseData, null, 2))
     return successResponse(responseData)

@@ -12,6 +12,7 @@ import WalletModal from "@/components/WalletModal";
 import { generateQuizViaAI } from "@/lib/supabase-client";
 import { extractPdfText, extractTextFile } from "@/lib/utils";
 import type { GenerateQuizResponse } from "@/lib/backend-types";
+import { getTokensForNetwork } from "@/lib/token-config";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -32,6 +33,7 @@ export default function Home() {
     signatureModal,
     authFlowState,
     isMiniapp,
+    miniappClient,
     isWalletReady,
   } = useAuth();
 
@@ -46,8 +48,10 @@ export default function Home() {
     statusColor: "#fbbf24",
   });
   const [showWalletModal, setShowWalletModal] = useState(false);
+  const [showQuickMenu, setShowQuickMenu] = useState(false);
   const [showMethodModal, setShowMethodModal] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
+  const [isAddingMiniApp, setIsAddingMiniApp] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [aiForm, setAiForm] = useState({
     topic: "",
@@ -62,12 +66,17 @@ export default function Home() {
     title: string;
     scheduled_start_time: string;
     room_code: string | null;
+    prize_amount?: number | null;
+    prize_token?: string | null; // contract address
+    network_id?: number | null;
   };
 
   const [nextSession, setNextSession] = useState<NextPublicSession | null>(
     null
   );
   const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
+
+  const isFarcasterMiniapp = Boolean(isMiniapp && miniappClient === "farcaster");
 
   // Fetch next upcoming public quiz (and its room code)
   useEffect(() => {
@@ -80,7 +89,9 @@ export default function Home() {
         // First, find the next public scheduled quiz
         const { data: quizzes, error: quizError } = await supabase
           .from("quizzes")
-          .select("id,title,scheduled_start_time,is_private,status")
+          .select(
+            "id,title,scheduled_start_time,is_private,status,prize_amount,prize_token,network_id"
+          )
           .eq("is_private", false)
           .not("scheduled_start_time", "is", null)
           .gt("scheduled_start_time", nowIso)
@@ -98,6 +109,9 @@ export default function Home() {
               id: string;
               title: string;
               scheduled_start_time: string | null;
+              prize_amount?: number | null;
+              prize_token?: string | null;
+              network_id?: number | null;
             }
           | undefined;
 
@@ -170,6 +184,9 @@ export default function Home() {
             title: quizRow.title,
             scheduled_start_time: quizRow.scheduled_start_time,
             room_code: sessionRow.room_code ?? null,
+            prize_amount: quizRow.prize_amount ?? null,
+            prize_token: quizRow.prize_token ?? null,
+            network_id: quizRow.network_id ?? null,
           });
           setTimeRemainingMs(diff);
         }
@@ -189,13 +206,12 @@ export default function Home() {
       console.warn("[Home] Supabase client not available, skipping fetch.");
       return;
     }
-    console.log("ciao");
     fetchNextSession();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [supabase]);
 
   // Countdown timer for the next session
   useEffect(() => {
@@ -239,6 +255,27 @@ export default function Home() {
       seconds.toString().padStart(2, "0"),
     ];
     return parts.join(":");
+  };
+
+  const getPrizeLabel = (session: NextPublicSession) => {
+    if (
+      session.prize_amount == null ||
+      !session.prize_token ||
+      !session.network_id
+    ) {
+      return null;
+    }
+
+    const tokens = getTokensForNetwork(session.network_id);
+    const token = tokens.find(
+      (t) => t.address.toLowerCase() === session.prize_token!.toLowerCase()
+    );
+
+    if (!token) {
+      return null;
+    }
+
+    return `${session.prize_amount} ${token.symbol}`;
   };
 
   // Initialize the miniapp
@@ -411,6 +448,22 @@ export default function Home() {
     }
   };
 
+  const handleNotifyMeClick = async () => {
+    if (!isFarcasterMiniapp || isAddingMiniApp) {
+      return;
+    }
+
+    try {
+      setIsAddingMiniApp(true);
+      await sdk.actions.addMiniApp();
+      console.log("✅ Requested to add Mini App via Farcaster");
+    } catch (error) {
+      console.error("❌ Failed to add Mini App via Farcaster", error);
+    } finally {
+      setIsAddingMiniApp(false);
+    }
+  };
+
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -473,6 +526,8 @@ export default function Home() {
     authFlowState === "checking" ||
     walletNotReady;
 
+  const prizeLabel = nextSession ? getPrizeLabel(nextSession) : null;
+
   return (
     <div
       style={{
@@ -504,7 +559,7 @@ export default function Home() {
         }}
       />
 
-      {/* Farcaster Auth in top right corner */}
+      {/* Farcaster Auth / Quick Menu trigger in top right corner */}
       <div
         style={{
           position: "absolute",
@@ -513,13 +568,9 @@ export default function Home() {
           zIndex: 10,
         }}
       >
-        <div
-          onClick={() => {
-            // Only open wallet modal if user is authenticated and has a wallet
-            if (loggedUser?.isAuthenticated && loggedUser?.address) {
-              setShowWalletModal(true);
-            }
-          }}
+        <button
+          type="button"
+          onClick={() => setShowQuickMenu(true)}
           style={{
             backgroundColor: "#795AFF",
             color: "white",
@@ -529,25 +580,19 @@ export default function Home() {
             display: "flex",
             alignItems: "center",
             gap: "0.5rem",
-            cursor:
-              loggedUser?.isAuthenticated && loggedUser?.address
-                ? "pointer"
-                : "default",
+            cursor: "pointer",
             transition: "opacity 0.2s, transform 0.2s",
             opacity:
               loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
+            border: "none",
           }}
           onMouseEnter={(e) => {
-            if (loggedUser?.isAuthenticated && loggedUser?.address) {
-              e.currentTarget.style.opacity = "0.9";
-              e.currentTarget.style.transform = "scale(1.02)";
-            }
+            e.currentTarget.style.opacity = "0.9";
+            e.currentTarget.style.transform = "scale(1.02)";
           }}
           onMouseLeave={(e) => {
-            if (loggedUser?.isAuthenticated && loggedUser?.address) {
-              e.currentTarget.style.opacity = "1";
-              e.currentTarget.style.transform = "scale(1)";
-            }
+            e.currentTarget.style.opacity = "1";
+            e.currentTarget.style.transform = "scale(1)";
           }}
         >
           {/* Status dot */}
@@ -574,7 +619,17 @@ export default function Home() {
                 </div>
               )}
           </div>
-        </div>
+          {/* Burger / menu icon */}
+          <div
+            style={{
+              marginLeft: "0.25rem",
+              fontSize: "1rem",
+              opacity: 0.9,
+            }}
+          >
+            ☰
+          </div>
+        </button>
       </div>
 
       {/* Logo and description */}
@@ -870,6 +925,167 @@ export default function Home() {
       {/* Wallet Modal */}
       {showWalletModal && (
         <WalletModal onClose={() => setShowWalletModal(false)} />
+      )}
+
+      {/* Quick Menu Bottom Sheet */}
+      {showQuickMenu && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            zIndex: 60,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowQuickMenu(false);
+            }
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#000",
+              border: "1px solid white",
+              borderTopLeftRadius: "0.75rem",
+              borderTopRightRadius: "0.75rem",
+              padding: "1.5rem",
+              width: "100%",
+              maxWidth: "28rem",
+              margin: "0 1rem",
+              marginBottom: 0,
+              position: "relative",
+            }}
+          >
+            <button
+              onClick={() => setShowQuickMenu(false)}
+              style={{
+                position: "absolute",
+                top: "1rem",
+                right: "1rem",
+                color: "white",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: "1.25rem",
+              }}
+            >
+              ×
+            </button>
+
+            <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
+              <h3
+                style={{
+                  color: "white",
+                  fontSize: "1.125rem",
+                  fontWeight: 600,
+                  marginBottom: "0.5rem",
+                }}
+              >
+                Quick Actions
+              </h3>
+              <p style={{ color: "#d1d5db", fontSize: "0.875rem" }}>
+                Jump to your quizzes or open your wallet
+              </p>
+            </div>
+
+            <div
+              style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
+            >
+              {/* Your Quizzes */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQuickMenu(false);
+                  router.push("/quiz/admin/my-quizzes");
+                }}
+                style={{
+                  width: "100%",
+                  padding: "1rem",
+                  backgroundColor: "rgba(121, 90, 255, 0.4)",
+                  border: "2px solid #795AFF",
+                  borderRadius: "0.5rem",
+                  color: "white",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: "1.125rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <span>📚</span>
+                  <span>Your quizzes</span>
+                </div>
+                <div
+                  style={{
+                    fontSize: "0.875rem",
+                    color: "#c084fc",
+                    marginTop: "0.25rem",
+                  }}
+                >
+                  View and manage the quizzes you have created
+                </div>
+              </button>
+
+              {/* Wallet */}
+              <button
+                type="button"
+                onClick={() => {
+                  // Mirror the existing badge behavior:
+                  // only open wallet if the user is authenticated and has a wallet address
+                  if (loggedUser?.isAuthenticated && loggedUser?.address) {
+                    setShowQuickMenu(false);
+                    setShowWalletModal(true);
+                  }
+                }}
+                style={{
+                  width: "100%",
+                  padding: "1rem",
+                  backgroundColor: "rgba(31, 41, 55, 0.9)",
+                  border: "1px solid #4b5563",
+                  borderRadius: "0.5rem",
+                  color: "white",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  opacity:
+                    loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
+                }}
+              >
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: "1.125rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <span>👛</span>
+                  <span>Wallet</span>
+                </div>
+                <div
+                  style={{
+                    fontSize: "0.875rem",
+                    color: "#d1d5db",
+                    marginTop: "0.25rem",
+                  }}
+                >
+                  {loggedUser?.isAuthenticated && loggedUser?.address
+                    ? "Open your wallet to view balances and activity"
+                    : "Connect and create your wallet first to open it here"}
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Method Chooser Modal */}
@@ -1488,27 +1704,66 @@ export default function Home() {
                 >
                   • Room {nextSession.room_code}
                 </span>
+                {prizeLabel && (
+                  <span
+                    style={{
+                      opacity: 0.9,
+                    }}
+                  >
+                    • Prize {prizeLabel}
+                  </span>
+                )}
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() =>
-                router.push(`/quiz/lobby/${nextSession.room_code}`)
-              }
+            <div
               style={{
-                whiteSpace: "nowrap",
-                padding: "0.55rem 1rem",
-                borderRadius: "9999px",
-                border: "1px solid rgba(255,255,255,0.9)",
-                backgroundColor: "rgba(17,24,39,0.9)",
-                color: "white",
-                fontSize: "0.85rem",
-                fontWeight: 600,
-                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                flexShrink: 0,
               }}
             >
-              Go to lobby
-            </button>
+              {isFarcasterMiniapp && (
+                <button
+                  type="button"
+                  onClick={handleNotifyMeClick}
+                  disabled={isAddingMiniApp}
+                  style={{
+                    whiteSpace: "nowrap",
+                    padding: "0.45rem 0.9rem",
+                    borderRadius: "9999px",
+                    border: "1px solid rgba(255,255,255,0.7)",
+                    backgroundColor: "rgba(17,24,39,0.7)",
+                    color: "white",
+                    fontSize: "0.8rem",
+                    fontWeight: 500,
+                    cursor: isAddingMiniApp ? "not-allowed" : "pointer",
+                    opacity: isAddingMiniApp ? 0.7 : 1,
+                  }}
+                >
+                  {isAddingMiniApp ? "Adding..." : "🥋 Notify me"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() =>
+                  router.push(`/quiz/lobby/${nextSession.room_code}`)
+                }
+                style={{
+                  whiteSpace: "nowrap",
+                  padding: "0.55rem 1rem",
+                  borderRadius: "9999px",
+                  border: "1px solid rgba(255,255,255,0.9)",
+                  backgroundColor: "rgba(17,24,39,0.9)",
+                  color: "white",
+                  fontSize: "0.85rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Go to lobby
+              </button>
+            </div>
           </div>
         )}
     </div>
