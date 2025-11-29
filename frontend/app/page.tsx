@@ -493,6 +493,59 @@ export default function Home() {
       ? `${window.location.origin}/quiz/lobby/${nextSession.room_code}`
       : "";
 
+  const formatCalendarDateTime = (date: Date | null) => {
+    if (!date) {
+      return null;
+    }
+    const iso = date.toISOString().replace(/[-:]/g, "");
+    const withoutMs = iso.split(".")[0];
+    return `${withoutMs}Z`;
+  };
+
+  const googleCalendarUrl = (() => {
+    if (!eventStartIso || !eventEndIso) {
+      return null;
+    }
+
+    const start = formatCalendarDateTime(eventStartIso);
+    const end = formatCalendarDateTime(eventEndIso);
+
+    if (!start || !end) {
+      return null;
+    }
+
+    const title = encodeURIComponent(nextSession?.title ?? "Hoot Quiz");
+    const details = encodeURIComponent(
+      `Join the Hoot quiz – Room ${nextSession?.room_code ?? ""}${
+        eventUrl ? `\n\n${eventUrl}` : ""
+      }`
+    );
+    const location = encodeURIComponent(eventUrl || "");
+
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
+  })();
+
+  const openExternalUrl = (url: string | null) => {
+    if (!url) {
+      return;
+    }
+
+    if (isMiniapp) {
+      try {
+        // Prefer MiniApp SDK openUrl when available
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        (sdk as any).actions.openUrl(url);
+        return;
+      } catch (error) {
+        console.error("Failed to open URL via MiniApp SDK, falling back", error);
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  };
+
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -1773,6 +1826,27 @@ export default function Home() {
                     buttonStyle="round"
                     trigger="click"
                   />
+                  {isMiniapp && googleCalendarUrl && (
+                    <button
+                      type="button"
+                      onClick={() => openExternalUrl(googleCalendarUrl)}
+                      style={{
+                        marginTop: "0.75rem",
+                        width: "100%",
+                        padding: "0.6rem 0.9rem",
+                        borderRadius: "9999px",
+                        border: "1px solid rgba(255,255,255,0.6)",
+                        backgroundColor: "rgba(17,24,39,0.9)",
+                        color: "white",
+                        fontSize: "0.8rem",
+                        fontWeight: 500,
+                        textAlign: "center",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Open in browser (Google Calendar)
+                    </button>
+                  )}
                 </div>
 
                 {/* Notification option */}
