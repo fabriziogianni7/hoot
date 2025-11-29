@@ -12,6 +12,7 @@ import WalletModal from "@/components/WalletModal";
 import { generateQuizViaAI } from "@/lib/supabase-client";
 import { extractPdfText, extractTextFile } from "@/lib/utils";
 import type { GenerateQuizResponse } from "@/lib/backend-types";
+import { getTokensForNetwork } from "@/lib/token-config";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -62,6 +63,9 @@ export default function Home() {
     title: string;
     scheduled_start_time: string;
     room_code: string | null;
+    prize_amount?: number | null;
+    prize_token?: string | null; // contract address
+    network_id?: number | null;
   };
 
   const [nextSession, setNextSession] = useState<NextPublicSession | null>(
@@ -80,7 +84,9 @@ export default function Home() {
         // First, find the next public scheduled quiz
         const { data: quizzes, error: quizError } = await supabase
           .from("quizzes")
-          .select("id,title,scheduled_start_time,is_private,status")
+          .select(
+            "id,title,scheduled_start_time,is_private,status,prize_amount,prize_token,network_id"
+          )
           .eq("is_private", false)
           .not("scheduled_start_time", "is", null)
           .gt("scheduled_start_time", nowIso)
@@ -98,6 +104,9 @@ export default function Home() {
               id: string;
               title: string;
               scheduled_start_time: string | null;
+              prize_amount?: number | null;
+              prize_token?: string | null;
+              network_id?: number | null;
             }
           | undefined;
 
@@ -170,6 +179,9 @@ export default function Home() {
             title: quizRow.title,
             scheduled_start_time: quizRow.scheduled_start_time,
             room_code: sessionRow.room_code ?? null,
+            prize_amount: quizRow.prize_amount ?? null,
+            prize_token: quizRow.prize_token ?? null,
+            network_id: quizRow.network_id ?? null,
           });
           setTimeRemainingMs(diff);
         }
@@ -189,13 +201,12 @@ export default function Home() {
       console.warn("[Home] Supabase client not available, skipping fetch.");
       return;
     }
-    console.log("ciao");
     fetchNextSession();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [supabase]);
 
   // Countdown timer for the next session
   useEffect(() => {
@@ -239,6 +250,27 @@ export default function Home() {
       seconds.toString().padStart(2, "0"),
     ];
     return parts.join(":");
+  };
+
+  const getPrizeLabel = (session: NextPublicSession) => {
+    if (
+      session.prize_amount == null ||
+      !session.prize_token ||
+      !session.network_id
+    ) {
+      return null;
+    }
+
+    const tokens = getTokensForNetwork(session.network_id);
+    const token = tokens.find(
+      (t) => t.address.toLowerCase() === session.prize_token!.toLowerCase()
+    );
+
+    if (!token) {
+      return null;
+    }
+
+    return `${session.prize_amount} ${token.symbol}`;
   };
 
   // Initialize the miniapp
@@ -472,6 +504,8 @@ export default function Home() {
     authFlowState === "signing" ||
     authFlowState === "checking" ||
     walletNotReady;
+
+  const prizeLabel = nextSession ? getPrizeLabel(nextSession) : null;
 
   return (
     <div
@@ -1488,6 +1522,15 @@ export default function Home() {
                 >
                   • Room {nextSession.room_code}
                 </span>
+                {prizeLabel && (
+                  <span
+                    style={{
+                      opacity: 0.9,
+                    }}
+                  >
+                    • Prize {prizeLabel}
+                  </span>
+                )}
               </div>
             </div>
             <button
