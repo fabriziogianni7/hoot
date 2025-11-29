@@ -14,8 +14,10 @@ export interface Quiz {
   user_id: string | null
   status: 'pending' | 'active' | 'completed' | 'cancelled'
   created_at?: string
+  scheduled_start_time?: string | null
   started_at?: string | null
   ended_at?: string | null
+  is_private?: boolean | null
 }
 
 export interface Question {
@@ -79,6 +81,8 @@ export interface CreateQuizRequest {
   creator_address: string
   network_id: string
   user_fid?: string | null
+  scheduled_start_time?: string
+  is_private?: boolean
 }
 
 export interface CreateQuizResponse {
@@ -97,6 +101,7 @@ export interface JoinGameResponse {
   success: boolean
   player_session_id: string
   is_creator: boolean
+  session_reused: boolean
   game_session: GameSession
   quiz: Quiz
   players: PlayerSession[]

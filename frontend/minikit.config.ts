@@ -21,7 +21,7 @@ export const minikitConfig = {
     version: "1",
     name: "Hoot!", 
     subtitle: "Live Quiz Rewards", 
-    description: "Live Quiz Rewards",
+    description: "Onchain Quiz Platform App!",
     screenshotUrls: [`${ROOT_URL}/Logo.png`],
     iconUrl: `${ROOT_URL}/Logo.png`,
     splashImageUrl: `${ROOT_URL}/Icon_hoot.png`,
@@ -35,7 +35,7 @@ export const minikitConfig = {
     ogTitle: "",
     ogDescription: "",
     ogImageUrl: `${ROOT_URL}/hero_hoot_1.png`,
-    canonicalDomain: "hoot-five.vercel.app",      
+    canonicalDomain: "hoot-quiz.com",      
   }
 } as const;
 

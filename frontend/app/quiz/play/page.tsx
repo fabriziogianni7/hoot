@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, Suspense, useCallback } from "react";
+import { useEffect, useState, useRef, Suspense, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 // Disable pre-rendering for this page
@@ -8,11 +8,32 @@ export const dynamic = 'force-dynamic';
 import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
 import { useAnswersRealtime } from "@/lib/use-realtime-hooks";
+import { useDriverPresence } from "@/lib/use-driver-presence";
+
+type Phase = "question" | "results" | "countdown";
+
+const QUESTION_PHASE_SECONDS = 15;
+const RESULTS_PHASE_SECONDS = 10;
+const COUNTDOWN_PHASE_SECONDS = 5;
+
+type PhaseEventPayload = {
+  phase: Phase;
+  phaseEndsAt: number;
+  questionIndex: number;
+};
 
 function PlayQuizContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { currentGame, getCurrentQuiz, submitAnswer, nextQuestion, setCurrentQuiz, gameSessionId } = useQuiz();
+  const {
+    currentGame,
+    getCurrentQuiz,
+    submitAnswer,
+    nextQuestion,
+    setCurrentQuiz,
+    gameSessionId,
+    roomCode,
+  } = useQuiz();
   const { supabase } = useSupabase();
   const [timeLeft, setTimeLeft] = useState<number>(10);
   const [initialTime, setInitialTime] = useState<number>(10); // Tempo iniziale per calcolare la percentuale
@@ -26,8 +47,32 @@ function PlayQuizContent() {
   const [earnedPoints, setEarnedPoints] = useState(0);
   const [showConfetti, setShowConfetti] = useState(false);
   const [creatorSessionId, setCreatorSessionId] = useState<string | null>(null);
+  const [playerSessionId, setPlayerSessionId] = useState<string | null>(null);
   const [nextQuestionCountdown, setNextQuestionCountdown] = useState<number | null>(null);
+  const [phase, setPhase] = useState<Phase>("question");
+  const [phaseEndsAt, setPhaseEndsAt] = useState<number | null>(null);
+  const [phaseQuestionIndex, setPhaseQuestionIndex] = useState<number>(0);
+  const [resultsCountdown, setResultsCountdown] = useState<number | null>(null);
+  const [roomCodeCopied, setRoomCodeCopied] = useState(false);
+  const [spectateUntilIndex, setSpectateUntilIndex] = useState<number | null>(null);
   const nextQuestionChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+
+  const { isDriver, driverId, participants } = useDriverPresence(
+    gameSessionId,
+    playerSessionId,
+    creatorSessionId
+  );
+
+  const handleCopyRoomCode = useCallback(async () => {
+    if (!roomCode) return;
+    try {
+      await navigator.clipboard.writeText(roomCode);
+      setRoomCodeCopied(true);
+      setTimeout(() => setRoomCodeCopied(false), 1500);
+    } catch (err) {
+      console.error("Failed to copy room code:", err);
+    }
+  }, [roomCode]);
   
   // Use realtime hook for answers (creator only)
   const { playerResponses } = useAnswersRealtime(
@@ -35,15 +80,166 @@ function PlayQuizContent() {
     currentGame?.players.map(p => p.id) || [],
     isCreator
   );
+
+  // Log driver changes for easier debugging
+  useEffect(() => {
+    if (!gameSessionId) return;
+    const activeDriver = driverId || "none";
+    if (driverLogRef.current !== activeDriver) {
+      console.log(
+        `[Driver] Game ${gameSessionId} active driver: ${activeDriver} (this client: ${
+          playerSessionId || "unknown"
+        }, participants: ${participants.length})`
+      );
+      driverLogRef.current = activeDriver;
+    }
+  }, [driverId, gameSessionId, playerSessionId, participants]);
+
+  useEffect(() => {
+    if (!playerSessionId) return;
+    if (prevIsDriverRef.current !== isDriver) {
+      console.log(
+        `[Driver] ${playerSessionId} ${
+          isDriver ? "acquired" : "released"
+        } driver role for game ${gameSessionId || "unknown"}`
+      );
+      prevIsDriverRef.current = isDriver;
+    }
+  }, [isDriver, playerSessionId, gameSessionId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = localStorage.getItem("spectateUntilQuestionIndex");
+    if (stored) {
+      const parsed = parseInt(stored, 10);
+      if (!Number.isNaN(parsed)) {
+        setSpectateUntilIndex(parsed);
+      } else {
+        localStorage.removeItem("spectateUntilQuestionIndex");
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (
+      spectateUntilIndex !== null &&
+      currentQuestionIndex >= spectateUntilIndex
+    ) {
+      setSpectateUntilIndex(null);
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("spectateUntilQuestionIndex");
+      }
+    }
+  }, [currentQuestionIndex, spectateUntilIndex]);
   
   // Utilizziamo useRef per mantenere lo stato del timer tra i render
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const phaseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const driverLogRef = useRef<string | null>(null);
+  const prevIsDriverRef = useRef<boolean>(false);
   const timePercentageRef = useRef<number>(100);
   const hasAnsweredRef = useRef<boolean>(false); // Track if answer was submitted
   
   const [isLoadingFromUrl, setIsLoadingFromUrl] = useState(true);
   
   const quiz = getCurrentQuiz();
+
+  const leaderboardContent = useMemo(() => {
+    if (!currentGame) return null;
+
+    const nonCreatorPlayers = currentGame.players
+      .filter((player) => player.id !== creatorSessionId)
+      .sort((a, b) => b.score - a.score);
+
+    if (nonCreatorPlayers.length === 0) {
+      return (
+        <p className="text-center text-purple-200 text-sm">
+          No player scores yet.
+        </p>
+      );
+    }
+
+    const sessionId = playerSessionId;
+    const top5 = nonCreatorPlayers.slice(0, 5);
+    const currentPlayerIndex =
+      sessionId !== null
+        ? nonCreatorPlayers.findIndex((player) => player.id === sessionId)
+        : -1;
+    const currentPlayer =
+      currentPlayerIndex >= 0 ? nonCreatorPlayers[currentPlayerIndex] : null;
+    const isCurrentPlayerInTop5 =
+      currentPlayerIndex >= 0 && currentPlayerIndex < 5;
+
+    return (
+      <>
+        {top5.map((player, index) => {
+          const isCurrentPlayer = sessionId !== null && player.id === sessionId;
+          return (
+            <div
+              key={player.id}
+              className={`flex items-center justify-between p-3 rounded-lg ${
+                isCurrentPlayer
+                  ? "bg-purple-700/50 border-2 border-purple-400"
+                  : "bg-purple-700/20 border border-purple-500/30"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+                    index < 3
+                      ? "bg-yellow-500/30 text-yellow-300"
+                      : "bg-gray-700 text-gray-300"
+                  }`}
+                >
+                  {index === 0 && "👑"}
+                  {index === 1 && "🥈"}
+                  {index === 2 && "🥉"}
+                  {index >= 3 && index + 1}
+                </div>
+                <span
+                  className={`font-medium ${
+                    isCurrentPlayer ? "text-purple-100" : "text-white"
+                  }`}
+                >
+                  {player.name}
+                  {isCurrentPlayer && " (You)"}
+                </span>
+              </div>
+              <span className="font-bold text-purple-200">{player.score} pts</span>
+            </div>
+          );
+        })}
+
+        {!isCurrentPlayerInTop5 && currentPlayer && (
+          <>
+            <div className="h-px bg-purple-600/50 my-2"></div>
+            <div className="flex items-center justify-between p-3 rounded-lg bg-purple-700/50 border-2 border-purple-400">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold bg-gray-700 text-gray-300">
+                  {currentPlayerIndex + 1}
+                </div>
+                <span className="font-medium text-purple-100">
+                  {currentPlayer.name} (You)
+                </span>
+              </div>
+              <span className="font-bold text-purple-200">{currentPlayer.score} pts</span>
+            </div>
+          </>
+        )}
+      </>
+    );
+  }, [currentGame, creatorSessionId, playerSessionId]);
+
+  const totalQuestions = quiz?.questions.length ?? 0;
+  const isPhaseLastQuestion =
+    totalQuestions > 0 ? phaseQuestionIndex >= totalQuestions - 1 : false;
+
+  // Cache player session ID (used for presence + driver election)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const storedSessionId = localStorage.getItem("playerSessionId");
+    setPlayerSessionId(storedSessionId);
+  }, []);
   
   // Load quiz from URL parameters if not in context
   useEffect(() => {
@@ -126,15 +322,21 @@ function PlayQuizContent() {
         .eq('id', gameSessionId)
         .single();
       
-      const playerSessionId = localStorage.getItem("playerSessionId");
-      if (data && playerSessionId) {
+      if (data) {
+        const sessionId =
+          playerSessionId ??
+          (typeof window !== "undefined"
+            ? localStorage.getItem("playerSessionId")
+            : null);
         setCreatorSessionId(data.creator_session_id);
-        setIsCreator(data.creator_session_id === playerSessionId);
+        if (sessionId) {
+          setIsCreator(data.creator_session_id === sessionId);
+        }
       }
     };
     
     checkCreator();
-  }, [gameSessionId, supabase]);
+  }, [gameSessionId, supabase, playerSessionId]);
 
   // Subscribe to next question countdown broadcasts
   useEffect(() => {
@@ -150,11 +352,25 @@ function PlayQuizContent() {
       .channel(`next_question:${gameSessionId}`)
       .on(
         'broadcast',
-        { event: 'next_question_countdown' },
+        { event: 'phase_update' },
         (payload) => {
-          console.log('Received next question countdown:', payload.payload);
-          const countdown = payload.payload.countdown as number;
-          setNextQuestionCountdown(countdown);
+          const data = payload.payload as PhaseEventPayload;
+          console.log('Received phase update:', data);
+          if (!data) return;
+
+          setPhase(data.phase);
+          setPhaseQuestionIndex(data.questionIndex);
+          setPhaseEndsAt(data.phaseEndsAt);
+
+          if (data.phase === "countdown") {
+            const remaining = Math.max(
+              0,
+              Math.ceil((data.phaseEndsAt - Date.now()) / 1000)
+            );
+            setNextQuestionCountdown(remaining);
+          } else {
+            setNextQuestionCountdown(null);
+          }
         }
       )
       .subscribe();
@@ -169,32 +385,6 @@ function PlayQuizContent() {
     };
   }, [gameSessionId, supabase]);
 
-  // Handle countdown timer
-  useEffect(() => {
-    if (nextQuestionCountdown === null) return;
-
-    if (nextQuestionCountdown > 0) {
-      const timer = setTimeout(() => {
-        setNextQuestionCountdown(nextQuestionCountdown - 1);
-        
-        // Broadcast countdown update to all players
-        if (nextQuestionChannelRef.current && isCreator) {
-          nextQuestionChannelRef.current.send({
-            type: 'broadcast',
-            event: 'next_question_countdown',
-            payload: { countdown: nextQuestionCountdown - 1 }
-          });
-        }
-      }, 1000);
-
-      return () => clearTimeout(timer);
-    } else if (nextQuestionCountdown === 0 && isCreator) {
-      // Countdown finished, actually advance to next question
-      setNextQuestionCountdown(null);
-      nextQuestion();
-    }
-  }, [nextQuestionCountdown, isCreator, nextQuestion]);
-  
   // Start the game when play page loads (only if coming from "starting" status)
   // This ensures the question timer starts only when players are actually on the play page
   useEffect(() => {
@@ -249,6 +439,90 @@ function PlayQuizContent() {
     console.log("Current question index updated:", currentGame.currentQuestionIndex);
   }, [currentGame, router, isLoadingFromUrl]);
   
+  const startPhaseWithDuration = useCallback(
+    (nextPhase: Phase, durationSeconds: number) => {
+      const phaseEndTimestamp = Date.now() + durationSeconds * 1000;
+      setPhase(nextPhase);
+      setPhaseEndsAt(phaseEndTimestamp);
+
+      if (isDriver) {
+        console.log(
+          `[Driver] ${playerSessionId || "unknown"} scheduling phase "${nextPhase}" for question ${phaseQuestionIndex} (duration ${durationSeconds}s)`
+        );
+      }
+
+      if (isDriver && nextQuestionChannelRef.current) {
+        nextQuestionChannelRef.current.send({
+          type: 'broadcast',
+          event: 'phase_update',
+          payload: {
+            phase: nextPhase,
+            phaseEndsAt: phaseEndTimestamp,
+            questionIndex: phaseQuestionIndex,
+          } satisfies PhaseEventPayload,
+        });
+      }
+    },
+    [isDriver, phaseQuestionIndex, playerSessionId]
+  );
+
+  const advancePhase = useCallback(async () => {
+    if (!quiz) return;
+
+    if (phase === "question") {
+      startPhaseWithDuration("results", RESULTS_PHASE_SECONDS);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setTimeLeft(0);
+      setShowingResults(true);
+      return;
+    }
+
+    if (phase === "results") {
+      const isFinalQuestion =
+        quiz.questions.length > 0 &&
+        phaseQuestionIndex >= quiz.questions.length - 1;
+
+      if (isFinalQuestion) {
+        setPhaseEndsAt(null);
+        setNextQuestionCountdown(null);
+
+        if (isDriver) {
+          console.log(
+            `[Driver] ${playerSessionId || "unknown"} final question complete – moving to results page`
+          );
+          await nextQuestion();
+        }
+      } else {
+        startPhaseWithDuration("countdown", COUNTDOWN_PHASE_SECONDS);
+      }
+
+      return;
+    }
+
+    if (phase === "countdown") {
+      setPhaseEndsAt(null);
+
+      if (isDriver) {
+        console.log(
+          `[Driver] ${playerSessionId || "unknown"} advancing to next question from countdown`
+        );
+        await nextQuestion();
+        setNextQuestionCountdown(null);
+      }
+    }
+  }, [
+    phase,
+    quiz,
+    isDriver,
+    startPhaseWithDuration,
+    nextQuestion,
+    phaseQuestionIndex,
+    playerSessionId,
+  ]);
+
   // Funzione per gestire il timeout
   const handleTimeUp = useCallback(async () => {
     // Check ref first to avoid race conditions
@@ -354,12 +628,15 @@ function PlayQuizContent() {
       // Calculate elapsed time since question started
       const now = Date.now();
       const currentQuestion = quiz?.questions[currentQuestionIndex];
-      const questionTimeLimit = currentQuestion?.timeLimit || 10;
+      const questionTimeLimit = currentQuestion?.timeLimit || QUESTION_PHASE_SECONDS;
       const elapsed = Math.floor((now - questionStartTimeFromServer) / 1000);
       const remaining = Math.max(0, questionTimeLimit - elapsed);
       
       setTimeLeft(remaining);
       setInitialTime(questionTimeLimit);
+      setPhase("question");
+      setPhaseQuestionIndex(currentQuestionIndex);
+      setPhaseEndsAt(questionStartTimeFromServer + questionTimeLimit * 1000);
       
       if (remaining > 0) {
         setStartTime(questionStartTimeFromServer);
@@ -371,10 +648,13 @@ function PlayQuizContent() {
     } else {
       // Fallback if no server time
       const currentQuestion = quiz?.questions[currentQuestionIndex];
-      const questionTimeLimit = currentQuestion?.timeLimit || 10;
+      const questionTimeLimit = currentQuestion?.timeLimit || QUESTION_PHASE_SECONDS;
       setTimeLeft(questionTimeLimit);
       setInitialTime(questionTimeLimit);
       setStartTime(Date.now());
+      setPhase("question");
+      setPhaseQuestionIndex(currentQuestionIndex);
+      setPhaseEndsAt(Date.now() + questionTimeLimit * 1000);
       startTimer();
     }
     
@@ -388,9 +668,88 @@ function PlayQuizContent() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentQuestionIndex, quiz]);
+
+  // Schedule automatic phase transitions (question → results → countdown)
+  useEffect(() => {
+    if (phaseTimerRef.current) {
+      clearTimeout(phaseTimerRef.current);
+      phaseTimerRef.current = null;
+    }
+
+    if (!phaseEndsAt) return;
+
+    const msRemaining = phaseEndsAt - Date.now();
+
+    if (msRemaining <= 0) {
+      advancePhase();
+      return;
+    }
+
+    phaseTimerRef.current = setTimeout(() => {
+      phaseTimerRef.current = null;
+      advancePhase();
+    }, msRemaining);
+
+    return () => {
+      if (phaseTimerRef.current) {
+        clearTimeout(phaseTimerRef.current);
+        phaseTimerRef.current = null;
+      }
+    };
+  }, [phaseEndsAt, phase, advancePhase]);
+
+  // Keep local countdown overlay in sync with the countdown phase
+  useEffect(() => {
+    if (phase !== "countdown" || !phaseEndsAt || isPhaseLastQuestion) {
+      setNextQuestionCountdown(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil((phaseEndsAt - Date.now()) / 1000)
+      );
+      setNextQuestionCountdown(remaining);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [phase, phaseEndsAt, isPhaseLastQuestion]);
+
+  // Track remaining seconds while results/leaderboard are shown
+  useEffect(() => {
+    if (phase !== "results" || !phaseEndsAt) {
+      setResultsCountdown(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil((phaseEndsAt - Date.now()) / 1000)
+      );
+      setResultsCountdown(remaining);
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [phase, phaseEndsAt]);
   
   const handleAnswerSelect = async (answerIndex: number) => {
     console.log("Answer selected:", answerIndex, "for question:", currentQuestionIndex);
+    if (isSpectatingCurrentQuestion) {
+      console.log("Spectating current question, input disabled");
+      return;
+    }
     if (isAnswered || showingResults || hasAnsweredRef.current) {
       console.log("Already answered or showing results");
       return;
@@ -446,51 +805,14 @@ function PlayQuizContent() {
   };
   
   const handleNextQuestion = async () => {
-    console.log("Moving to next question from:", currentQuestionIndex);
+    console.log("Manual advance triggered");
     
-    // // Only creator can advance questions
-    // if (!isCreator) {
-    //   console.log("Non-creator waiting for question advance from host");
-    //   return;
-    // }
-    
-    const isLastQuestion = quiz ? currentQuestionIndex >= quiz.questions.length - 1 : false;
-    
-    // Ferma il timer prima di passare alla prossima domanda
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    
-    if (isLastQuestion) {
-      console.log("Final question completed, showing results");
-      setNextQuestionCountdown(null);
-      
-      await nextQuestion();
+    if (!isDriver) {
+      console.log("Manual advance ignored: not driver");
       return;
     }
-    
-    // Reset timer states
-    hasAnsweredRef.current = false; // Reset answer tracking ref
-    setSelectedAnswer(null);
-    setIsAnswered(false);
-    setShowingResults(false);
-    setShowPointsBanner(false);
-    setShowConfetti(false);
-    timePercentageRef.current = 100;
-    
-    // Start 3 second countdown before advancing
-    console.log("Starting 3 second countdown before next question");
-    setNextQuestionCountdown(3);
-    
-    // Broadcast countdown start to all players
-    if (nextQuestionChannelRef.current) {
-      nextQuestionChannelRef.current.send({
-        type: 'broadcast',
-        event: 'next_question_countdown',
-        payload: { countdown: 3 }
-      });
-    }
+
+    await advancePhase();
   };
   
   // Debug logging
@@ -547,7 +869,19 @@ function PlayQuizContent() {
   }
   
   const correctAnswerIndex = currentQuestion.correctAnswer;
-  const isLastQuestion = currentQuestionIndex >= (quiz?.questions.length ?? 0) - 1;
+  const isLastQuestion = totalQuestions > 0 ? currentQuestionIndex >= totalQuestions - 1 : false;
+  const timeUntilNextQuestion =
+    phase === "countdown"
+      ? nextQuestionCountdown
+      : phase === "results"
+      ? resultsCountdown !== null
+        ? resultsCountdown + COUNTDOWN_PHASE_SECONDS
+        : null
+      : null;
+  const isSpectatingCurrentQuestion =
+    !isCreator &&
+    spectateUntilIndex !== null &&
+    currentQuestionIndex < spectateUntilIndex;
   
   return (
     <>
@@ -588,8 +922,27 @@ function PlayQuizContent() {
         />
       </div>
 
+      {/* Room code badge */}
+      {roomCode && (
+        <div className="absolute top-4 left-4 z-20 bg-white/10 backdrop-blur rounded-xl px-4 py-2 border border-white/20 shadow-lg flex flex-col gap-1">
+          <span className="text-[10px] uppercase tracking-[0.2em] text-gray-300">
+            Room Code
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-lg text-white">{roomCode}</span>
+            <button
+              onClick={handleCopyRoomCode}
+              className="text-xs text-purple-200 hover:text-white transition-colors focus:outline-none"
+              aria-label="Copy room code"
+            >
+              {roomCodeCopied ? "Copied" : "Copy"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Next Question Countdown */}
-      {nextQuestionCountdown !== null && (
+      {nextQuestionCountdown !== null && !isPhaseLastQuestion && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="text-center">
             <div className="text-8xl font-bold text-white mb-4 animate-pulse">
@@ -722,130 +1075,214 @@ function PlayQuizContent() {
           </div>
         </div>
         
+        {!isCreator && isSpectatingCurrentQuestion && (
+          <div className="mb-4 text-center text-xs text-yellow-200/80">
+            ⏳ You joined while this question was already running. You can answer starting from the next one.
+          </div>
+        )}
+
         {/* Answer options - Different view for creator vs players */}
         {isCreator ? (
-          // Creator view - Show player responses
-          <div className="w-full max-w-md">
-            {/* Subtle time-up notification for creator */}
-            {timeLeft === 0 && (
-              <div className="mb-4 bg-blue-900/20 border border-blue-700/50 rounded-lg p-3 text-center">
-                <p className="text-sm text-blue-200">⏰ Time&apos;s up! You can advance when ready.</p>
-              </div>
-            )}
-            
-            <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6 mb-4">
-              <h3 className="text-xl font-semibold mb-4 text-purple-200 text-center">
-                Player Responses ({Object.keys(playerResponses).length}/{currentGame.players.length - 1})
-              </h3>
-              <div className="space-y-2">
-                {currentGame.players
-                  .filter(p => p.id !== localStorage.getItem("playerSessionId")) // Exclude creator
-                  .map(player => {
-                    const response = playerResponses[player.id];
-                    return (
-                      <div 
-                        key={player.id}
-                        className="flex items-center justify-between p-3 rounded bg-purple-700/20 border border-purple-500/30"
-                      >
-                        <span className="text-purple-100">{player.name}</span>
-                        <div className="flex items-center gap-2">
-                          {response?.answered ? (
-                            <>
-                              <span className={`text-sm ${response.isCorrect ? 'text-green-400' : 'text-red-400'}`}>
-                                {response.isCorrect ? '✓' : '✗'}
-                              </span>
-                              <span className="text-sm text-purple-200">{player.score} pts</span>
-                            </>
-                          ) : (
-                            <span className="text-sm text-gray-400">Waiting...</span>
-                          )}
+          <div className="w-full max-w-md space-y-4">
+            {phase === "question" ? (
+              <>
+                {/* Subtle time-up notification for creator */}
+                {timeLeft === 0 && (
+                  <div className="bg-blue-900/20 border border-blue-700/50 rounded-lg p-3 text-center">
+                    <p className="text-sm text-blue-200">⏰ Time&apos;s up! You can advance when ready.</p>
+                  </div>
+                )}
+
+                {/* Answer options list */}
+                <div>
+                  <h3 className="text-lg font-semibold mb-3 text-purple-200 text-center">
+                    Answer Options
+                  </h3>
+                  <div className="flex flex-col gap-3">
+                    {currentQuestion.options.map((option, index) => {
+                      const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
+                      const baseColor = colors[index % colors.length];
+                      
+                      return (
+                        <div 
+                          key={index}
+                          className="rounded p-4 text-white relative border-2"
+                          style={{ 
+                            backgroundColor: `${baseColor}40`,
+                            borderColor: baseColor,
+                            borderWidth: '2px',
+                          }}
+                        >
+                          <div 
+                            className="w-full bg-transparent focus:outline-none text-center"
+                            style={{
+                              fontSize: 'clamp(0.875rem, 3vw, 1.25rem)',
+                              fontWeight: "500",
+                              maxHeight: 'clamp(60px, 12vh, 100px)',
+                              overflow: 'hidden',
+                              wordWrap: 'break-word',
+                              wordBreak: 'break-word',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              textOverflow: 'ellipsis'
+                            }}
+                          >
+                            {option}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-            
-            {/* Show answer options as players see them (without correct answer highlight) */}
-            <div className="mb-4">
-              <h3 className="text-lg font-semibold mb-3 text-purple-200 text-center">
-                Answer Options
-              </h3>
-              <div className="flex flex-col gap-3">
-                {currentQuestion.options.map((option, index) => {
-                  const colors = ["#0DCEFB", "#53DB1E", "#FDCC0E", "#F70000"];
-                  const baseColor = colors[index % colors.length];
-                  
-                  return (
-                    <div 
-                      key={index}
-                      className="rounded p-4 text-white relative border-2"
-                      style={{ 
-                        backgroundColor: `${baseColor}40`,
-                        borderColor: baseColor,
-                        borderWidth: '2px',
-                      }}
-                    >
-                      <div 
-                        className="w-full bg-transparent focus:outline-none text-center"
-                        style={{
-                          fontSize: 'clamp(0.875rem, 3vw, 1.25rem)',
-                          fontWeight: "500",
-                          maxHeight: 'clamp(60px, 12vh, 100px)',
-                          overflow: 'hidden',
-                          wordWrap: 'break-word',
-                          wordBreak: 'break-word',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          textOverflow: 'ellipsis'
-                        }}
-                      >
-                        {option}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            
-            {/* Show correct answer to creator - only when timer reaches 0 */}
-            {timeLeft === 0 && (
-              <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-4 text-center mb-4">
-                <p className="text-sm text-green-200 mb-2">Correct Answer:</p>
-                <p className="text-lg font-semibold text-green-100">
-                  {currentQuestion.options[correctAnswerIndex]}
-                </p>
-              </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Player responses */}
+                <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6">
+                  <h3 className="text-xl font-semibold mb-4 text-purple-200 text-center">
+                    Player Responses ({Object.keys(playerResponses).length}/{currentGame.players.length - 1})
+                  </h3>
+                  <div className="space-y-2">
+                    {currentGame.players
+                      .filter(p => (playerSessionId ? p.id !== playerSessionId : true))
+                      .map(player => {
+                        const response = playerResponses[player.id];
+                        return (
+                          <div 
+                            key={player.id}
+                            className="flex items-center justify-between p-3 rounded bg-purple-700/20 border border-purple-500/30"
+                          >
+                            <span className="text-purple-100">{player.name}</span>
+                            <div className="flex items-center gap-2">
+                              {response?.answered ? (
+                                <>
+                                  <span className={`text-sm ${response.isCorrect ? 'text-green-400' : 'text-red-400'}`}>
+                                    {response.isCorrect ? '✓' : '✗'}
+                                  </span>
+                                  <span className="text-sm text-purple-200">{player.score} pts</span>
+                                </>
+                              ) : (
+                                <span className="text-sm text-gray-400">Waiting...</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                {/* Next Question button */}
+                <button
+                  onClick={handleNextQuestion}
+                  disabled={timeLeft > 0}
+                  className="w-full py-3 rounded text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{
+                    backgroundColor: timeLeft > 0 ? "#6b7280" : "#22c55e",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (timeLeft === 0) {
+                      e.currentTarget.style.backgroundColor = "#16a34a";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (timeLeft === 0) {
+                      e.currentTarget.style.backgroundColor = "#22c55e";
+                    } else {
+                      e.currentTarget.style.backgroundColor = "#6b7280";
+                    }
+                  }}
+                >
+                  {timeLeft > 0 
+                    ? `Wait ${timeLeft}s...` 
+                    : isLastQuestion 
+                      ? 'Show Results →' 
+                      : 'Next Question →'}
+                </button>
+              </>
+            ) : (
+              <>
+                {/* Correct answer first */}
+                <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-4 text-center">
+                  <p className="text-sm text-green-200 mb-2">Correct Answer:</p>
+                  <p className="text-lg font-semibold text-green-100">
+                    {currentQuestion.options[correctAnswerIndex]}
+                  </p>
+                </div>
+
+                {/* Leaderboard */}
+                <div className="bg-purple-900/40 border border-purple-600/50 rounded-lg p-5">
+                  <h3 className="text-lg font-semibold text-center text-purple-100 mb-3">
+                    Current Standings
+                  </h3>
+                  <div className="space-y-2">
+                    {leaderboardContent || (
+                      <p className="text-center text-purple-200 text-sm">
+                        No player scores yet.
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-center text-gray-300 mt-4">
+                    {isPhaseLastQuestion ? (
+                      <span>Final results coming up...</span>
+                    ) : timeUntilNextQuestion !== null ? (
+                      <span>Next question in {timeUntilNextQuestion}s</span>
+                    ) : (
+                      <span>Waiting for next question...</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Next button */}
+                <button
+                  onClick={handleNextQuestion}
+                  className="w-full py-3 rounded text-white font-semibold transition-colors"
+                  style={{
+                    backgroundColor: isLastQuestion ? "#f97316" : "#22c55e",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = isLastQuestion ? "#ea580c" : "#16a34a";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = isLastQuestion ? "#f97316" : "#22c55e";
+                  }}
+                >
+                  {isLastQuestion ? 'Show Results →' : 'Next Question →'}
+                </button>
+
+                {/* Player responses */}
+                <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6">
+                  <h3 className="text-xl font-semibold mb-4 text-purple-200 text-center">
+                    Player Responses ({Object.keys(playerResponses).length}/{currentGame.players.length - 1})
+                  </h3>
+                  <div className="space-y-2">
+                    {currentGame.players
+                      .filter(p => (playerSessionId ? p.id !== playerSessionId : true))
+                      .map(player => {
+                        const response = playerResponses[player.id];
+                        return (
+                          <div 
+                            key={player.id}
+                            className="flex items-center justify-between p-3 rounded bg-purple-700/20 border border-purple-500/30"
+                          >
+                            <span className="text-purple-100">{player.name}</span>
+                            <div className="flex items-center gap-2">
+                              {response?.answered ? (
+                                <>
+                                  <span className={`text-sm ${response.isCorrect ? 'text-green-400' : 'text-red-400'}`}>
+                                    {response.isCorrect ? '✓' : '✗'}
+                                  </span>
+                                  <span className="text-sm text-purple-200">{player.score} pts</span>
+                                </>
+                              ) : (
+                                <span className="text-sm text-gray-400">Waiting...</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              </>
             )}
-            
-            {/* Next Question button for creator */}
-            <button
-              onClick={handleNextQuestion}
-              disabled={timeLeft > 0}
-              className="w-full py-3 rounded text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                backgroundColor: timeLeft > 0 ? "#6b7280" : "#22c55e",
-              }}
-              onMouseEnter={(e) => {
-                if (timeLeft === 0) {
-                  e.currentTarget.style.backgroundColor = "#16a34a";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (timeLeft === 0) {
-                  e.currentTarget.style.backgroundColor = "#22c55e";
-                } else {
-                  e.currentTarget.style.backgroundColor = "#6b7280";
-                }
-              }}
-            >
-              {timeLeft > 0 
-                ? `Wait ${timeLeft}s...` 
-                : isLastQuestion 
-                  ? 'Show Results →' 
-                  : 'Next Question →'}
-            </button>
           </div>
         ) : (
           // Player view - Show answer options
@@ -874,18 +1311,22 @@ function PlayQuizContent() {
                 <div 
                   key={index}
                   className={`rounded p-4 text-white relative border-2 transition-opacity ${
-                    isAnswered || showingResults ? 'cursor-not-allowed' : 'cursor-pointer hover:opacity-80'
+                    isAnswered || showingResults || isSpectatingCurrentQuestion
+                      ? 'cursor-not-allowed'
+                      : 'cursor-pointer hover:opacity-80'
                   }`}
                   style={{ 
                     backgroundColor: backgroundColor, // Sfondo colorato pieno
                     borderColor: borderColor, // Bordo dello stesso colore
                     borderWidth: '2px',
-                    opacity: isAnswered || showingResults ? (index === selectedAnswer || index === correctAnswerIndex ? 1 : 0.7) : 1,
-                    pointerEvents: isAnswered || showingResults ? 'none' : 'auto',
+                    opacity: isAnswered || showingResults || isSpectatingCurrentQuestion
+                      ? (index === selectedAnswer || index === correctAnswerIndex ? 1 : 0.7)
+                      : 1,
+                    pointerEvents: isAnswered || showingResults || isSpectatingCurrentQuestion ? 'none' : 'auto',
                   }}
                   onClick={() => {
 
-                    if (!isAnswered && !showingResults) {
+                    if (!isAnswered && !showingResults && !isSpectatingCurrentQuestion) {
                       handleAnswerSelect(index);
                     }
                   }}
@@ -1004,77 +1445,26 @@ function PlayQuizContent() {
                 <h3 className="text-xl font-bold text-center mb-3 text-purple-100">Current Standings</h3>
                 <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-4">
                   <div className="space-y-2">
-                    {(() => {
-                      const playerSessionId = localStorage.getItem("playerSessionId");
-                      const allPlayers = [...currentGame.players]
-                        .filter(p => p.id !== creatorSessionId) // Exclude creator
-                        .sort((a, b) => b.score - a.score);
-                      
-                      const top5 = allPlayers.slice(0, 5);
-                      const currentPlayer = allPlayers.find(p => p.id === playerSessionId);
-                      const currentPlayerIndex = allPlayers.findIndex(p => p.id === playerSessionId);
-                      const isCurrentPlayerInTop5 = currentPlayerIndex < 5;
-                      
-                      return (
-                        <>
-                          {top5.map((player, index) => {
-                            const isCurrentPlayer = player.id === playerSessionId;
-                            
-                            return (
-                              <div
-                                key={player.id}
-                                className={`flex items-center justify-between p-3 rounded-lg ${
-                                  isCurrentPlayer
-                                    ? 'bg-purple-700/50 border-2 border-purple-400'
-                                    : 'bg-purple-700/20 border border-purple-500/30'
-                                }`}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
-                                    index < 3 ? 'bg-yellow-500/30 text-yellow-300' : 'bg-gray-700 text-gray-300'
-                                  }`}>
-                                    {index === 0 && '👑'}
-                                    {index === 1 && '🥈'}
-                                    {index === 2 && '🥉'}
-                                    {index >= 3 && (index + 1)}
-                                  </div>
-                                  <span className={`font-medium ${isCurrentPlayer ? 'text-purple-100' : 'text-white'}`}>
-                                    {player.name}
-                                    {isCurrentPlayer && ' (You)'}
-                                  </span>
-                                </div>
-                                <span className="font-bold text-purple-200">{player.score} pts</span>
-                              </div>
-                            );
-                          })}
-                          
-                          {/* Show current player if not in top 5 */}
-                          {!isCurrentPlayerInTop5 && currentPlayer && (
-                            <>
-                              <div className="h-px bg-purple-600/50 my-2"></div>
-                              <div className="flex items-center justify-between p-3 rounded-lg bg-purple-700/50 border-2 border-purple-400">
-                                <div className="flex items-center gap-3">
-                                  <div className="w-8 h-8 rounded-full flex items-center justify-center font-bold bg-gray-700 text-gray-300">
-                                    {currentPlayerIndex + 1}
-                                  </div>
-                                  <span className="font-medium text-purple-100">
-                                    {currentPlayer.name} (You)
-                                  </span>
-                                </div>
-                                <span className="font-bold text-purple-200">{currentPlayer.score} pts</span>
-                              </div>
-                            </>
-                          )}
-                        </>
-                      );
-                    })()}
+                    {leaderboardContent || (
+                      <p className="text-center text-purple-200 text-sm">
+                        No player scores yet.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
               
               {/* Waiting message */}
               <div className="text-center">
-                <p className="text-gray-300 animate-pulse">Waiting for next question...</p>
+                {isPhaseLastQuestion ? (
+                  <p className="text-gray-300 animate-pulse">Final results coming up...</p>
+                ) : timeUntilNextQuestion !== null ? (
+                  <p className="text-gray-300 animate-pulse">
+                    Next question in {timeUntilNextQuestion}s
+                  </p>
+                ) : (
+                  <p className="text-gray-300 animate-pulse">Waiting for next question...</p>
+                )}
               </div>
             </div>
           </div>

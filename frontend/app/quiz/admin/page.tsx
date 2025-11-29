@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
@@ -85,6 +85,9 @@ function AdminPageContent() {
   const [bountyAmount, setBountyAmount] = useState("10");
   const [selectedCurrency, setSelectedCurrency] = useState<string>("usdc");
   const [quizTransaction, setQuizTransaction] = useState<string>("");
+  const [scheduledStartTime, setScheduledStartTime] = useState<string>("");
+  const [isScheduled, setIsScheduled] = useState(false);
+  const [isPrivate, setIsPrivate] = useState(false);
 
   // Get available tokens for current network
   const availableTokens = NETWORK_TOKENS[chain?.id || 8453] || []
@@ -586,6 +589,13 @@ function AdminPageContent() {
     }
   };
 
+  const minScheduledTime = useMemo(() => {
+    const date = new Date(Date.now() + 60_000);
+    const offset = date.getTimezoneOffset();
+    const local = new Date(date.getTime() - offset * 60_000);
+    return local.toISOString().slice(0, 16);
+  }, []);
+
   const handleFreeQuiz = async () => {
     // Create quiz without bounty
     const result = await handleSaveQuiz();
@@ -761,6 +771,13 @@ function AdminPageContent() {
         return null;
       }
 
+      if (isScheduled && !scheduledStartTime) {
+        setError("Please choose a scheduled start time or disable scheduling");
+        setIsCreating(false);
+        setCreationStep(CreationStep.NONE);
+        return null;
+      }
+
       // Prepare quiz data
       const quiz = {
         id: `quiz-${Date.now()}`,
@@ -777,6 +794,18 @@ function AdminPageContent() {
       };
       const userFid = (await (sdk.context))?.user?.fid;
       
+      const scheduledStartIso =
+        isScheduled && scheduledStartTime
+          ? new Date(scheduledStartTime).toISOString()
+          : undefined;
+
+      console.log("Saving quiz", {
+        title: quiz.title,
+        questionCount: quiz.questions.length,
+        isScheduled,
+        scheduledStartIso,
+      });
+
       // Create quiz in backend (no contract info yet)
       const backendQuizId = await createQuizOnBackend(
         quiz,
@@ -785,10 +814,15 @@ function AdminPageContent() {
         userFid?.toString() || '', // user fid
         address, // user address
         0, // prize amount (will be updated later for bounty quizzes)
-        undefined // prize token (will be updated later for bounty quizzes)
+        undefined, // prize token (will be updated later for bounty quizzes)
+        scheduledStartIso,
+        isPrivate
       );
 
       console.log("Quiz saved to backend with ID:", backendQuizId);
+      if (scheduledStartIso) {
+        console.log("Scheduling quiz start for", scheduledStartIso);
+      }
 
       // Start game session and join as creator
       setCreationStep(CreationStep.CREATING_ROOM);
@@ -1301,6 +1335,62 @@ function AdminPageContent() {
                 {creationStep}
               </div>
             )}
+
+            {/* Privacy configuration */}
+            <div className="mb-4 bg-purple-600/10 border border-purple-500/40 rounded-lg p-4 text-sm text-white">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isPrivate}
+                  onChange={(e) => setIsPrivate(e.target.checked)}
+                  className="h-4 w-4 rounded border-white/40 bg-transparent mt-0.5"
+                  disabled={creationStep !== CreationStep.NONE}
+                />
+                <div>
+                  <span className="font-medium block">Make this quiz private</span>
+                  <p className="text-gray-300 text-xs mt-1">
+                    Private quizzes will not be shown on the home page banner. Only players with the room code can join.
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* Scheduled start configuration */}
+            <div className="mb-6 bg-purple-600/10 border border-purple-500/40 rounded-lg p-4 text-sm text-white">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isScheduled}
+                  onChange={(e) => {
+                    setIsScheduled(e.target.checked);
+                    if (!e.target.checked) {
+                      setScheduledStartTime("");
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-white/40 bg-transparent"
+                  disabled={creationStep !== CreationStep.NONE}
+                />
+                <span className="font-medium">
+                  Schedule this quiz to start automatically
+                </span>
+              </label>
+              {isScheduled && (
+                <div className="mt-3 space-y-2">
+                  <input
+                    type="datetime-local"
+                    value={scheduledStartTime}
+                    onChange={(e) => setScheduledStartTime(e.target.value)}
+                    min={minScheduledTime}
+                    className="w-full rounded-md bg-black/40 border border-white/30 px-3 py-2 text-white focus:outline-none focus:border-white"
+                    disabled={creationStep !== CreationStep.NONE}
+                  />
+                  <p className="text-gray-300 text-xs">
+                    Times are shown in your local timezone. The quiz will move to
+                    the lobby automatically and generate a room code.
+                  </p>
+                </div>
+              )}
+            </div>
 
             <div className="space-y-4">
               {/* Free Quiz Option */}

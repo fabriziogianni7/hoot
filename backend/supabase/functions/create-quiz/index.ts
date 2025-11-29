@@ -37,7 +37,52 @@ function validateQuizData(request: CreateQuizRequest): string | null {
     }
   }
   
+  if (request.scheduled_start_time) {
+    const scheduledDate = new Date(request.scheduled_start_time)
+    if (isNaN(scheduledDate.getTime())) {
+      return 'scheduled_start_time must be a valid date'
+    }
+    if (scheduledDate.getTime() < Date.now() + 60_000) {
+      return 'scheduled_start_time must be at least 1 minute in the future'
+    }
+  }
+
   return null
+}
+
+function buildCronExpression(date: Date): string {
+  const minutes = date.getUTCMinutes()
+  const hours = date.getUTCHours()
+  const dayOfMonth = date.getUTCDate()
+  const month = date.getUTCMonth() + 1
+  return `${minutes} ${hours} ${dayOfMonth} ${month} *`
+}
+
+async function scheduleQuizStart(
+  supabase: ReturnType<typeof initSupabaseClient>,
+  quizId: string,
+  scheduledStartTime: string
+) {
+  const startDate = new Date(scheduledStartTime)
+  const cronExpression = buildCronExpression(startDate)
+  const jobName = `start_quiz_${quizId}`
+
+  console.log("Creating cron job for quiz", {
+    quizId,
+    jobName,
+    cronExpression,
+    scheduledStartTime
+  })
+
+  const { error } = await supabase.rpc('create_quiz_start_cron_job', {
+    job_name: jobName,
+    schedule: cronExpression,
+    quiz_id: quizId
+  })
+
+  if (error) {
+    throw new Error(`Failed to schedule quiz start: ${error.message}`)
+  }
 }
 
 async function createQuiz(supabase: ReturnType<typeof initSupabaseClient>, request: CreateQuizRequest) {
@@ -53,13 +98,20 @@ async function createQuiz(supabase: ReturnType<typeof initSupabaseClient>, reque
       network_id: request.network_id,
       user_fid: request.user_fid || null,
       user_id: request.user_id || null,
-      status: QUIZ_STATUS.PENDING
+      status: QUIZ_STATUS.PENDING,
+      scheduled_start_time: request.scheduled_start_time ? new Date(request.scheduled_start_time).toISOString() : null,
+      is_private: request.is_private ?? false
     })
     .select()
     .single()
 
   if (quizError) {
     throw new Error(`Failed to create quiz: ${quizError.message}`)
+  }
+
+  if (request.scheduled_start_time) {
+    await scheduleQuizStart(supabase, quiz.id, request.scheduled_start_time)
+    console.log("Cron job created for quiz", quiz.id)
   }
 
   return quiz

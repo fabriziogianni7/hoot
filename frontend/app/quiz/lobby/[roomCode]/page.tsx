@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense, useRef } from "react";
+import { useEffect, useState, Suspense, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 
 // Disable pre-rendering for this page
@@ -63,6 +63,7 @@ function LobbyContent() {
       prize_amount?: number;
       prize_token?: string | null;
       network_id?: string | null;
+      scheduled_start_time?: string | null;
     };
   } | null>(null);
   const [quizData, setQuizData] = useState<{
@@ -84,6 +85,7 @@ function LobbyContent() {
   const [messageText, setMessageText] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const hasNavigatedRef = useRef(false);
   // Reactions: messageId -> emoji -> array of player_session_ids
   const [reactions, setReactions] = useState<Record<string, Record<string, string[]>>>({});
   // Track which emoji picker is open
@@ -113,6 +115,65 @@ function LobbyContent() {
   const { messages, isConnected: isMessagesConnected, channel: messagesChannel, addMessageLocal } = useLobbyMessagesRealtime(gameSessionId);
 
   const quiz = getCurrentQuiz() || quizData;
+  const goToPlay = useCallback(() => {
+    if (hasNavigatedRef.current) return;
+    const roomCodeToUse = contextRoomCode || roomCodeFromUrl;
+    const quizId =
+      currentGame?.quizId ||
+      gameData?.quiz_id ||
+      quizData?.id ||
+      quiz?.id;
+
+    if (!roomCodeToUse || !quizId) return;
+
+    const params = new URLSearchParams();
+    params.set("room", roomCodeToUse);
+    params.set("quizId", quizId);
+
+    hasNavigatedRef.current = true;
+    router.push(`/quiz/play?${params.toString()}`);
+  }, [
+    contextRoomCode,
+    roomCodeFromUrl,
+    currentGame?.quizId,
+    gameData?.quiz_id,
+    quizData?.id,
+    quiz?.id,
+    router,
+  ]);
+
+  const goToResults = useCallback(() => {
+    if (hasNavigatedRef.current) return;
+    const gameId = gameSessionId || gameData?.id;
+    const quizId =
+      currentGame?.quizId ||
+      quizData?.id ||
+      gameData?.quiz_id ||
+      quiz?.id;
+
+    if (!gameId || !quizId) return;
+
+    const params = new URLSearchParams();
+    params.set("game", gameId);
+    params.set("quizId", quizId);
+    const roomCodeToUse = contextRoomCode || roomCodeFromUrl;
+    if (roomCodeToUse) {
+      params.set("room", roomCodeToUse);
+    }
+
+    hasNavigatedRef.current = true;
+    router.push(`/quiz/results?${params.toString()}`);
+  }, [
+    gameSessionId,
+    gameData?.id,
+    currentGame?.quizId,
+    quizData?.id,
+    gameData?.quiz_id,
+    quiz?.id,
+    contextRoomCode,
+    roomCodeFromUrl,
+    router,
+  ]);
   const prizeAmount = Number(gameData?.quizzes?.prize_amount ?? 0);
   const prizeTokenAddress = (gameData?.quizzes?.prize_token ??
     ZERO_ADDRESS) as `0x${string}`;
@@ -143,6 +204,13 @@ function LobbyContent() {
       ? prizeAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })
       : "0";
   const showPrizePool = prizeAmount > 0;
+  const scheduledStartTime = gameData?.quizzes?.scheduled_start_time || null;
+  const formattedScheduledStart = scheduledStartTime
+    ? new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(scheduledStartTime))
+    : null;
   const authReady = Boolean(loggedUser?.isAuthenticated && authFlowState === "ready");
   const needsPrivyFlow = (isMiniapp === false) || miniappClient === "telegram";
   const handleAuthClick = (mode: "miniapp" | "privy") => {
@@ -474,41 +542,37 @@ function LobbyContent() {
     const timer = setTimeout(() => {
       setCountdown(countdown - 1);
 
-      if (countdown === 1) {
-        // Countdown finished - navigate to play page
-        // The play page will set status to "in_progress" when it's loaded and ready
+      if (countdown === 1 && joined && currentGame) {
         console.log("Countdown finished, navigating to play page");
-        
-        if (joined && currentGame) {
-          const roomCodeToUse = contextRoomCode || roomCodeFromUrl;
-          const quizId = currentGame.quizId || gameData?.quiz_id;
-
-          console.log("Room code:", roomCodeToUse, "Quiz ID:", quizId);
-
-          // Pass room code and quiz ID via URL parameters
-          const params = new URLSearchParams();
-          if (roomCodeToUse) params.set("room", roomCodeToUse);
-          if (quizId) params.set("quizId", quizId);
-
-          router.push(`/quiz/play?${params.toString()}`);
-        } else {
-          console.warn(
-            "Cannot navigate to play page: player not joined or game not ready"
-          );
-        }
+        goToPlay();
       }
     }, 1000);
 
     return () => clearTimeout(timer);
   }, [
     countdown,
-    router,
     joined,
     currentGame,
-    contextRoomCode,
-    roomCodeFromUrl,
-    gameData,
+    goToPlay,
   ]);
+
+  useEffect(() => {
+    if (!joined || hasNavigatedRef.current) return;
+
+    const backendStatus = gameData?.status;
+    const frontendStatus = currentGame?.status;
+
+    if (backendStatus === "in_progress" || frontendStatus === "question") {
+      goToPlay();
+    } else if (
+      backendStatus &&
+      (backendStatus === "completed" || backendStatus === "finished")
+    ) {
+      goToResults();
+    } else if (frontendStatus === "finished") {
+      goToResults();
+    }
+  }, [joined, gameData?.status, currentGame?.status, goToPlay, goToResults]);
 
   const handleManualReconnect = () => {
     console.log("Manual reconnect triggered");
@@ -573,7 +637,15 @@ function LobbyContent() {
         // No need to manually update local state here
       } catch (err) {
         console.error("Error joining game:", err);
-        setError("Error joining game. Please try again.");
+        const message =
+          err instanceof Error ? err.message : "Error joining game. Please try again.";
+
+        if (message.toLowerCase().includes("finished")) {
+          setError("Quiz already finished. Redirecting to results...");
+          goToResults();
+        } else {
+          setError(message);
+        }
       } finally {
         setIsJoining(false);
       }
@@ -1280,6 +1352,26 @@ function LobbyContent() {
                     </div>
                   )}
                 </div>
+
+                {formattedScheduledStart && (
+                  <div className="mt-4">
+                    <p className="text-gray-300 mb-2">Scheduled start:</p>
+                    <div className="bg-purple-950/30 border border-purple-700/50 rounded-lg p-3 text-sm text-gray-100">
+                      {formattedScheduledStart}
+                    </div>
+                  </div>
+                )}
+
+                {(gameData?.status === "completed" || gameData?.status === "finished") && (
+                  <div className="mt-4">
+                    <button
+                      onClick={goToResults}
+                      className="w-full py-2 px-4 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold transition-colors"
+                    >
+                      View Results
+                    </button>
+                  </div>
+                )}
 
                 <div className="pt-2 border-t border-purple-700/50">
                   Status:{" "}

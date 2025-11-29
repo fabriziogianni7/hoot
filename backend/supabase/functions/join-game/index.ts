@@ -1,8 +1,18 @@
+// @ts-expect-error - deno runtime import
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { handleCorsPreFlight } from "../_shared/cors.ts";
 import { successResponse, errorResponse } from "../_shared/response.ts";
 import { validateRequired, compareAddresses } from "../_shared/validation.ts";
 import { initSupabaseClient } from "../_shared/supabase.ts";
+
+type PlayerSessionRow = {
+  id: string;
+  player_name: string;
+  wallet_address?: string | null;
+  total_score: number;
+  joined_at: string;
+};
+
 async function fetchGameSession(supabase, roomCode) {
   const { data, error } = await supabase
     .from("game_sessions")
@@ -12,6 +22,7 @@ async function fetchGameSession(supabase, roomCode) {
       quiz_id,
       status,
       current_question_index,
+      question_started_at,
       started_at,
       ended_at,
       creator_session_id,
@@ -31,13 +42,15 @@ async function fetchGameSession(supabase, roomCode) {
   if (error) return null;
   return data;
 }
+const TERMINAL_STATUSES = new Set(["completed", "finished"]);
+
 function validateGameSession(gameSession, isExistingPlayer = false) {
   if (!gameSession) {
     return "Game session already started! Create a new quiz.";
   }
-  // Allow reconnection for existing players, but block new players if game has started
-  if (!isExistingPlayer && gameSession.status !== 'waiting') {
-    return 'Game has already started. New players cannot join.';
+  // Allow reconnection for existing players, but block new players if game has finished
+  if (!isExistingPlayer && TERMINAL_STATUSES.has(gameSession.status)) {
+    return 'Game has already finished. Results are available in the app.';
   }
   return null;
 }
@@ -45,7 +58,7 @@ async function checkExistingPlayerByWallet(
   supabase,
   gameSessionId,
   walletAddress
-) {
+): Promise<PlayerSessionRow | null> {
   const { data } = await supabase
     .from("player_sessions")
     .select("id, player_name, total_score, joined_at")
@@ -54,7 +67,11 @@ async function checkExistingPlayerByWallet(
     .single();
   return data;
 }
-async function checkExistingPlayerByName(supabase, gameSessionId, playerName) {
+async function checkExistingPlayerByName(
+  supabase,
+  gameSessionId,
+  playerName
+): Promise<PlayerSessionRow | null> {
   const { data } = await supabase
     .from("player_sessions")
     .select("id, player_name, wallet_address, total_score, joined_at")
@@ -146,7 +163,7 @@ serve(async (req) => {
       return errorResponse("Game session not found", 404);
     }
     // Check for existing player by wallet address first (if provided)
-    let existingPlayer = null;
+    let existingPlayer: PlayerSessionRow | null = null;
     if (wallet_address) {
       existingPlayer = await checkExistingPlayerByWallet(
         supabase,
@@ -171,12 +188,14 @@ serve(async (req) => {
           game_session_id: gameSession.id,
           player_name: existingPlayer.player_name,
           is_creator: playerIsCreator,
+          session_reused: true,
           message: "Reconnected to existing player session",
           game_session: {
             id: gameSession.id,
             room_code,
             status: gameSession.status,
             current_question_index: gameSession.current_question_index,
+            question_started_at: gameSession.question_started_at,
             started_at: gameSession.started_at,
             ended_at: gameSession.ended_at,
           },
@@ -186,7 +205,7 @@ serve(async (req) => {
       }
     }
     // Check for existing player by name (only if no wallet match found)
-    const existingPlayerByName = await checkExistingPlayerByName(
+    const existingPlayerByName: PlayerSessionRow | null = await checkExistingPlayerByName(
       supabase,
       gameSession.id,
       player_name
@@ -222,12 +241,14 @@ serve(async (req) => {
         game_session_id: gameSession.id,
         player_name: existingPlayerByName.player_name,
         is_creator: playerIsCreator,
+        session_reused: true,
         message: "Reconnected to existing player session",
         game_session: {
           id: gameSession.id,
           room_code,
           status: gameSession.status,
           current_question_index: gameSession.current_question_index,
+          question_started_at: gameSession.question_started_at,
           started_at: gameSession.started_at,
           ended_at: gameSession.ended_at,
         },
@@ -262,11 +283,13 @@ serve(async (req) => {
       success: true,
       player_session_id: playerSession.id,
       is_creator: playerIsCreator,
+      session_reused: false,
       game_session: {
         id: gameSession.id,
         room_code,
         status: gameSession.status,
         current_question_index: gameSession.current_question_index,
+        question_started_at: gameSession.question_started_at,
         started_at: gameSession.started_at,
         ended_at: gameSession.ended_at,
       },

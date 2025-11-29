@@ -25,7 +25,7 @@ export default function QRCodeModal({ isOpen, onClose, roomCode }: QRCodeModalPr
     process.env.NEXT_PUBLIC_URL || 
     process.env.NEXT_PUBLIC_NGROK_URL ||
     (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : null) ||
-    "https://hoot-five.vercel.app"; // Fallback to canonical domain
+    "https://hoot-quiz.com"; // Fallback to canonical domain
   
   // Generate the URLs
   const absoluteUrl = `${productionUrl}/quiz/lobby/${roomCode}`;
@@ -37,8 +37,8 @@ export default function QRCodeModal({ isOpen, onClose, roomCode }: QRCodeModalPr
   // Base app URL - Base App uses direct domain URL (not App ID based like Farcaster)
   // Reference: https://docs.base.org/mini-apps/core-concepts/navigation#deeplinks
   // Base App supports two formats:
-  // 1. Direct URL: https://hoot-five.vercel.app/quiz/lobby/XXXXXX (works when opened from Base App)
-  // 2. Deeplink: cbwallet://miniapp?url=https://hoot-five.vercel.app/quiz/lobby/XXXXXX (works on mobile when Base App is installed)
+  // 1. Direct URL: https://hoot-quiz.com/quiz/lobby/XXXXXX (works when opened from Base App)
+  // 2. Deeplink: cbwallet://miniapp?url=https://hoot-quiz.com/quiz/lobby/XXXXXX (works on mobile when Base App is installed)
   let baseAppDirectUrl = absoluteUrl; // Use production URL
   if (baseCustomDomain) {
     // Use custom domain if configured (e.g., https://hoot.base.org/quiz/lobby/XXXXXX)
