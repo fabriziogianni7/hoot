@@ -13,6 +13,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "add-to-calendar-button-react": "^2.6.2",
     "@coinbase/onchainkit": "latest",
     "@farcaster/auth-kit": "^0.8.1",
     "@farcaster/miniapp-sdk": "^0.2.1",

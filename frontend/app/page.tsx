@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
@@ -13,6 +13,14 @@ import { generateQuizViaAI } from "@/lib/supabase-client";
 import { extractPdfText, extractTextFile } from "@/lib/utils";
 import type { GenerateQuizResponse } from "@/lib/backend-types";
 import { getTokensForNetwork } from "@/lib/token-config";
+
+const AddToCalendarButton = dynamic(
+  () =>
+    import("add-to-calendar-button-react").then(
+      (mod: any) => mod.AddToCalendarButton || mod.default
+    ),
+  { ssr: false }
+) as any;
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -53,6 +61,7 @@ export default function Home() {
   const [showAiModal, setShowAiModal] = useState(false);
   const [isAddingMiniApp, setIsAddingMiniApp] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showReminderSheet, setShowReminderSheet] = useState(false);
   const [aiForm, setAiForm] = useState({
     topic: "",
     questionCount: 5,
@@ -76,7 +85,11 @@ export default function Home() {
   );
   const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
 
-  const isFarcasterMiniapp = Boolean(isMiniapp && miniappClient === "farcaster");
+  const isFarcasterMiniapp = Boolean(
+    isMiniapp && miniappClient === "farcaster"
+  );
+  const isBaseMiniapp = Boolean(isMiniapp && miniappClient === "base");
+  const canEnableNotifications = isFarcasterMiniapp || isBaseMiniapp;
 
   // Fetch next upcoming public quiz (and its room code)
   useEffect(() => {
@@ -448,21 +461,37 @@ export default function Home() {
     }
   };
 
-  const handleNotifyMeClick = async () => {
-    if (!isFarcasterMiniapp || isAddingMiniApp) {
+  const handleEnableNotifications = async () => {
+    if (!canEnableNotifications || isAddingMiniApp) {
       return;
     }
 
     try {
       setIsAddingMiniApp(true);
       await sdk.actions.addMiniApp();
-      console.log("✅ Requested to add Mini App via Farcaster");
+      console.log("✅ Requested to add Mini App for notifications", {
+        miniappClient,
+      });
     } catch (error) {
-      console.error("❌ Failed to add Mini App via Farcaster", error);
+      console.error("❌ Failed to enable notifications via MiniApp", error);
     } finally {
       setIsAddingMiniApp(false);
     }
   };
+
+  const eventStartIso =
+    nextSession?.scheduled_start_time != null
+      ? new Date(nextSession.scheduled_start_time)
+      : null;
+  const eventEndIso =
+    eventStartIso != null
+      ? new Date(eventStartIso.getTime() + 30 * 60 * 1000)
+      : null;
+
+  const eventUrl =
+    typeof window !== "undefined" && nextSession?.room_code
+      ? `${window.location.origin}/quiz/lobby/${nextSession.room_code}`
+      : "";
 
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>
@@ -1622,6 +1651,176 @@ export default function Home() {
         </div>
       )}
 
+      {/* Reminder Sheet: calendar + notifications */}
+      {showReminderSheet &&
+        nextSession &&
+        nextSession.room_code &&
+        eventStartIso &&
+        eventEndIso && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+              zIndex: 55,
+            }}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowReminderSheet(false);
+              }
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: "#000",
+                border: "1px solid white",
+                borderTopLeftRadius: "0.75rem",
+                borderTopRightRadius: "0.75rem",
+                padding: "1.5rem",
+                width: "100%",
+                maxWidth: "28rem",
+                margin: "0 1rem",
+                marginBottom: 0,
+                position: "relative",
+              }}
+            >
+              <button
+                onClick={() => setShowReminderSheet(false)}
+                style={{
+                  position: "absolute",
+                  top: "1rem",
+                  right: "1rem",
+                  color: "white",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: "1.25rem",
+                }}
+              >
+                ×
+              </button>
+
+              <div style={{ textAlign: "center", marginBottom: "1.25rem" }}>
+                <h3
+                  style={{
+                    color: "white",
+                    fontSize: "1.1rem",
+                    fontWeight: 600,
+                    marginBottom: "0.4rem",
+                  }}
+                >
+                  Stay in the loop
+                </h3>
+                <p style={{ color: "#d1d5db", fontSize: "0.85rem" }}>
+                  Add this quiz to your calendar or enable notifications
+                </p>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.75rem",
+                }}
+              >
+                {/* Calendar option */}
+                <div
+                  style={{
+                    padding: "0.9rem",
+                    borderRadius: "0.5rem",
+                    backgroundColor: "rgba(121, 90, 255, 0.3)",
+                    border: "1px solid #795AFF",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: "0.5rem",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.5rem",
+                        color: "white",
+                        fontWeight: 500,
+                      }}
+                    >
+                      <span>📅</span>
+                      <span>Add to calendar</span>
+                    </div>
+                  </div>
+                  <AddToCalendarButton
+                    name={nextSession.title}
+                    options={["Google", "Apple", "Outlook.com", "iCal"]}
+                    startDate={eventStartIso.toISOString().slice(0, 10)}
+                    startTime={eventStartIso.toISOString().slice(11, 16)}
+                    endDate={eventEndIso.toISOString().slice(0, 10)}
+                    endTime={eventEndIso.toISOString().slice(11, 16)}
+                    timeZone={
+                      typeof window !== "undefined"
+                        ? Intl.DateTimeFormat().resolvedOptions().timeZone
+                        : "UTC"
+                    }
+                    description={`Join the Hoot quiz – Room ${nextSession.room_code}`}
+                    location={eventUrl}
+                    buttonStyle="round"
+                    trigger="click"
+                  />
+                </div>
+
+                {/* Notification option */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!canEnableNotifications) return;
+                    await handleEnableNotifications();
+                  }}
+                  disabled={!canEnableNotifications || isAddingMiniApp}
+                  style={{
+                    width: "100%",
+                    padding: "0.9rem",
+                    borderRadius: "0.5rem",
+                    border: "1px solid #4b5563",
+                    backgroundColor: "rgba(17,24,39,0.95)",
+                    color: "white",
+                    fontSize: "0.9rem",
+                    textAlign: "left",
+                    opacity:
+                      !canEnableNotifications || isAddingMiniApp ? 0.6 : 1,
+                    cursor:
+                      !canEnableNotifications || isAddingMiniApp
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
+                >
+                  <div style={{ fontWeight: 500, marginBottom: "0.2rem" }}>
+                    🔔{" "}
+                    {canEnableNotifications
+                      ? isAddingMiniApp
+                        ? "Enabling notifications..."
+                        : "Enable notifications"
+                      : "Notifications only in MiniApps"}
+                  </div>
+                  <div style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
+                    {canEnableNotifications
+                      ? isFarcasterMiniapp
+                        ? "We’ll add this MiniApp to your Farcaster client so you won’t miss the quiz."
+                        : "We’ll add this MiniApp to your Base app so you won’t miss the quiz."
+                      : "Open Hoot in Farcaster or Base MiniApp to enable notifications."}
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       {/* Next upcoming public quiz banner */}
       {nextSession &&
         nextSession.room_code &&
@@ -1723,27 +1922,23 @@ export default function Home() {
                 flexShrink: 0,
               }}
             >
-              {isFarcasterMiniapp && (
-                <button
-                  type="button"
-                  onClick={handleNotifyMeClick}
-                  disabled={isAddingMiniApp}
-                  style={{
-                    whiteSpace: "nowrap",
-                    padding: "0.45rem 0.9rem",
-                    borderRadius: "9999px",
-                    border: "1px solid rgba(255,255,255,0.7)",
-                    backgroundColor: "rgba(17,24,39,0.7)",
-                    color: "white",
-                    fontSize: "0.8rem",
-                    fontWeight: 500,
-                    cursor: isAddingMiniApp ? "not-allowed" : "pointer",
-                    opacity: isAddingMiniApp ? 0.7 : 1,
-                  }}
-                >
-                  {isAddingMiniApp ? "Adding..." : "🛎️"}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowReminderSheet(true)}
+                style={{
+                  whiteSpace: "nowrap",
+                  padding: "0.45rem 0.9rem",
+                  borderRadius: "9999px",
+                  border: "1px solid rgba(255,255,255,0.7)",
+                  backgroundColor: "rgba(17,24,39,0.7)",
+                  color: "white",
+                  fontSize: "0.8rem",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                {isAddingMiniApp ? "Adding..." : "🛎️"}
+              </button>
               <button
                 type="button"
                 onClick={() =>
