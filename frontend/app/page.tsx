@@ -1741,7 +1741,7 @@ export default function Home() {
                     opacity: isAddingMiniApp ? 0.7 : 1,
                   }}
                 >
-                  {isAddingMiniApp ? "Adding..." : "🥋 Notify me"}
+                  {isAddingMiniApp ? "Adding..." : "🛎️"}
                 </button>
               )}
               <button
