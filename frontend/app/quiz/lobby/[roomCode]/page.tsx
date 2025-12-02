@@ -14,6 +14,8 @@ import { useAuth } from "@/lib/use-auth";
 import { usePlayerSessionsRealtime, useLobbyMessagesRealtime } from "@/lib/use-realtime-hooks";
 import { NETWORK_TOKENS } from "@/lib/token-config";
 import { ZERO_ADDRESS } from "@/lib/contracts";
+import QuizCalendarButton from "@/components/QuizCalendarButton";
+import { sdk } from "@farcaster/miniapp-sdk";
 
 function LobbyContent() {
   const router = useRouter();
@@ -211,6 +213,76 @@ function LobbyContent() {
         timeStyle: "short",
       }).format(new Date(scheduledStartTime))
     : null;
+  const eventStart =
+    scheduledStartTime != null ? new Date(scheduledStartTime) : null;
+  const eventEnd =
+    eventStart != null
+      ? new Date(eventStart.getTime() + 30 * 60 * 1000)
+      : null;
+
+  const lobbyRoomCode = contextRoomCode || roomCodeFromUrl || "";
+  const lobbyEventUrl =
+    typeof window !== "undefined" && lobbyRoomCode
+      ? `${window.location.origin}/quiz/lobby/${lobbyRoomCode}`
+      : "";
+
+  const formatCalendarDateTime = (date: Date | null) => {
+    if (!date) {
+      return null;
+    }
+    const iso = date.toISOString().replace(/[-:]/g, "");
+    const withoutMs = iso.split(".")[0];
+    return `${withoutMs}Z`;
+  };
+
+  const lobbyGoogleCalendarUrl = (() => {
+    if (!eventStart || !eventEnd) {
+      return null;
+    }
+
+    const start = formatCalendarDateTime(eventStart);
+    const end = formatCalendarDateTime(eventEnd);
+
+    if (!start || !end) {
+      return null;
+    }
+
+    const title = encodeURIComponent(quiz?.title ?? "Hoot Quiz");
+    const details = encodeURIComponent(
+      `Join the Hoot quiz – Room ${lobbyRoomCode}${
+        lobbyEventUrl ? `\n\n${lobbyEventUrl}` : ""
+      }`
+    );
+    const location = encodeURIComponent(lobbyEventUrl || "");
+
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
+  })();
+
+  const isFarcasterMiniapp = Boolean(
+    isMiniapp && miniappClient === "farcaster"
+  );
+  const isBaseMiniapp = Boolean(isMiniapp && miniappClient === "base");
+
+  const openExternalUrl = (url: string | null) => {
+    if (!url) {
+      return;
+    }
+
+    if (isMiniapp) {
+      try {
+        // Prefer MiniApp SDK openUrl when available
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        (sdk as any).actions.openUrl(url);
+        return;
+      } catch (error) {
+        console.error("Failed to open URL via MiniApp SDK, falling back", error);
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  };
   const authReady = Boolean(loggedUser?.isAuthenticated && authFlowState === "ready");
   const needsPrivyFlow = (isMiniapp === false) || miniappClient === "telegram";
   const handleAuthClick = (mode: "miniapp" | "privy") => {
@@ -1361,6 +1433,28 @@ function LobbyContent() {
                     </div>
                   </div>
                 )}
+
+                {eventStart &&
+                  eventEnd &&
+                  lobbyRoomCode &&
+                  lobbyGoogleCalendarUrl && (
+                    <div className="mt-4">
+                      <p className="text-gray-300 mb-2">
+                        Add this quiz to your calendar:
+                      </p>
+                      <QuizCalendarButton
+                        title={quiz?.title || "Hoot Quiz"}
+                        eventStart={eventStart}
+                        eventEnd={eventEnd}
+                        roomCode={lobbyRoomCode}
+                        eventUrl={lobbyEventUrl}
+                        isMiniapp={isMiniapp}
+                        isBaseMiniapp={isBaseMiniapp}
+                        googleCalendarUrl={lobbyGoogleCalendarUrl}
+                        openExternalUrl={openExternalUrl}
+                      />
+                    </div>
+                  )}
 
                 {(gameData?.status === "completed" || gameData?.status === "finished") && (
                   <div className="mt-4">

@@ -36,7 +36,7 @@ serve(async (req) => {
 
     const { data: quiz, error: quizError } = await supabase
       .from("quizzes")
-      .select("id, user_id, status")
+      .select("id, user_id, status, prize_token, scheduled_notification_sent")
       .eq("id", payload.quiz_id)
       .single()
 
