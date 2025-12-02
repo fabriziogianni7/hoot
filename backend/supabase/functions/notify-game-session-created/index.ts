@@ -4,7 +4,7 @@ import { successResponse, errorResponse } from "../_shared/response.ts"
 import { initSupabaseClient } from "../_shared/supabase.ts"
 import { sendFrameNotification } from "../_shared/neynar.ts"
 
-const NOTIFICATION_TARGET_FIDS = [372626]
+const NOTIFICATION_TARGET_FIDS = []
 const FRONTEND_BASE_URL =
   Deno.env.get("FRONTEND_BASE_URL") || "https://hoot-quiz.com"
 
@@ -176,7 +176,7 @@ serve(async (req) => {
     }
 
     const title = "New Quiz Scheduled"
-    const bodyBase = `${quiz.title} starts at ${formattedTime} with ${quiz.prize_amount} ${tokenSymbol} in prizes`
+    const bodyBase = `${quiz.title} starts at ${formattedTime} with ${quiz.prize_amount} ${tokenSymbol} in prizes. Open To Get Notified before it starts.`
     const body = bodyBase.length > 128 ? bodyBase.slice(0, 125) + "..." : bodyBase
 
     const roomCode = gameSession.room_code
