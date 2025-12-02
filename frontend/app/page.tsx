@@ -53,6 +53,8 @@ export default function Home() {
   const [showAiModal, setShowAiModal] = useState(false);
   const [isAddingMiniApp, setIsAddingMiniApp] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [showIntroModal, setShowIntroModal] = useState(false);
+  const [hasSeenIntro, setHasSeenIntro] = useState(false);
   const [showReminderSheet, setShowReminderSheet] = useState(false);
   const [showBaseProceedModal, setShowBaseProceedModal] = useState(false);
   const [aiForm, setAiForm] = useState({
@@ -339,6 +341,38 @@ export default function Home() {
     }
 
     return `${session.prize_amount} ${token.symbol}`;
+  };
+
+  // Load intro modal preference from localStorage (client-side only)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const seen = window.localStorage.getItem("hoot_intro_seen");
+      if (seen === "1") {
+        setHasSeenIntro(true);
+      }
+    } catch (e) {
+      console.warn("Failed to read intro preference from localStorage", e);
+    }
+  }, []);
+
+  // Show intro modal once after user connects
+  useEffect(() => {
+    if (loggedUser?.isAuthenticated && !hasSeenIntro) {
+      setShowIntroModal(true);
+    }
+  }, [loggedUser?.isAuthenticated, hasSeenIntro]);
+
+  const closeIntroModal = () => {
+    setShowIntroModal(false);
+    setHasSeenIntro(true);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem("hoot_intro_seen", "1");
+      } catch (e) {
+        console.warn("Failed to store intro preference in localStorage", e);
+      }
+    }
   };
 
   // Initialize the miniapp
@@ -1050,6 +1084,189 @@ export default function Home() {
           </p>
         </div>
       </div>
+
+      {/* App intro modal – shown once after first successful connect */}
+      {showIntroModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.75)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 65,
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              closeIntroModal();
+            }
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#020617",
+              borderRadius: "0.75rem",
+              border: "1px solid rgba(148,163,184,0.8)",
+              maxWidth: "22rem",
+              width: "90%",
+              padding: "1.4rem 1.25rem 1.1rem",
+              position: "relative",
+              boxShadow: "0 20px 50px rgba(15,23,42,0.8)",
+            }}
+          >
+            <button
+              type="button"
+              onClick={closeIntroModal}
+              style={{
+                position: "absolute",
+                top: "0.9rem",
+                right: "1rem",
+                background: "none",
+                border: "none",
+                color: "#e5e7eb",
+                cursor: "pointer",
+                fontSize: "1.1rem",
+              }}
+            >
+              ×
+            </button>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  textAlign: "center",
+                  marginBottom: "0.25rem",
+                }}
+              >
+                <img
+                  src="/Icon_hoot.png"
+                  alt="Hoot icon"
+                  style={{
+                    width: "64px",
+                    height: "64px",
+                    borderRadius: "16px",
+                    marginBottom: "0.6rem",
+                  }}
+                />
+                <h3
+                  style={{
+                    color: "white",
+                    fontSize: "1.1rem",
+                    fontWeight: 600,
+                    marginBottom: "0.15rem",
+                  }}
+                >
+                  Welcome to Hoot
+                </h3>
+                <p
+                  style={{
+                    color: "#cbd5f5",
+                    fontSize: "0.85rem",
+                    lineHeight: 1.4,
+                  }}
+                >
+                  Hoot is a crypto-native trivia platform to play, win and host quizzes.
+                </p>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.5rem",
+                  marginTop: "0.25rem",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <span style={{ fontSize: "1rem" }}>🎯</span>
+                  <p
+                    style={{
+                      color: "#e5e7eb",
+                      fontSize: "0.82rem",
+                      lineHeight: 1.4,
+                      margin: 0,
+                    }}
+                  >
+                    Participate in live trivia quizzes and win prizes in{" "}
+                    <strong>USDC, ETH, JESSE</strong> and other tokens.
+                  </p>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <span style={{ fontSize: "1rem" }}>🔔</span>
+                  <p
+                    style={{
+                      color: "#e5e7eb",
+                      fontSize: "0.82rem",
+                      lineHeight: 1.4,
+                      margin: 0,
+                    }}
+                  >
+                    Subscribe to notifications so you know as soon as a new quiz is created.
+                  </p>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <span style={{ fontSize: "1rem" }}>🛠️</span>
+                  <p
+                    style={{
+                      color: "#e5e7eb",
+                      fontSize: "0.82rem",
+                      lineHeight: 1.4,
+                      margin: 0,
+                    }}
+                  >
+                    Create your own quiz, add a prize pool and engage your community or play with friends.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeIntroModal}
+                style={{
+                  marginTop: "0.6rem",
+                  width: "100%",
+                  padding: "0.65rem 1rem",
+                  borderRadius: "9999px",
+                  border: "1px solid rgba(129,140,248,0.9)",
+                  background:
+                    "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(56,189,248,0.9))",
+                  color: "white",
+                  fontSize: "0.9rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Got it, let&apos;s play
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Signature confirmation modal */}
       {signatureModal}
