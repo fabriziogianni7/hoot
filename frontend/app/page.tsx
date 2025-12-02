@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import dynamic from "next/dynamic";
 import { useMiniKit } from "@coinbase/onchainkit/minikit";
 import { useRouter } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
@@ -13,14 +12,7 @@ import { generateQuizViaAI } from "@/lib/supabase-client";
 import { extractPdfText, extractTextFile } from "@/lib/utils";
 import type { GenerateQuizResponse } from "@/lib/backend-types";
 import { getTokensForNetwork } from "@/lib/token-config";
-
-const AddToCalendarButton = dynamic(
-  () =>
-    import("add-to-calendar-button-react").then(
-      (mod: any) => mod.AddToCalendarButton || mod.default
-    ),
-  { ssr: false }
-) as any;
+import QuizCalendarButton from "@/components/QuizCalendarButton";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -1781,83 +1773,20 @@ export default function Home() {
                 }}
               >
                 {/* Calendar option */}
-                <div
-                  style={{
-                    padding: "0.9rem",
-                    borderRadius: "0.5rem",
-                    backgroundColor: "rgba(121, 90, 255, 0.3)",
-                    border: "1px solid #795AFF",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: "0.5rem",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "0.5rem",
-                        color: "white",
-                        fontWeight: 500,
-                      }}
-                    >
-                      <span>📅</span>
-                      <span>Add to calendar</span>
-                    </div>
-                  </div>
-                  {/* On web: full calendar widget */}
-                  {!isMiniapp && (
-                    <AddToCalendarButton
-                      name={nextSession.title}
-                      options={["Google", "Apple", "Outlook.com", "iCal"]}
-                      startDate={eventStartIso.toISOString().slice(0, 10)}
-                      startTime={eventStartIso.toISOString().slice(11, 16)}
-                      endDate={eventEndIso.toISOString().slice(0, 10)}
-                      endTime={eventEndIso.toISOString().slice(11, 16)}
-                      timeZone={
-                        typeof window !== "undefined"
-                          ? Intl.DateTimeFormat().resolvedOptions().timeZone
-                          : "UTC"
-                      }
-                      description={`Join the Hoot quiz – Room ${nextSession.room_code}`}
-                      location={eventUrl}
-                      buttonStyle="round"
-                      trigger="click"
-                    />
-                  )}
-                  {/* In MiniApps: open external calendar URL instead */}
-                  {isMiniapp && googleCalendarUrl && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (isBaseMiniapp) {
-                          setShowBaseProceedModal(true);
-                        } else {
-                          openExternalUrl(googleCalendarUrl);
-                        }
-                      }}
-                      style={{
-                        width: "100%",
-                        padding: "0.6rem 0.9rem",
-                        borderRadius: "9999px",
-                        border: "1px solid rgba(255,255,255,0.6)",
-                        backgroundColor: "rgba(17,24,39,0.9)",
-                        color: "white",
-                        fontSize: "0.8rem",
-                        fontWeight: 500,
-                        textAlign: "center",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Open calendar in browser
-                    </button>
-                  )}
-                </div>
+                {eventStartIso && eventEndIso && typeof isMiniapp === "boolean" && (
+                  <QuizCalendarButton
+                    title={nextSession.title}
+                    eventStart={eventStartIso}
+                    eventEnd={eventEndIso}
+                    roomCode={nextSession.room_code}
+                    eventUrl={eventUrl}
+                    isMiniapp={isMiniapp}
+                    isBaseMiniapp={isBaseMiniapp}
+                    googleCalendarUrl={googleCalendarUrl}
+                    openExternalUrl={openExternalUrl}
+                    onBaseMiniappClick={() => setShowBaseProceedModal(true)}
+                  />
+                )}
 
                 {/* Notification option */}
                 <button

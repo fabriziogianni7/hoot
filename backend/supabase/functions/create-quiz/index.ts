@@ -102,7 +102,7 @@ async function createQuiz(supabase: ReturnType<typeof initSupabaseClient>, reque
       scheduled_start_time: request.scheduled_start_time ? new Date(request.scheduled_start_time).toISOString() : null,
       is_private: request.is_private ?? false
     })
-    .select()
+    .select("id, title, prize_token, prize_amount, scheduled_start_time, network_id")
     .single()
 
   if (quizError) {
