@@ -73,10 +73,35 @@ export default function Home() {
     network_id?: number | null;
   };
 
-  const [nextSession, setNextSession] = useState<NextPublicSession | null>(
+  const [upcomingSessions, setUpcomingSessions] = useState<NextPublicSession[]>(
+    []
+  );
+  const [activeSessionIndex, setActiveSessionIndex] = useState(0);
+  const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
+  const [bannerTouchStartX, setBannerTouchStartX] = useState<number | null>(
     null
   );
-  const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
+
+  const currentSession =
+    upcomingSessions.length > 0
+      ? upcomingSessions[
+          Math.min(activeSessionIndex, upcomingSessions.length - 1)
+        ]
+      : null;
+
+  const goToNextSession = () => {
+    if (upcomingSessions.length <= 1) return;
+    setActiveSessionIndex((prev) =>
+      prev + 1 >= upcomingSessions.length ? 0 : prev + 1
+    );
+  };
+
+  const goToPreviousSession = () => {
+    if (upcomingSessions.length <= 1) return;
+    setActiveSessionIndex((prev) =>
+      prev - 1 < 0 ? upcomingSessions.length - 1 : prev - 1
+    );
+  };
 
   const isFarcasterMiniapp = Boolean(
     isMiniapp && miniappClient === "farcaster"
@@ -88,11 +113,11 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false;
 
-    const fetchNextSession = async () => {
+    const fetchNextSessions = async () => {
       try {
-        console.log("[Home] Fetching next public quiz session...");
+        console.log("[Home] Fetching upcoming public quiz sessions...");
         const nowIso = new Date().toISOString();
-        // First, find the next public scheduled quiz
+        // First, find the next public scheduled quizzes (up to 15)
         const { data: quizzes, error: quizError } = await supabase
           .from("quizzes")
           .select(
@@ -103,98 +128,129 @@ export default function Home() {
           .gt("scheduled_start_time", nowIso)
           .in("status", ["pending", "starting"])
           .order("scheduled_start_time", { ascending: true })
-          .limit(1);
+          .limit(15);
 
         if (quizError) {
-          console.error("Error fetching next public quiz:", quizError);
-          return;
-        }
-
-        const quizRow = (quizzes || [])[0] as
-          | {
-              id: string;
-              title: string;
-              scheduled_start_time: string | null;
-              prize_amount?: number | null;
-              prize_token?: string | null;
-              network_id?: number | null;
-            }
-          | undefined;
-
-        console.log("[Home] Next quiz candidate:", quizRow);
-
-        if (!quizRow || !quizRow.scheduled_start_time) {
-          console.log("[Home] No suitable quiz found for banner.");
+          console.error("Error fetching upcoming public quizzes:", quizError);
           if (!cancelled) {
-            setNextSession(null);
+            setUpcomingSessions([]);
             setTimeRemainingMs(null);
           }
           return;
         }
 
-        // Then, find a waiting/starting game session for that quiz to get the room code
+        const quizRows =
+          (quizzes || []) as {
+            id: string;
+            title: string;
+            scheduled_start_time: string | null;
+            prize_amount?: number | null;
+            prize_token?: string | null;
+            network_id?: number | null;
+          }[];
+
+        console.log("[Home] Upcoming quiz candidates:", quizRows);
+
+        if (!quizRows.length) {
+          console.log("[Home] No suitable quizzes found for banner.");
+          if (!cancelled) {
+            setUpcomingSessions([]);
+            setTimeRemainingMs(null);
+          }
+          return;
+        }
+
+        const quizIds = quizRows
+          .filter((q) => q.scheduled_start_time)
+          .map((q) => q.id);
+
+        if (!quizIds.length) {
+          console.log("[Home] No quizzes with scheduled_start_time; hiding banner.");
+          if (!cancelled) {
+            setUpcomingSessions([]);
+            setTimeRemainingMs(null);
+          }
+          return;
+        }
+
+        // Then, find waiting/starting game sessions for those quizzes to get room codes
         const { data: sessions, error: sessionError } = await supabase
           .from("game_sessions")
-          .select("room_code,status,created_at")
-          .eq("quiz_id", quizRow.id)
+          .select("quiz_id,room_code,status,created_at")
+          .in("quiz_id", quizIds)
           .in("status", ["waiting", "starting"])
-          .order("created_at", { ascending: true })
-          .limit(1);
+          .order("created_at", { ascending: true });
 
         if (sessionError) {
-          console.error("Error fetching game session for quiz:", sessionError);
-          return;
-        }
-
-        const sessionRow = (sessions || [])[0] as
-          | { room_code: string; status: string }
-          | undefined;
-
-        console.log("[Home] Session candidate for quiz:", sessionRow);
-
-        if (!sessionRow) {
-          // No active session yet – don't show banner
-          console.log(
-            "[Home] No waiting/starting session for quiz; hiding banner."
+          console.error(
+            "Error fetching game sessions for upcoming quizzes:",
+            sessionError
           );
           if (!cancelled) {
-            setNextSession(null);
+            setUpcomingSessions([]);
             setTimeRemainingMs(null);
           }
           return;
         }
 
-        const scheduledTime = new Date(quizRow.scheduled_start_time).getTime();
-        const diff = scheduledTime - Date.now();
-        if (diff <= 0) {
-          console.log(
-            "[Home] Scheduled quiz time already passed; hiding banner."
-          );
-          if (!cancelled) {
-            setNextSession(null);
-            setTimeRemainingMs(null);
+        const sessionRows =
+          (sessions || []) as {
+            quiz_id: string;
+            room_code: string | null;
+            status: string;
+            created_at: string;
+          }[];
+
+        // For each quiz, pick the earliest-created waiting/starting session
+        const sessionByQuizId = new Map<string, (typeof sessionRows)[number]>();
+        for (const s of sessionRows) {
+          if (!sessionByQuizId.has(s.quiz_id)) {
+            sessionByQuizId.set(s.quiz_id, s);
           }
-          return;
         }
+
+        const combined: NextPublicSession[] = [];
+
+        for (const quiz of quizRows) {
+          if (!quiz.scheduled_start_time) continue;
+          const sessionRow = sessionByQuizId.get(quiz.id);
+          if (!sessionRow) continue;
+
+          const scheduledTime = new Date(quiz.scheduled_start_time).getTime();
+          const diff = scheduledTime - Date.now();
+          if (diff <= 0) continue;
+
+          combined.push({
+            quizId: quiz.id,
+            title: quiz.title,
+            scheduled_start_time: quiz.scheduled_start_time,
+            room_code: sessionRow.room_code ?? null,
+            prize_amount: quiz.prize_amount ?? null,
+            prize_token: quiz.prize_token ?? null,
+            network_id: quiz.network_id ?? null,
+          });
+        }
+
+        console.log("[Home] Filtered upcoming sessions with room codes:", combined);
 
         if (!cancelled) {
-          console.log("[Home] Setting nextSession/banner data", {
-            quizId: quizRow.id,
-            title: quizRow.title,
-            scheduled_start_time: quizRow.scheduled_start_time,
-            room_code: sessionRow.room_code ?? null,
-            diffMs: diff,
-          });
-          setNextSession({
-            quizId: quizRow.id,
-            title: quizRow.title,
-            scheduled_start_time: quizRow.scheduled_start_time,
-            room_code: sessionRow.room_code ?? null,
-            prize_amount: quizRow.prize_amount ?? null,
-            prize_token: quizRow.prize_token ?? null,
-            network_id: quizRow.network_id ?? null,
-          });
-          setTimeRemainingMs(diff);
+          if (!combined.length) {
+            console.log(
+              "[Home] No upcoming quizzes with active sessions; hiding banner."
+            );
+            setUpcomingSessions([]);
+            setTimeRemainingMs(null);
+            return;
+          }
+
+          // combined is already ordered by scheduled_start_time asc via quizzes query
+          setUpcomingSessions(combined);
+          setActiveSessionIndex(0);
+
+          const firstScheduledTime = new Date(
+            combined[0].scheduled_start_time
+          ).getTime();
+          setTimeRemainingMs(firstScheduledTime - Date.now());
         }
       } catch (err) {
         console.error(
@@ -212,7 +268,7 @@ export default function Home() {
       console.warn("[Home] Supabase client not available, skipping fetch.");
       return;
     }
-    fetchNextSession();
+    fetchNextSessions();
 
     return () => {
       cancelled = true;
@@ -221,11 +277,12 @@ export default function Home() {
 
   // Countdown timer for the next session
   useEffect(() => {
-    if (!nextSession || !nextSession.scheduled_start_time) {
+    const session = currentSession;
+    if (!session || !session.scheduled_start_time) {
       return;
     }
 
-    const scheduledTime = new Date(nextSession.scheduled_start_time).getTime();
+    const scheduledTime = new Date(session.scheduled_start_time).getTime();
 
     const update = () => {
       const diff = scheduledTime - Date.now();
@@ -248,7 +305,7 @@ export default function Home() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [nextSession]);
+  }, [currentSession]);
 
   const formatTimeRemaining = (ms: number) => {
     const totalSeconds = Math.max(0, Math.floor(ms / 1000));
@@ -473,8 +530,8 @@ export default function Home() {
   };
 
   const eventStartIso =
-    nextSession?.scheduled_start_time != null
-      ? new Date(nextSession.scheduled_start_time)
+    currentSession?.scheduled_start_time != null
+      ? new Date(currentSession.scheduled_start_time)
       : null;
   const eventEndIso =
     eventStartIso != null
@@ -482,8 +539,8 @@ export default function Home() {
       : null;
 
   const eventUrl =
-    typeof window !== "undefined" && nextSession?.room_code
-      ? `${window.location.origin}/quiz/lobby/${nextSession.room_code}`
+    typeof window !== "undefined" && currentSession?.room_code
+      ? `${window.location.origin}/quiz/lobby/${currentSession.room_code}`
       : "";
 
   const formatCalendarDateTime = (date: Date | null) => {
@@ -507,9 +564,9 @@ export default function Home() {
       return null;
     }
 
-    const title = encodeURIComponent(nextSession?.title ?? "Hoot Quiz");
+    const title = encodeURIComponent(currentSession?.title ?? "Hoot Quiz");
     const details = encodeURIComponent(
-      `Join the Hoot quiz – Room ${nextSession?.room_code ?? ""}${
+      `Join the Hoot quiz – Room ${currentSession?.room_code ?? ""}${
         eventUrl ? `\n\n${eventUrl}` : ""
       }`
     );
@@ -601,7 +658,7 @@ export default function Home() {
     authFlowState === "checking" ||
     walletNotReady;
 
-  const prizeLabel = nextSession ? getPrizeLabel(nextSession) : null;
+  const prizeLabel = currentSession ? getPrizeLabel(currentSession) : null;
 
   return (
     <div
@@ -1699,8 +1756,8 @@ export default function Home() {
 
       {/* Reminder Sheet: calendar + notifications */}
       {showReminderSheet &&
-        nextSession &&
-        nextSession.room_code &&
+        currentSession &&
+        currentSession.room_code &&
         eventStartIso &&
         eventEndIso && (
           <div
@@ -1775,10 +1832,10 @@ export default function Home() {
                 {/* Calendar option */}
                 {eventStartIso && eventEndIso && typeof isMiniapp === "boolean" && (
                   <QuizCalendarButton
-                    title={nextSession.title}
+                    title={currentSession.title}
                     eventStart={eventStartIso}
                     eventEnd={eventEndIso}
-                    roomCode={nextSession.room_code}
+                    roomCode={currentSession.room_code}
                     eventUrl={eventUrl}
                     isMiniapp={isMiniapp}
                     isBaseMiniapp={isBaseMiniapp}
@@ -1932,8 +1989,8 @@ export default function Home() {
       )}
 
       {/* Next upcoming public quiz banner */}
-      {nextSession &&
-        nextSession.room_code &&
+      {currentSession &&
+        currentSession.room_code &&
         timeRemainingMs !== null &&
         timeRemainingMs > 0 && (
           <div
@@ -1951,6 +2008,25 @@ export default function Home() {
               justifyContent: "space-between",
               gap: "0.75rem",
               zIndex: 40,
+            }}
+            onTouchStart={(e) => {
+              if (e.touches && e.touches.length > 0) {
+                setBannerTouchStartX(e.touches[0].clientX);
+              }
+            }}
+            onTouchEnd={(e) => {
+              if (bannerTouchStartX === null) return;
+              const touchEndX = e.changedTouches[0]?.clientX ?? bannerTouchStartX;
+              const deltaX = touchEndX - bannerTouchStartX;
+              const threshold = 40;
+              if (Math.abs(deltaX) > threshold) {
+                if (deltaX < 0) {
+                  goToNextSession();
+                } else {
+                  goToPreviousSession();
+                }
+              }
+              setBannerTouchStartX(null);
             }}
           >
             <div
@@ -1983,7 +2059,7 @@ export default function Home() {
                   maxWidth: "14rem",
                 }}
               >
-                {nextSession.title}
+                {currentSession.title}
               </div>
               <div
                 style={{
@@ -2011,7 +2087,7 @@ export default function Home() {
                     opacity: 0.8,
                   }}
                 >
-                  • Room {nextSession.room_code}
+                  • Room {currentSession.room_code}
                 </span>
                 {prizeLabel && (
                   <span
@@ -2027,11 +2103,75 @@ export default function Home() {
             <div
               style={{
                 display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
+                flexDirection: "column",
+                alignItems: "flex-end",
+                gap: "0.4rem",
                 flexShrink: 0,
               }}
             >
+              {upcomingSessions.length > 1 && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.25rem",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={goToPreviousSession}
+                    style={{
+                      width: "1.5rem",
+                      height: "1.5rem",
+                      borderRadius: "9999px",
+                      border: "1px solid rgba(255,255,255,0.6)",
+                      backgroundColor: "transparent",
+                      color: "white",
+                      fontSize: "0.75rem",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                    }}
+                    aria-label="Previous upcoming quiz"
+                  >
+                    ‹
+                  </button>
+                  <div
+                    style={{
+                      fontSize: "0.7rem",
+                      color: "#e5e7eb",
+                      opacity: 0.9,
+                      padding: "0.2rem 0.6rem",
+                      borderRadius: "9999px",
+                      border: "1px solid rgba(255,255,255,0.6)",
+                      backgroundColor: "rgba(17,24,39,0.7)",
+                    }}
+                  >
+                    {activeSessionIndex + 1}/{upcomingSessions.length}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={goToNextSession}
+                    style={{
+                      width: "1.5rem",
+                      height: "1.5rem",
+                      borderRadius: "9999px",
+                      border: "1px solid rgba(255,255,255,0.6)",
+                      backgroundColor: "transparent",
+                      color: "white",
+                      fontSize: "0.75rem",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                    }}
+                    aria-label="Next upcoming quiz"
+                  >
+                    ›
+                  </button>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={() => setShowReminderSheet(true)}
@@ -2045,14 +2185,16 @@ export default function Home() {
                   fontSize: "0.8rem",
                   fontWeight: 500,
                   cursor: "pointer",
+                  width: "100%",
+                  textAlign: "center",
                 }}
               >
-                {isAddingMiniApp ? "Adding..." : "🛎️"}
+                {isAddingMiniApp ? "Adding..." : "Get Notified 🛎️"}
               </button>
               <button
                 type="button"
                 onClick={() =>
-                  router.push(`/quiz/lobby/${nextSession.room_code}`)
+                  router.push(`/quiz/lobby/${currentSession.room_code}`)
                 }
                 style={{
                   whiteSpace: "nowrap",
@@ -2064,6 +2206,8 @@ export default function Home() {
                   fontSize: "0.85rem",
                   fontWeight: 600,
                   cursor: "pointer",
+                  width: "100%",
+                  textAlign: "center",
                 }}
               >
                 Go to lobby
