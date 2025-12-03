@@ -8,6 +8,9 @@ AS $$
 DECLARE
   v_quiz quizzes%ROWTYPE;
   v_game_session game_sessions%ROWTYPE;
+  v_check_time timestamptz;
+  v_check_cron_expr text;
+  v_check_job_name text;
 BEGIN
   SELECT *
   INTO v_quiz
@@ -49,7 +52,25 @@ BEGIN
       started_at = NOW()
   WHERE id = v_game_session.id;
 
+  -- Unschedule the original start job so it does not run again
   PERFORM cron.unschedule('start_quiz_' || p_quiz_id::text);
+
+  -- Schedule a follow-up attendance check 2 minutes after start
+  v_check_time := now() + interval '2 minutes';
+
+  v_check_cron_expr :=
+    to_char(v_check_time AT TIME ZONE 'UTC', 'MI') || ' ' ||
+    to_char(v_check_time AT TIME ZONE 'UTC', 'HH24') || ' ' ||
+    to_char(v_check_time AT TIME ZONE 'UTC', 'DD') || ' ' ||
+    to_char(v_check_time AT TIME ZONE 'UTC', 'MM') || ' *';
+
+  v_check_job_name := 'check_attendance_' || p_quiz_id::text;
+
+  PERFORM cron.schedule(
+    v_check_job_name,
+    v_check_cron_expr,
+    format('SELECT reschedule_quiz_if_no_attendance(''%s''::uuid);', p_quiz_id)
+  );
 EXCEPTION
   WHEN OTHERS THEN
     RAISE WARNING 'Failed to start scheduled quiz %: %', p_quiz_id, SQLERRM;
