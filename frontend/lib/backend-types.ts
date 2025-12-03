@@ -89,6 +89,7 @@ export interface CreateQuizRequest {
 export interface CreateQuizResponse {
   success: boolean
   quiz_id: string
+  room_code: string
   message: string
 }
 

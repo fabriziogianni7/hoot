@@ -85,6 +85,7 @@ function AdminPageContent() {
   const [bountyAmount, setBountyAmount] = useState("10");
   const [selectedCurrency, setSelectedCurrency] = useState<string>("usdc");
   const [quizTransaction, setQuizTransaction] = useState<string>("");
+  const [createdQuizId, setCreatedQuizId] = useState<string | null>(null);
   const [scheduledStartTime, setScheduledStartTime] = useState<string>("");
   const [isScheduled, setIsScheduled] = useState(false);
   const [isPrivate, setIsPrivate] = useState(false);
@@ -617,21 +618,37 @@ function AdminPageContent() {
     try {
       setError("");
 
-      // First, create the quiz in backend
-      const result = await handleSaveQuiz();
+      // First, ensure the quiz and game session exist (idempotent)
+      let quizId: string;
+      let roomCode: string;
 
-      if (!result) {
-        setError("Failed to create quiz. Please try again.");
-        return;
+      if (createdQuizId && createdRoomCode) {
+        quizId = createdQuizId;
+        roomCode = createdRoomCode;
+        console.log("Reusing existing quiz and room for bounty:", {
+          quizId,
+          roomCode,
+        });
+      } else {
+        const result = await handleSaveQuiz();
+
+        if (!result) {
+          setError("Failed to create quiz. Please try again.");
+          return;
+        }
+
+        quizId = result.quizId;
+        roomCode = result.roomCode;
+        setCreatedQuizId(quizId);
+        setCreatedRoomCode(roomCode);
       }
-
-      const { quizId } = result;
       setCreationStep(CreationStep.PREPARING_BOUNTY);
 
       // Validate bounty amount
       const bountyAmountNum = parseFloat(bountyAmount);
       if (isNaN(bountyAmountNum) || bountyAmountNum <= 0) {
         setError("Invalid bounty amount");
+        setCreationStep(CreationStep.NONE);
         return;
       }
 
@@ -648,6 +665,7 @@ function AdminPageContent() {
           setError(
             `Insufficient ${selectedToken.symbol} balance. You have ${ethBalance.formatted} ${selectedToken.symbol} but need ${bountyAmount} ${selectedToken.symbol}`
           );
+          setCreationStep(CreationStep.NONE);
           return;
         }
       } else if (selectedToken) {
@@ -660,10 +678,12 @@ function AdminPageContent() {
           setError(
             `Insufficient ${selectedToken.symbol} balance. You have ${displayBalance} ${selectedToken.symbol} but need ${bountyAmount} ${selectedToken.symbol}`
           );
+          setCreationStep(CreationStep.NONE);
           return;
         }
       } else {
         setError("Invalid token selection");
+        setCreationStep(CreationStep.NONE);
         return;
       }
 
@@ -806,8 +826,8 @@ function AdminPageContent() {
         scheduledStartIso,
       });
 
-      // Create quiz in backend (no contract info yet)
-      const backendQuizId = await createQuizOnBackend(
+      // Create quiz in backend (no contract info yet) and initial game session
+      const { quizId: backendQuizId, roomCode } = await createQuizOnBackend(
         quiz,
         undefined, // Contract address (will be set later if bounty is added)
         chain?.id, // network id
@@ -819,37 +839,29 @@ function AdminPageContent() {
         isPrivate
       );
 
-      console.log("Quiz saved to backend with ID:", backendQuizId);
+      console.log("Quiz saved to backend with ID:", backendQuizId, "and room code:", roomCode);
       if (scheduledStartIso) {
         console.log("Scheduling quiz start for", scheduledStartIso);
       }
 
-      // Start game session and join as creator
+      // Join existing game session as the creator
       setCreationStep(CreationStep.CREATING_ROOM);
-      const generatedRoomCode = await startGame(backendQuizId);
-
-      // Auto-join as the creator
       const creatorPlayerId = await joinGameContext(
         "Creator",
         address,
-        generatedRoomCode
+        roomCode
       );
-
-      // Update game session with creator in one call
-      await supabase
-        .from("game_sessions")
-        .update({ creator_session_id: creatorPlayerId })
-        .eq("room_code", generatedRoomCode);
 
       // Store creator ID in localStorage
       localStorage.setItem("playerSessionId", creatorPlayerId);
 
-      // Store room code
-      setCreatedRoomCode(generatedRoomCode);
+      // Store quiz and room info
+      setCreatedQuizId(backendQuizId);
+      setCreatedRoomCode(roomCode);
       setIsCreating(false);
       setCreationStep(CreationStep.NONE);
 
-      return { quizId: backendQuizId, roomCode: generatedRoomCode };
+      return { quizId: backendQuizId, roomCode };
     } catch (err) {
       console.error("Error creating quiz:", err);
       const errorMessage =
@@ -1251,7 +1263,12 @@ function AdminPageContent() {
           ) : loggedUser?.isAuthenticated && loggedUser?.session ? (
             // User is authenticated - show Create Quiz button
             <button
-              onClick={() => setShowQuizOptions(true)}
+              onClick={() => {
+                // Reset per-creation identifiers so each new quiz is fresh
+                setCreatedQuizId(null);
+                setCreatedRoomCode("");
+                setShowQuizOptions(true);
+              }}
               disabled={isCreating}
               className="px-8 py-4 rounded text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
