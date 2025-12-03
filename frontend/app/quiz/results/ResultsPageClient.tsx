@@ -459,43 +459,37 @@ export default function ResultsPageClient({ roomCode }: ResultsPageClientProps) 
     };
   }, [supabase, quizData]);
 
-  // Redirect if no game is active (for non-roomCode usage only)
-  useEffect(() => {
-    // When using /quiz/results/[roomCode], never auto-redirect to home.
-    if (roomCode) return;
-
-    if (currentGame && currentGame.status === "finished") return;
-    if (effectiveGameSessionId) return;
-    router.push("/");
-  }, [currentGame, effectiveGameSessionId, router, roomCode]);
-
-  if (!currentGame || !quiz) {
-    return (
-      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden flex items-center justify-center">
-        <div className="animate-pulse text-2xl font-bold">Loading...</div>
-      </div>
-    );
-  }
-
   // Use final players if available, otherwise fallback to context players
   // Map final players to match the expected format and exclude creator
-  const sortedPlayers = (
-    finalPlayers.length > 0
-      ? finalPlayers.map((fp) => {
-          const contextPlayer = currentGame.players.find((p) => p.id === fp.id);
-          return {
-            id: fp.id,
-            name: fp.player_name,
-            score: fp.total_score,
-            answers: contextPlayer?.answers || [],
-          };
-        })
-      : [...currentGame.players].sort((a, b) => b.score - a.score)
-  ).filter((player) => player.id !== creatorSessionId); // Exclude creator from leaderboard
+  const sortedPlayers =
+    currentGame
+      ? (
+          (finalPlayers.length > 0
+            ? finalPlayers.map((fp) => {
+                const contextPlayer = currentGame.players.find(
+                  (p) => p.id === fp.id,
+                );
+                return {
+                  id: fp.id,
+                  name: fp.player_name,
+                  score: fp.total_score,
+                  answers: contextPlayer?.answers || [],
+                };
+              })
+            : [...currentGame.players].sort((a, b) => b.score - a.score)
+          ).filter((player) => player.id !== creatorSessionId)
+        ) // Exclude creator from leaderboard
+      : [];
 
   // Get current player
-  const currentPlayerId = localStorage.getItem("playerSessionId");
-  const currentPlayer = currentGame.players.find((p) => p.id === currentPlayerId);
+  const currentPlayerId =
+    typeof window !== "undefined"
+      ? localStorage.getItem("playerSessionId")
+      : null;
+  const currentPlayer =
+    currentGame && currentPlayerId
+      ? currentGame.players.find((p) => p.id === currentPlayerId) || null
+      : null;
 
   const maxWinners = 5;
   const winnerIds = sortedPlayers.slice(0, maxWinners).map((p) => p.id);
@@ -515,6 +509,7 @@ export default function ResultsPageClient({ roomCode }: ResultsPageClientProps) 
 
   const isWinner =
     !!currentPlayerId &&
+    !!currentPlayer &&
     winnerIds.includes(currentPlayerId) &&
     isPrizeDistributed;
 
@@ -523,6 +518,24 @@ export default function ResultsPageClient({ roomCode }: ResultsPageClientProps) 
     if (!isWinner) return;
     void hapticNotification("success");
   }, [isWinner]);
+
+  // Redirect if no game is active (for non-roomCode usage only)
+  useEffect(() => {
+    // When using /quiz/results/[roomCode], never auto-redirect to home.
+    if (roomCode) return;
+
+    if (currentGame && currentGame.status === "finished") return;
+    if (effectiveGameSessionId) return;
+    router.push("/");
+  }, [currentGame, effectiveGameSessionId, router, roomCode]);
+
+  if (!currentGame || !quiz) {
+    return (
+      <div className="min-h-screen w-full bg-black text-white relative overflow-hidden flex items-center justify-center">
+        <div className="animate-pulse text-2xl font-bold">Loading...</div>
+      </div>
+    );
+  }
 
   // Handle casting result
   const handleCastResult = async () => {

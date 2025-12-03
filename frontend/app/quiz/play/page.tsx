@@ -793,7 +793,7 @@ function PlayQuizContent() {
 
     // Stop the question timer ticking sound immediately
     stopSfx("tick");
-
+    
     setSelectedAnswer(answerIndex);
     setIsAnswered(true);
     
