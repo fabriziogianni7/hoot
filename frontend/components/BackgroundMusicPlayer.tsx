@@ -6,13 +6,12 @@ import { useSound } from "@/lib/sound-context";
 // Playlist of background tracks. One of these will be chosen at random
 // as the starting track, then the rest will follow in order.
 const BACKGROUND_TRACKS: string[] = [
-  "/sounds/background2.wav",
+  "/sounds/background1.mp3",
+  "/sounds/background2.mp3",
   "/sounds/background3.mp3",
-  "/sounds/background4.flac",
-  "/sounds/background5.flac",
   "/sounds/background6.wav",
   "/sounds/background7.wav",
-  "/sounds/background8.wav",
+  "/sounds/background8.wav"
 ];
 
 export default function BackgroundMusicPlayer() {
@@ -21,6 +20,7 @@ export default function BackgroundMusicPlayer() {
   const currentIndexRef = useRef<number>(0);
   const soundEnabledRef = useRef<boolean>(soundEnabled);
   const backgroundEnabledRef = useRef<boolean>(backgroundEnabled);
+  const userInteractedRef = useRef<boolean>(false);
 
   // Keep a ref in sync with the latest soundEnabled value
   useEffect(() => {
@@ -80,6 +80,26 @@ export default function BackgroundMusicPlayer() {
     audio.addEventListener("ended", handleEnded);
     audioRef.current = audio;
 
+    // On first real user interaction, try starting playback if enabled.
+    const handleFirstUserInteraction = () => {
+      if (userInteractedRef.current) return;
+      userInteractedRef.current = true;
+
+      if (soundEnabledRef.current && backgroundEnabledRef.current) {
+        void audio.play().catch(() => {
+          // Still blocked; nothing more we can do.
+        });
+      }
+
+      window.removeEventListener("pointerdown", handleFirstUserInteraction);
+      window.removeEventListener("keydown", handleFirstUserInteraction);
+      window.removeEventListener("touchstart", handleFirstUserInteraction);
+    };
+
+    window.addEventListener("pointerdown", handleFirstUserInteraction);
+    window.addEventListener("keydown", handleFirstUserInteraction);
+    window.addEventListener("touchstart", handleFirstUserInteraction);
+
     return () => {
       audio.removeEventListener("ended", handleEnded);
       try {
@@ -88,6 +108,10 @@ export default function BackgroundMusicPlayer() {
         // ignore
       }
       audioRef.current = null;
+
+       window.removeEventListener("pointerdown", handleFirstUserInteraction);
+       window.removeEventListener("keydown", handleFirstUserInteraction);
+       window.removeEventListener("touchstart", handleFirstUserInteraction);
     };
   }, []);
 
@@ -96,7 +120,9 @@ export default function BackgroundMusicPlayer() {
     const audio = audioRef.current;
     if (!audio) return;
 
-    if (soundEnabled && backgroundEnabled) {
+    // Only try to play automatically if the user has interacted;
+    // this helps avoid browser autoplay restrictions.
+    if (soundEnabled && backgroundEnabled && userInteractedRef.current) {
       void audio.play().catch(() => {
         // Autoplay might be blocked; ignore
       });
