@@ -27,7 +27,7 @@ type PhaseEventPayload = {
 function PlayQuizContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { playSfx } = useSound();
+  const { playSfx, setBackgroundEnabled } = useSound();
   const {
     currentGame,
     getCurrentQuiz,
@@ -147,6 +147,15 @@ function PlayQuizContent() {
   const [isLoadingFromUrl, setIsLoadingFromUrl] = useState(true);
   
   const quiz = getCurrentQuiz();
+
+  // Disable background music while a question is active; re-enable otherwise
+  useEffect(() => {
+    setBackgroundEnabled(phase !== "question");
+    return () => {
+      // Ensure music is re-enabled if this component unmounts
+      setBackgroundEnabled(true);
+    };
+  }, [phase, setBackgroundEnabled]);
 
   const leaderboardContent = useMemo(() => {
     if (!currentGame) return null;

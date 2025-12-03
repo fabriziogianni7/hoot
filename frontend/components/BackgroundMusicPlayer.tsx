@@ -16,15 +16,21 @@ const BACKGROUND_TRACKS: string[] = [
 ];
 
 export default function BackgroundMusicPlayer() {
-  const { soundEnabled } = useSound();
+  const { soundEnabled, backgroundEnabled } = useSound();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const currentIndexRef = useRef<number>(0);
   const soundEnabledRef = useRef<boolean>(soundEnabled);
+  const backgroundEnabledRef = useRef<boolean>(backgroundEnabled);
 
   // Keep a ref in sync with the latest soundEnabled value
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
   }, [soundEnabled]);
+
+  // Keep a ref in sync with the latest backgroundEnabled value
+  useEffect(() => {
+    backgroundEnabledRef.current = backgroundEnabled;
+  }, [backgroundEnabled]);
 
   // Initialize audio element and playlist on the client
   useEffect(() => {
@@ -64,7 +70,7 @@ export default function BackgroundMusicPlayer() {
         currentIndexRef.current
       );
       loadCurrentTrack();
-      if (soundEnabledRef.current) {
+      if (soundEnabledRef.current && backgroundEnabledRef.current) {
         void audio.play().catch(() => {
           // ignore autoplay errors
         });
@@ -90,7 +96,7 @@ export default function BackgroundMusicPlayer() {
     const audio = audioRef.current;
     if (!audio) return;
 
-    if (soundEnabled) {
+    if (soundEnabled && backgroundEnabled) {
       void audio.play().catch(() => {
         // Autoplay might be blocked; ignore
       });

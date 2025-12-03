@@ -17,6 +17,8 @@ interface SoundContextValue {
   soundEnabled: boolean;
   toggleSound: () => void;
   setSoundEnabled: (enabled: boolean) => void;
+  backgroundEnabled: boolean;
+  setBackgroundEnabled: (enabled: boolean) => void;
   playSfx: (type: SfxType) => void;
 }
 
@@ -32,6 +34,7 @@ const SFX_SOURCES: Record<SfxType, string> = {
 
 export function SoundProvider({ children }: { children: ReactNode }) {
   const [soundEnabled, setSoundEnabledState] = useState<boolean>(true);
+  const [backgroundEnabled, setBackgroundEnabledState] = useState<boolean>(true);
   const sfxRefs = useRef<Partial<Record<SfxType, HTMLAudioElement>>>({});
 
   // Load initial preference from localStorage
@@ -59,6 +62,10 @@ export function SoundProvider({ children }: { children: ReactNode }) {
 
   const setSoundEnabled = useCallback((enabled: boolean) => {
     setSoundEnabledState(enabled);
+  }, []);
+
+  const setBackgroundEnabled = useCallback((enabled: boolean) => {
+    setBackgroundEnabledState(enabled);
   }, []);
 
   const toggleSound = useCallback(() => {
@@ -95,9 +102,11 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       soundEnabled,
       toggleSound,
       setSoundEnabled,
+      backgroundEnabled,
+      setBackgroundEnabled,
       playSfx,
     }),
-    [soundEnabled, toggleSound, setSoundEnabled, playSfx]
+    [soundEnabled, toggleSound, setSoundEnabled, backgroundEnabled, setBackgroundEnabled, playSfx]
   );
 
   return <SoundContext.Provider value={value}>{children}</SoundContext.Provider>;

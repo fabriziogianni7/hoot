@@ -47,16 +47,16 @@ export function RootProvider({ children }: { children: ReactNode }) {
               notificationProxyUrl: undefined,
             }}
           >
-          <NetworkProvider>
-            <SupabaseProvider>
+            <NetworkProvider>
+              <SupabaseProvider>
               <QuizProvider>
                 <SoundProvider>
                   <BackgroundMusicPlayer />
                   {children}
                 </SoundProvider>
               </QuizProvider>
-            </SupabaseProvider>
-          </NetworkProvider>
+              </SupabaseProvider>
+            </NetworkProvider>
           </OnchainKitProvider>
         </WagmiProvider>
       </QueryClientProvider>
