@@ -33,7 +33,7 @@ interface QuizContextType {
     prizeToken?: string | undefined,
     scheduledStartTime?: string,
     isPrivate?: boolean
-  ) => Promise<string>
+  ) => Promise<{ quizId: string; roomCode: string }>
   startGame: (quizId: string, customRoomCode?: string) => Promise<string>
   joinGame: (playerName: string, walletAddress?: string, providedRoomCode?: string) => Promise<string>
   submitAnswer: (playerId: string, questionId: string, answer: number, timeToAnswer: number) => Promise<SubmitAnswerResponse>
@@ -109,7 +109,7 @@ export function QuizProvider({ children }: { children: ReactNode }) {
     prizeToken?: string | undefined,
     scheduledStartTime?: string,
     isPrivate?: boolean
-  ): Promise<string> => {
+  ): Promise<{ quizId: string; roomCode: string }> => {
     try {
       // Validate required fields
       if (!userAddress) {
@@ -143,7 +143,10 @@ export function QuizProvider({ children }: { children: ReactNode }) {
         request
       )
 
-      return response.quiz_id
+      return {
+        quizId: response.quiz_id,
+        roomCode: response.room_code,
+      }
     } catch (error) {
       console.error('Error creating quiz on backend:', error)
       throw error
