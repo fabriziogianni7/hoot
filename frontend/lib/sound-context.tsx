@@ -20,6 +20,7 @@ interface SoundContextValue {
   backgroundEnabled: boolean;
   setBackgroundEnabled: (enabled: boolean) => void;
   playSfx: (type: SfxType) => void;
+  stopSfx: (type?: SfxType | "all") => void;
 }
 
 const SoundContext = createContext<SoundContextValue | undefined>(undefined);
@@ -97,6 +98,27 @@ export function SoundProvider({ children }: { children: ReactNode }) {
     [soundEnabled]
   );
 
+  const stopSfx = useCallback((type?: SfxType | "all") => {
+    if (typeof window === "undefined") return;
+
+    const stopAudio = (audio: HTMLAudioElement | undefined) => {
+      if (!audio) return;
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch {
+        // ignore
+      }
+    };
+
+    if (!type || type === "all") {
+      (Object.values(sfxRefs.current) as HTMLAudioElement[]).forEach(stopAudio);
+      return;
+    }
+
+    stopAudio(sfxRefs.current[type]);
+  }, []);
+
   const value = useMemo(
     () => ({
       soundEnabled,
@@ -105,8 +127,17 @@ export function SoundProvider({ children }: { children: ReactNode }) {
       backgroundEnabled,
       setBackgroundEnabled,
       playSfx,
+      stopSfx,
     }),
-    [soundEnabled, toggleSound, setSoundEnabled, backgroundEnabled, setBackgroundEnabled, playSfx]
+    [
+      soundEnabled,
+      toggleSound,
+      setSoundEnabled,
+      backgroundEnabled,
+      setBackgroundEnabled,
+      playSfx,
+      stopSfx,
+    ]
   );
 
   return <SoundContext.Provider value={value}>{children}</SoundContext.Provider>;

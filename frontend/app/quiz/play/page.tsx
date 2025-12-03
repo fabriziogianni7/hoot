@@ -27,7 +27,7 @@ type PhaseEventPayload = {
 function PlayQuizContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { playSfx, setBackgroundEnabled } = useSound();
+  const { playSfx, stopSfx, setBackgroundEnabled } = useSound();
   const {
     currentGame,
     getCurrentQuiz,
@@ -148,14 +148,14 @@ function PlayQuizContent() {
   
   const quiz = getCurrentQuiz();
 
-  // Disable background music while a question is active; re-enable otherwise
+  // Disable background music for the entire quiz play experience; re-enable on exit
   useEffect(() => {
-    setBackgroundEnabled(phase !== "question");
+    setBackgroundEnabled(false);
     return () => {
       // Ensure music is re-enabled if this component unmounts
       setBackgroundEnabled(true);
     };
-  }, [phase, setBackgroundEnabled]);
+  }, [setBackgroundEnabled]);
 
   const leaderboardContent = useMemo(() => {
     if (!currentGame) return null;
@@ -550,6 +550,8 @@ function PlayQuizContent() {
       hasAnsweredRef.current = true;
       setIsAnswered(true);
       setSelectedAnswer(-1); // Set to -1 to indicate timeout
+      // Stop any ticking immediately
+      stopSfx("tick");
       
       // Show timeout banner with 0 points (only for players, not creator)
       if (!isCreator) {
@@ -643,6 +645,8 @@ function PlayQuizContent() {
     // Reset states FIRST - this must run every time the question changes
     hasAnsweredRef.current = false; // Reset answer tracking ref
     lastTickSecondRef.current = null; // Reset ticking tracker
+    // Ensure ticking sound is stopped when switching questions
+    stopSfx("tick");
     setSelectedAnswer(null);
     setIsAnswered(false);
     setShowingResults(false);
@@ -786,8 +790,10 @@ function PlayQuizContent() {
   
     // Subtle haptic feedback on answer selection (if supported)
     void hapticSelection();
-  
-    
+
+    // Stop the question timer ticking sound immediately
+    stopSfx("tick");
+
     setSelectedAnswer(answerIndex);
     setIsAnswered(true);
     

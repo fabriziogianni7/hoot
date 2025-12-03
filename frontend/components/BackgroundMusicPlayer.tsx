@@ -9,9 +9,9 @@ const BACKGROUND_TRACKS: string[] = [
   "/sounds/background1.mp3",
   "/sounds/background2.mp3",
   "/sounds/background3.mp3",
-  "/sounds/background6.wav",
-  "/sounds/background7.wav",
-  "/sounds/background8.wav"
+  "/sounds/background4.wav",
+  "/sounds/background5.wav",
+  "/sounds/background6.wav"
 ];
 
 export default function BackgroundMusicPlayer() {
