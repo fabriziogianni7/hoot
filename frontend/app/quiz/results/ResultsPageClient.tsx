@@ -10,6 +10,7 @@ import { sdk } from "@farcaster/miniapp-sdk";
 import { ZERO_ADDRESS } from "@/lib/contracts";
 import { NETWORK_TOKENS } from "@/lib/token-config";
 import type { Quiz as QuizType, GameState as GameStateType } from "@/lib/types";
+import { hapticNotification } from "@/lib/haptics";
 
 interface ResultsPageClientProps {
   roomCode?: string;
@@ -516,6 +517,12 @@ export default function ResultsPageClient({ roomCode }: ResultsPageClientProps) 
     !!currentPlayerId &&
     winnerIds.includes(currentPlayerId) &&
     isPrizeDistributed;
+
+  // If the current player is a winner, trigger a success notification haptic
+  useEffect(() => {
+    if (!isWinner) return;
+    void hapticNotification("success");
+  }, [isWinner]);
 
   // Handle casting result
   const handleCastResult = async () => {

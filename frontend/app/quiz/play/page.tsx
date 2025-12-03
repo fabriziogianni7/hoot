@@ -10,6 +10,7 @@ import { useSupabase } from "@/lib/supabase-context";
 import { useAnswersRealtime } from "@/lib/use-realtime-hooks";
 import { useDriverPresence } from "@/lib/use-driver-presence";
 import { useSound } from "@/lib/sound-context";
+import { hapticSelection } from "@/lib/haptics";
 
 type Phase = "question" | "results" | "countdown";
 
@@ -773,6 +774,9 @@ function PlayQuizContent() {
       console.log("Already answered or showing results");
       return;
     }
+  
+    // Subtle haptic feedback on answer selection (if supported)
+    void hapticSelection();
   
     
     setSelectedAnswer(answerIndex);

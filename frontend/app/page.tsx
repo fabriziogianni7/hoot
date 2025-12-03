@@ -14,6 +14,7 @@ import type { GenerateQuizResponse } from "@/lib/backend-types";
 import { getTokensForNetwork } from "@/lib/token-config";
 import QuizCalendarButton from "@/components/QuizCalendarButton";
 import { useSound } from "@/lib/sound-context";
+import { hapticImpact } from "@/lib/haptics";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -485,6 +486,9 @@ export default function Home() {
         );
 
         if (gameSession) {
+          // Successful join: trigger medium impact haptic (Farcaster miniapp)
+          void hapticImpact("medium");
+
           // Navigate to lobby with room code
           router.push(`/quiz/lobby/${gamePin.trim().toUpperCase()}`);
         } else {
