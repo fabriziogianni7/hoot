@@ -43,6 +43,7 @@ function LobbyContent() {
     isWalletReady,
   } = useAuth();
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
   const [playerName, setPlayerName] = useState("");
   const [joined, setJoined] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
@@ -219,6 +220,19 @@ function LobbyContent() {
     eventStart != null
       ? new Date(eventStart.getTime() + 30 * 60 * 1000)
       : null;
+
+  const formatTimeRemaining = (ms: number) => {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const parts = [
+      hours.toString().padStart(2, "0"),
+      minutes.toString().padStart(2, "0"),
+      seconds.toString().padStart(2, "0"),
+    ];
+    return parts.join(":");
+  };
 
   const lobbyRoomCode = contextRoomCode || roomCodeFromUrl || "";
   const lobbyEventUrl =
@@ -434,6 +448,40 @@ function LobbyContent() {
 
     loadGameSession();
   }, [roomCodeFromUrl, supabase, setCurrentQuiz, authReady]);
+
+  // Countdown timer for scheduled quiz start (informational only)
+  useEffect(() => {
+    if (!scheduledStartTime) {
+      setTimeRemainingMs(null);
+      return;
+    }
+
+    const scheduledTime = new Date(scheduledStartTime).getTime();
+
+    const update = () => {
+      const diff = scheduledTime - Date.now();
+      if (diff <= 0) {
+        setTimeRemainingMs(0);
+        return false;
+      }
+      setTimeRemainingMs(diff);
+      return true;
+    };
+
+    // Run once immediately
+    if (!update()) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const keepRunning = update();
+      if (!keepRunning) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [scheduledStartTime]);
 
   // Check if player is already joined and if they're the creator
   useEffect(() => {
@@ -1431,6 +1479,14 @@ function LobbyContent() {
                     <div className="bg-purple-950/30 border border-purple-700/50 rounded-lg p-3 text-sm text-gray-100">
                       {formattedScheduledStart}
                     </div>
+                    {timeRemainingMs !== null && timeRemainingMs > 0 && (
+                      <p className="mt-1 text-xs text-purple-200">
+                        Starts in{" "}
+                        <span className="font-mono font-semibold">
+                          {formatTimeRemaining(timeRemainingMs)}
+                        </span>
+                      </p>
+                    )}
                   </div>
                 )}
 
