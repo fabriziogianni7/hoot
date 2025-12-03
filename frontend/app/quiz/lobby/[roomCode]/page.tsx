@@ -16,6 +16,7 @@ import { NETWORK_TOKENS } from "@/lib/token-config";
 import { ZERO_ADDRESS } from "@/lib/contracts";
 import QuizCalendarButton from "@/components/QuizCalendarButton";
 import { sdk } from "@farcaster/miniapp-sdk";
+import { hapticImpact } from "@/lib/haptics";
 
 function LobbyContent() {
   const router = useRouter();
@@ -660,6 +661,9 @@ function LobbyContent() {
     if (countdown === null || countdown <= 0) return;
 
     const timer = setTimeout(() => {
+      // Provide light impact feedback for each countdown tick
+      void hapticImpact("light");
+
       setCountdown(countdown - 1);
 
       if (countdown === 1 && joined && currentGame) {

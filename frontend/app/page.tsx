@@ -13,6 +13,8 @@ import { extractPdfText, extractTextFile } from "@/lib/utils";
 import type { GenerateQuizResponse } from "@/lib/backend-types";
 import { getTokensForNetwork } from "@/lib/token-config";
 import QuizCalendarButton from "@/components/QuizCalendarButton";
+import { useSound } from "@/lib/sound-context";
+import { hapticImpact } from "@/lib/haptics";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -83,6 +85,8 @@ export default function Home() {
   const [bannerTouchStartX, setBannerTouchStartX] = useState<number | null>(
     null
   );
+
+  const { soundEnabled, toggleSound } = useSound();
 
   const currentSession =
     upcomingSessions.length > 0
@@ -482,6 +486,9 @@ export default function Home() {
         );
 
         if (gameSession) {
+          // Successful join: trigger medium impact haptic (Farcaster miniapp)
+          void hapticImpact("medium");
+
           // Navigate to lobby with room code
           router.push(`/quiz/lobby/${gamePin.trim().toUpperCase()}`);
         } else {
@@ -725,15 +732,46 @@ export default function Home() {
         }}
       />
 
-      {/* Farcaster Auth / Quick Menu trigger in top right corner */}
+      {/* Top-left sound toggle - always visible */}
+      <button
+        type="button"
+        onClick={toggleSound}
+        aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
+        style={{
+          position: "absolute",
+          top: "1rem",
+          left: "1rem",
+          zIndex: 10,
+          backgroundColor: "rgba(15,23,42,0.85)",
+          color: "white",
+          padding: "0.35rem 0.55rem",
+          borderRadius: "9999px",
+          fontSize: "0.9rem",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          border: "1px solid rgba(148,163,184,0.6)",
+          backdropFilter: "blur(6px)",
+        }}
+      >
+        <span aria-hidden="true">{soundEnabled ? "🔊" : "🔇"}</span>
+      </button>
+
+      {/* Top-right controls: auth menu */}
       <div
         style={{
           position: "absolute",
           top: "1rem",
           right: "1rem",
           zIndex: 10,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-end",
+          gap: "0.4rem",
         }}
       >
+        {/* Farcaster Auth / Quick Menu trigger */}
         <button
           type="button"
           onClick={() => setShowQuickMenu(true)}

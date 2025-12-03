@@ -13,6 +13,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { wagmiConfig } from "@/lib/wagmi";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { privyConfig } from "@/lib/privy-config";
+import { SoundProvider } from "@/lib/sound-context";
+import BackgroundMusicPlayer from "@/components/BackgroundMusicPlayer";
 
 const queryClient = new QueryClient();
 
@@ -45,11 +47,16 @@ export function RootProvider({ children }: { children: ReactNode }) {
               notificationProxyUrl: undefined,
             }}
           >
-            <NetworkProvider>
-              <SupabaseProvider>
-                <QuizProvider>{children}</QuizProvider>
-              </SupabaseProvider>
-            </NetworkProvider>
+          <NetworkProvider>
+            <SupabaseProvider>
+              <QuizProvider>
+                <SoundProvider>
+                  <BackgroundMusicPlayer />
+                  {children}
+                </SoundProvider>
+              </QuizProvider>
+            </SupabaseProvider>
+          </NetworkProvider>
           </OnchainKitProvider>
         </WagmiProvider>
       </QueryClientProvider>
