@@ -1348,8 +1348,18 @@ function AdminPageContent() {
 
             {/* Creation status banner */}
             {creationStep && (
-              <div className="mb-4 bg-purple-500/20 border border-purple-500 rounded-lg p-3 text-center text-purple-200">
-                {creationStep}
+              <div className="mb-4 bg-purple-500/20 border border-purple-500 rounded-lg p-3 text-purple-200 flex items-center gap-3">
+                <div className="h-5 w-5 border-2 border-purple-300 border-t-transparent rounded-full animate-spin" />
+                <div className="flex-1">
+                  <div className="text-sm font-medium">{creationStep}</div>
+                  {(creationStep === CreationStep.REQUESTING_APPROVAL ||
+                    creationStep === CreationStep.WAITING_APPROVAL ||
+                    creationStep === CreationStep.CREATING_ON_CHAIN) && (
+                    <div className="text-xs text-purple-100 mt-1">
+                      Please confirm the transaction in your wallet. This might take a few seconds.
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
