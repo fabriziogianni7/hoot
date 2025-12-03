@@ -9,6 +9,7 @@ import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
 import { useAnswersRealtime } from "@/lib/use-realtime-hooks";
 import { useDriverPresence } from "@/lib/use-driver-presence";
+import { useSound } from "@/lib/sound-context";
 
 type Phase = "question" | "results" | "countdown";
 
@@ -25,6 +26,7 @@ type PhaseEventPayload = {
 function PlayQuizContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { playSfx } = useSound();
   const {
     currentGame,
     getCurrentQuiz,
@@ -139,6 +141,7 @@ function PlayQuizContent() {
   const prevIsDriverRef = useRef<boolean>(false);
   const timePercentageRef = useRef<number>(100);
   const hasAnsweredRef = useRef<boolean>(false); // Track if answer was submitted
+  const lastTickSecondRef = useRef<number | null>(null); // For ticking SFX
   
   const [isLoadingFromUrl, setIsLoadingFromUrl] = useState(true);
   
@@ -540,6 +543,8 @@ function PlayQuizContent() {
       
       // Show timeout banner with 0 points (only for players, not creator)
       if (!isCreator) {
+        // Timeout is treated as an incorrect answer
+        playSfx("wrong");
         setEarnedPoints(0);
         setShowPointsBanner(true);
         setTimeout(() => {
@@ -603,6 +608,19 @@ function PlayQuizContent() {
     }, 1000);
   }, [initialTime, handleTimeUp]);
   
+  // Play ticking sound while the question timer is running
+  useEffect(() => {
+    if (phase !== "question") return;
+    if (isAnswered || showingResults) return;
+    if (timeLeft <= 0) return;
+
+    const wholeSecondsLeft = Math.floor(timeLeft);
+    if (lastTickSecondRef.current !== wholeSecondsLeft) {
+      lastTickSecondRef.current = wholeSecondsLeft;
+      playSfx("tick");
+    }
+  }, [phase, isAnswered, showingResults, timeLeft, playSfx]);
+  
   // Reset states when question changes
   useEffect(() => {
     if (!currentGame || !quiz) return;
@@ -614,6 +632,7 @@ function PlayQuizContent() {
     
     // Reset states FIRST - this must run every time the question changes
     hasAnsweredRef.current = false; // Reset answer tracking ref
+    lastTickSecondRef.current = null; // Reset ticking tracker
     setSelectedAnswer(null);
     setIsAnswered(false);
     setShowingResults(false);
@@ -776,6 +795,13 @@ function PlayQuizContent() {
         if (response) {
           // Update with actual points from backend
           setEarnedPoints(response.is_correct ? response.points_earned : 0);
+          
+          // Play success / failure sound
+          if (response.is_correct) {
+            playSfx("correct");
+          } else {
+            playSfx("wrong");
+          }
           
           // Show confetti and points banner
           setShowConfetti(response.is_correct);
