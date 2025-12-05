@@ -82,7 +82,10 @@ export default function LeaderboardPage() {
         ? ` and created ${created} quiz${created === 1 ? "" : "zes"}`
         : ""
 
-    const text = `I'm ranked #${rank} on Hoot! I have ${totalPoints} points, ${correct} correct answers with an average of ${avgTime}s${createdPart}. Come play the next quiz to do better than me!`
+    const text = `🏆 I'm ranked #${rank} on Hoot!
+I have ${totalPoints} points and ${correct} correct answers (avg ${avgTime}s per correct)${createdPart}.
+
+🔥 Come play the next quiz and try to beat me!`
 
     return { text, url: baseUrl }
   }, [userRow])
