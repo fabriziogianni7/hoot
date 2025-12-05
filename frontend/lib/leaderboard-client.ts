@@ -6,6 +6,8 @@ export interface GlobalLeaderboardRow {
   identity_key: string
   identity_fid: string | null
   identity_wallet: string | null
+  display_name: string | null
+  games_played: number
   play_points: number
   quizzes_created: number
   create_points: number
@@ -33,7 +35,7 @@ export async function fetchUserLeaderboardRow(
     const { data, error } = await client
       .from("global_leaderboard")
       .select(
-        "identity_key,identity_fid,identity_wallet,play_points,quizzes_created,create_points,correct_answers,avg_correct_time,total_points,rank"
+        "identity_key,identity_fid,identity_wallet,display_name,games_played,play_points,quizzes_created,create_points,correct_answers,avg_correct_time,total_points,rank"
       )
       .eq("identity_fid", fidString)
       .maybeSingle()
@@ -53,7 +55,7 @@ export async function fetchUserLeaderboardRow(
     const { data, error } = await client
       .from("global_leaderboard")
       .select(
-        "identity_key,identity_fid,identity_wallet,play_points,quizzes_created,create_points,correct_answers,avg_correct_time,total_points,rank"
+        "identity_key,identity_fid,identity_wallet,display_name,games_played,play_points,quizzes_created,create_points,correct_answers,avg_correct_time,total_points,rank"
       )
       .eq("identity_wallet", lowerAddress)
       .maybeSingle()
@@ -76,7 +78,7 @@ export async function fetchTopLeaderboardRows(
   const { data, error } = await client
     .from("global_leaderboard")
     .select(
-      "identity_key,identity_fid,identity_wallet,play_points,quizzes_created,create_points,correct_answers,avg_correct_time,total_points,rank"
+      "identity_key,identity_fid,identity_wallet,display_name,games_played,play_points,quizzes_created,create_points,correct_answers,avg_correct_time,total_points,rank"
     )
     .order("rank", { ascending: true })
     .limit(limit)
