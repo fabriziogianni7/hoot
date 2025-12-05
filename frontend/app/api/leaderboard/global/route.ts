@@ -12,6 +12,9 @@ const supabaseAdmin = createClient(
   }
 )
 
+const fields =
+  "identity_key,identity_fid,identity_wallet,display_name,games_played,play_points,quizzes_created,create_points,correct_answers,avg_correct_time,total_points,rank"
+
 export async function GET(request: Request) {
   try {
     const authHeader = request.headers.get("authorization") || ""
@@ -26,14 +29,13 @@ export async function GET(request: Request) {
       )
     }
 
-    // Resolve the user from the access token
     const {
       data: userResult,
       error: userError,
     } = await supabaseAdmin.auth.getUser(token)
 
     if (userError || !userResult?.user) {
-      console.error("[Leaderboard API] getUser error:", userError)
+      console.error("[Leaderboard Global API] getUser error:", userError)
       return NextResponse.json(
         { error: "Invalid or expired access token" },
         { status: 401 }
@@ -47,54 +49,90 @@ export async function GET(request: Request) {
       ((user.user_metadata as any)?.wallet_addresses?.[0] as string | undefined) ??
       null
 
-    let data = null
+    // Top 100 users by total score
+    const { data: topRows, error: topError } = await supabaseAdmin
+      .from("global_leaderboard")
+      .select(fields)
+      .order("rank", { ascending: true })
+      .limit(100)
+
+    if (topError) {
+      console.error("[Leaderboard Global API] Error fetching top rows:", topError)
+      return NextResponse.json(
+        { error: "Failed to load global leaderboard" },
+        { status: 500 }
+      )
+    }
+
+    // Current user's row - match by FID first, then wallet
+    let meRow: any = null
     let lastError: any = null
 
-    // Prefer matching by FID
     if (fid) {
       const { data: fidRow, error: fidError } = await supabaseAdmin
         .from("global_leaderboard")
-        .select(
-          "identity_key,identity_fid,identity_wallet,display_name,games_played,play_points,quizzes_created,create_points,correct_answers,avg_correct_time,total_points,rank"
-        )
+        .select(fields)
         .eq("identity_fid", String(fid))
         .maybeSingle()
 
       if (fidError && fidError.code !== "PGRST116") {
         lastError = fidError
       } else if (fidRow) {
-        data = fidRow
+        meRow = fidRow
       }
     }
 
-    // Fallback: match by primary wallet if no FID match
-    if (!data && primaryWallet) {
+    if (!meRow && primaryWallet) {
       const { data: walletRow, error: walletError } = await supabaseAdmin
         .from("global_leaderboard")
-        .select(
-          "identity_key,identity_fid,identity_wallet,display_name,games_played,play_points,quizzes_created,create_points,correct_answers,avg_correct_time,total_points,rank"
-        )
+        .select(fields)
         .eq("identity_wallet", primaryWallet.toLowerCase())
         .maybeSingle()
 
       if (walletError && walletError.code !== "PGRST116") {
         lastError = walletError
       } else if (walletRow) {
-        data = walletRow
+        meRow = walletRow
       }
     }
 
-    if (!data && lastError) {
-      console.error("[Leaderboard API] Error fetching leaderboard row:", lastError)
-      return NextResponse.json(
-        { error: "Failed to load leaderboard data" },
-        { status: 500 }
+    if (!meRow && lastError) {
+      console.error(
+        "[Leaderboard Global API] Error fetching user row:",
+        lastError
       )
     }
 
-    return NextResponse.json({ data })
+    let aroundMe: any[] = []
+
+    if (meRow && meRow.rank && meRow.rank > 100) {
+      const fromRank = Math.max(meRow.rank - 2, 1)
+      const toRank = meRow.rank + 2
+
+      const { data: windowRows, error: windowError } = await supabaseAdmin
+        .from("global_leaderboard")
+        .select(fields)
+        .gte("rank", fromRank)
+        .lte("rank", toRank)
+        .order("rank", { ascending: true })
+
+      if (windowError) {
+        console.error(
+          "[Leaderboard Global API] Error fetching around-me window:",
+          windowError
+        )
+      } else {
+        aroundMe = windowRows ?? []
+      }
+    }
+
+    return NextResponse.json({
+      top: topRows ?? [],
+      me: meRow ?? null,
+      aroundMe,
+    })
   } catch (error: any) {
-    console.error("[Leaderboard API] Unexpected error:", error)
+    console.error("[Leaderboard Global API] Unexpected error:", error)
     return NextResponse.json(
       { error: error?.message || "Internal server error" },
       { status: 500 }

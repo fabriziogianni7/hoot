@@ -68,12 +68,30 @@ combined AS (
   LEFT JOIN player_points pp ON pp.user_id = u.user_id
   LEFT JOIN correct_answers ca ON ca.user_id = u.user_id
   LEFT JOIN creator_points cp ON cp.user_id = u.user_id
+),
+agg AS (
+  SELECT
+    COALESCE(user_fid, primary_wallet, user_id::TEXT) AS identity_key,
+    MAX(user_fid) AS identity_fid,
+    MAX(primary_wallet) AS identity_wallet,
+    MAX(display_name) AS display_name,
+    SUM(games_played) AS games_played,
+    SUM(play_points) AS play_points,
+    SUM(quizzes_created) AS quizzes_created,
+    SUM(create_points) AS create_points,
+    SUM(correct_answers) AS correct_answers,
+    CASE
+      WHEN SUM(correct_answers) > 0
+        THEN SUM(avg_correct_time * correct_answers) / SUM(correct_answers)
+      ELSE 0
+    END AS avg_correct_time
+  FROM combined
+  GROUP BY COALESCE(user_fid, primary_wallet, user_id::TEXT)
 )
 SELECT
-  COALESCE(user_fid, primary_wallet, user_id::TEXT) AS identity_key,
-  user_id,
-  user_fid         AS identity_fid,
-  primary_wallet   AS identity_wallet,
+  identity_key,
+  identity_fid,
+  identity_wallet,
   display_name,
   games_played,
   play_points,
@@ -83,7 +101,7 @@ SELECT
   avg_correct_time,
   (play_points + create_points) AS total_points,
   RANK() OVER (ORDER BY (play_points + create_points) DESC) AS rank
-FROM combined;
+FROM agg;
 
 COMMENT ON VIEW global_leaderboard IS 'Global leaderboard aggregating play/creator stats per auth user, keyed by Farcaster ID or wallet address.';
 

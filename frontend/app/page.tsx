@@ -884,52 +884,52 @@ export default function Home() {
             </button>
           )}
 
-          {/* Farcaster Auth / Quick Menu trigger */}
-          <button
-            type="button"
-            onClick={() => setShowQuickMenu(true)}
-            style={{
-              backgroundColor: "#795AFF",
-              color: "white",
-              padding: "0.5rem 1rem",
-              borderRadius: "0.5rem",
-              fontSize: "0.875rem",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              cursor: "pointer",
-              transition: "opacity 0.2s, transform 0.2s",
-              opacity:
-                loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
-              border: "none",
+        {/* Farcaster Auth / Quick Menu trigger */}
+        <button
+          type="button"
+          onClick={() => setShowQuickMenu(true)}
+          style={{
+            backgroundColor: "#795AFF",
+            color: "white",
+            padding: "0.5rem 1rem",
+            borderRadius: "0.5rem",
+            fontSize: "0.875rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            cursor: "pointer",
+            transition: "opacity 0.2s, transform 0.2s",
+            opacity:
+              loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
+            border: "none",
               width: "220px",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.opacity = "0.9";
+            e.currentTarget.style.transform = "scale(1.02)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.opacity = "1";
+            e.currentTarget.style.transform = "scale(1)";
+          }}
+        >
+          {/* Status dot */}
+          <div
+            style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              backgroundColor: badgeText.statusColor || "#4ade80",
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = "0.9";
-              e.currentTarget.style.transform = "scale(1.02)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = "1";
-              e.currentTarget.style.transform = "scale(1)";
+          ></div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "0.125rem",
+                overflow: "hidden",
             }}
           >
-            {/* Status dot */}
-            <div
-              style={{
-                width: "8px",
-                height: "8px",
-                borderRadius: "50%",
-                backgroundColor: badgeText.statusColor || "#4ade80",
-              }}
-            ></div>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.125rem",
-                overflow: "hidden",
-              }}
-            >
               {badgeText.primary && (
                 <div
                   style={{
@@ -943,24 +943,24 @@ export default function Home() {
                   {badgeText.primary}
                 </div>
               )}
-              {badgeText.secondary &&
-                !badgeText.secondary.includes("Farcaster") && (
-                  <div style={{ fontSize: "0.75rem", opacity: 0.8 }}>
-                    {badgeText.secondary}
-                  </div>
-                )}
-            </div>
-            {/* Burger / menu icon */}
-            <div
-              style={{
-                marginLeft: "0.25rem",
-                fontSize: "1rem",
-                opacity: 0.9,
-              }}
-            >
-              ☰
-            </div>
-          </button>
+            {badgeText.secondary &&
+              !badgeText.secondary.includes("Farcaster") && (
+                <div style={{ fontSize: "0.75rem", opacity: 0.8 }}>
+                  {badgeText.secondary}
+                </div>
+              )}
+          </div>
+          {/* Burger / menu icon */}
+          <div
+            style={{
+              marginLeft: "0.25rem",
+              fontSize: "1rem",
+              opacity: 0.9,
+            }}
+          >
+            ☰
+          </div>
+        </button>
         </div>
       </div>
 
