@@ -15,7 +15,6 @@ import { getTokensForNetwork } from "@/lib/token-config";
 import QuizCalendarButton from "@/components/QuizCalendarButton";
 import { useSound } from "@/lib/sound-context";
 import { hapticImpact } from "@/lib/haptics";
-import { fetchUserLeaderboardRow } from "@/lib/leaderboard-client";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -122,9 +121,9 @@ export default function Home() {
   const isBaseMiniapp = Boolean(isMiniapp && miniappClient === "base");
   const canEnableNotifications = isFarcasterMiniapp || isBaseMiniapp;
 
-  // Load global leaderboard rank for the authenticated user
+  // Load global leaderboard rank for the authenticated user via backend API
   useEffect(() => {
-    if (!supabase || !loggedUser?.isAuthenticated) {
+    if (!loggedUser?.isAuthenticated || !loggedUser.session?.access_token) {
       setGlobalRank(null);
       setGlobalTotalPoints(null);
       return;
@@ -135,15 +134,31 @@ export default function Home() {
     const loadRank = async () => {
       setIsRankLoading(true);
       try {
-        const row = await fetchUserLeaderboardRow(supabase, {
-          fid: loggedUser.fid,
-          address: loggedUser.address,
+        const res = await fetch("/api/leaderboard/me", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${loggedUser?.session?.access_token ?? ""}`,
+          },
         });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          console.error("[Home] Error loading global rank (API):", res.status, body);
+          if (!cancelled) {
+            setGlobalRank(null);
+            setGlobalTotalPoints(null);
+          }
+          return;
+        }
+
+        const json = (await res.json()) as {
+          data: { rank: number | null; total_points: number | null } | null;
+        };
 
         if (cancelled) return;
 
-        setGlobalRank(row?.rank ?? null);
-        setGlobalTotalPoints(row?.total_points ?? null);
+        setGlobalRank(json.data?.rank ?? null);
+        setGlobalTotalPoints(json.data?.total_points ?? null);
       } catch (error) {
         console.error("[Home] Error loading global rank:", error);
         if (!cancelled) {
@@ -162,7 +177,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, loggedUser?.isAuthenticated, loggedUser?.fid, loggedUser?.address]);
+  }, [loggedUser?.isAuthenticated, loggedUser?.session?.access_token]);
 
   // Fetch next upcoming public quiz (and its room code)
   useEffect(() => {
@@ -832,11 +847,17 @@ export default function Home() {
           {loggedUser?.isAuthenticated && (
             <button
               type="button"
-              onClick={() => router.push("/leaderboard")}
+              onClick={() => {
+                if (isRankLoading) return
+                router.push("/leaderboard")
+              }}
               disabled={isRankLoading}
               style={{
-                padding: "0.4rem 0.8rem",
-                borderRadius: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "0.6rem 1.4rem",
+                borderRadius: 9999,
                 border: "none",
                 backgroundColor: "transparent",
                 color: "#e5e7eb",
@@ -846,15 +867,17 @@ export default function Home() {
                 cursor: isRankLoading ? "default" : "pointer",
                 opacity: isRankLoading ? 0.6 : 1,
                 whiteSpace: "nowrap",
-                minWidth: "3rem",
+                minWidth: "4rem",
+                minHeight: "2.5rem",
                 textAlign: "center",
+                touchAction: "manipulation",
               }}
             >
               {isRankLoading ? (
                 "Loading…"
               ) : (
                 <>
-                  <span style={{ marginRight: "0.25rem" }}>🏆</span>
+                  <span style={{ marginRight: "0.35rem" }}>🏆</span>
                   <span>{globalRank ? `#${globalRank}` : "no rank"}</span>
                 </>
               )}

@@ -96,4 +96,9 @@ REVOKE ALL ON global_leaderboard FROM anon;
 GRANT SELECT ON global_leaderboard TO authenticated;
 GRANT SELECT ON global_leaderboard TO service_role;
 
+-- Allow service_role (used by backend API routes) to read auth.users,
+-- which is required by the global_leaderboard view. Do NOT grant this
+-- to anon/authenticated roles.
+GRANT SELECT ON auth.users TO service_role;
+
 
