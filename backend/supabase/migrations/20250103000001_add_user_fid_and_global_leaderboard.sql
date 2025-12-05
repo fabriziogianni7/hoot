@@ -1,75 +1,81 @@
--- Add user_fid column to player_sessions to track Farcaster identity for players
-ALTER TABLE player_sessions
-ADD COLUMN IF NOT EXISTS user_fid TEXT;
-
--- Index for faster lookups by user_fid
-CREATE INDEX IF NOT EXISTS idx_player_sessions_user_fid ON player_sessions(user_fid);
-
-COMMENT ON COLUMN player_sessions.user_fid IS 'Farcaster ID of the player (if available)';
-
--- Global leaderboard view:
+-- Global leaderboard view (per authenticated user):
 -- - Aggregates play points from player_sessions.total_score
 -- - Aggregates creator points from quizzes (per-quiz bonus)
--- - Uses FID when available, otherwise falls back to wallet/creator address
+-- - Aggregates correct answers and average time-to-answer (only correct answers)
+-- - Groups strictly by auth.users.id (user_id) and derives identity from FID or wallet
 -- - Exposes a unified identity_key plus separate fid/wallet columns
 -- - Ranks users by total_points (play_points + create_points)
 
 DROP VIEW IF EXISTS global_leaderboard;
 
 CREATE VIEW global_leaderboard AS
-WITH player_points AS (
+WITH base_users AS (
   SELECT
-    COALESCE(ps.user_fid, LOWER(ps.wallet_address)) AS identity_key,
-    MAX(ps.user_fid) AS identity_fid,
-    MAX(LOWER(ps.wallet_address)) AS identity_wallet,
+    ps.user_id,
+    -- Derive user_fid from auth.users metadata instead of storing it on player_sessions
+    MAX((u.raw_user_meta_data->>'fid')::TEXT) AS user_fid,
+    MAX(LOWER(ps.wallet_address)) FILTER (WHERE ps.wallet_address IS NOT NULL) AS primary_wallet,
+    ARRAY_AGG(DISTINCT LOWER(ps.wallet_address)) FILTER (WHERE ps.wallet_address IS NOT NULL) AS all_wallets,
+    MAX(ps.player_name) AS display_name
+  FROM player_sessions ps
+  LEFT JOIN auth.users u ON u.id = ps.user_id
+  WHERE ps.user_id IS NOT NULL
+  GROUP BY ps.user_id
+),
+player_points AS (
+  SELECT
+    ps.user_id,
+    COUNT(DISTINCT ps.game_session_id) AS games_played,
     SUM(COALESCE(ps.total_score, 0)) AS play_points
   FROM player_sessions ps
-  WHERE ps.wallet_address IS NOT NULL
-     OR ps.user_fid IS NOT NULL
-  GROUP BY COALESCE(ps.user_fid, LOWER(ps.wallet_address))
+  WHERE ps.user_id IS NOT NULL
+  GROUP BY ps.user_id
 ),
 creator_points AS (
   SELECT
-    COALESCE(q.user_fid, LOWER(q.creator_address)) AS identity_key,
-    MAX(q.user_fid) AS identity_fid,
-    MAX(LOWER(q.creator_address)) AS identity_wallet,
+    q.user_id,
     COUNT(*) AS quizzes_created
   FROM quizzes q
-  WHERE q.creator_address IS NOT NULL
-     OR q.user_fid IS NOT NULL
-  GROUP BY COALESCE(q.user_fid, LOWER(q.creator_address))
+  WHERE q.user_id IS NOT NULL
+  GROUP BY q.user_id
 ),
 correct_answers AS (
   SELECT
-    COALESCE(ps.user_fid, LOWER(ps.wallet_address)) AS identity_key,
+    ps.user_id,
     COUNT(*) AS correct_answers,
     -- time_taken is stored in milliseconds; convert to seconds for readability
     AVG(a.time_taken) / 1000.0 AS avg_correct_time
   FROM answers a
   JOIN player_sessions ps ON ps.id = a.player_session_id
-  WHERE a.is_correct = TRUE
-    AND (ps.wallet_address IS NOT NULL OR ps.user_fid IS NOT NULL)
-  GROUP BY COALESCE(ps.user_fid, LOWER(ps.wallet_address))
+  WHERE ps.user_id IS NOT NULL
+    AND a.is_correct = TRUE
+  GROUP BY ps.user_id
 ),
 combined AS (
   SELECT
-    COALESCE(COALESCE(p.identity_key, c.identity_key), ca.identity_key) AS identity_key,
-    COALESCE(p.identity_fid, c.identity_fid) AS identity_fid,
-    COALESCE(p.identity_wallet, c.identity_wallet) AS identity_wallet,
-    COALESCE(p.play_points, 0) AS play_points,
-    COALESCE(c.quizzes_created, 0) AS quizzes_created,
-    -- Tune this constant to rebalance how valuable quiz creation is
-    COALESCE(c.quizzes_created, 0) * 100 AS create_points,
+    u.user_id,
+    u.user_fid,
+    u.primary_wallet,
+    u.display_name,
+    COALESCE(pp.games_played, 0) AS games_played,
+    COALESCE(pp.play_points, 0) AS play_points,
     COALESCE(ca.correct_answers, 0) AS correct_answers,
-    COALESCE(ca.avg_correct_time, 0) AS avg_correct_time
-  FROM player_points p
-  FULL OUTER JOIN creator_points c USING (identity_key)
-  FULL OUTER JOIN correct_answers ca USING (identity_key)
+    COALESCE(ca.avg_correct_time, 0) AS avg_correct_time,
+    COALESCE(cp.quizzes_created, 0) AS quizzes_created,
+    -- Tune this constant to rebalance how valuable quiz creation is
+    COALESCE(cp.quizzes_created, 0) * 100 AS create_points
+  FROM base_users u
+  LEFT JOIN player_points pp ON pp.user_id = u.user_id
+  LEFT JOIN correct_answers ca ON ca.user_id = u.user_id
+  LEFT JOIN creator_points cp ON cp.user_id = u.user_id
 )
 SELECT
-  identity_key,
-  identity_fid,
-  identity_wallet,
+  COALESCE(user_fid, primary_wallet, user_id::TEXT) AS identity_key,
+  user_id,
+  user_fid         AS identity_fid,
+  primary_wallet   AS identity_wallet,
+  display_name,
+  games_played,
   play_points,
   quizzes_created,
   create_points,
@@ -79,7 +85,7 @@ SELECT
   RANK() OVER (ORDER BY (play_points + create_points) DESC) AS rank
 FROM combined;
 
-COMMENT ON VIEW global_leaderboard IS 'Global leaderboard aggregating play and creator points keyed by Farcaster ID or wallet address.';
+COMMENT ON VIEW global_leaderboard IS 'Global leaderboard aggregating play/creator stats per auth user, keyed by Farcaster ID or wallet address.';
 
 
 -- Restrict direct access to the view:
