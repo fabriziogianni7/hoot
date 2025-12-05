@@ -15,6 +15,7 @@ import { getTokensForNetwork } from "@/lib/token-config";
 import QuizCalendarButton from "@/components/QuizCalendarButton";
 import { useSound } from "@/lib/sound-context";
 import { hapticImpact } from "@/lib/haptics";
+import { fetchUserLeaderboardRow } from "@/lib/leaderboard-client";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -88,6 +89,12 @@ export default function Home() {
 
   const { soundEnabled, toggleSound } = useSound();
 
+  const [globalRank, setGlobalRank] = useState<number | null>(null);
+  const [globalTotalPoints, setGlobalTotalPoints] = useState<number | null>(
+    null
+  );
+  const [isRankLoading, setIsRankLoading] = useState(false);
+
   const currentSession =
     upcomingSessions.length > 0
       ? upcomingSessions[
@@ -114,6 +121,48 @@ export default function Home() {
   );
   const isBaseMiniapp = Boolean(isMiniapp && miniappClient === "base");
   const canEnableNotifications = isFarcasterMiniapp || isBaseMiniapp;
+
+  // Load global leaderboard rank for the authenticated user
+  useEffect(() => {
+    if (!supabase || !loggedUser?.isAuthenticated) {
+      setGlobalRank(null);
+      setGlobalTotalPoints(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadRank = async () => {
+      setIsRankLoading(true);
+      try {
+        const row = await fetchUserLeaderboardRow(supabase, {
+          fid: loggedUser.fid,
+          address: loggedUser.address,
+        });
+
+        if (cancelled) return;
+
+        setGlobalRank(row?.rank ?? null);
+        setGlobalTotalPoints(row?.total_points ?? null);
+      } catch (error) {
+        console.error("[Home] Error loading global rank:", error);
+        if (!cancelled) {
+          setGlobalRank(null);
+          setGlobalTotalPoints(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsRankLoading(false);
+        }
+      }
+    };
+
+    loadRank();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, loggedUser?.isAuthenticated, loggedUser?.fid, loggedUser?.address]);
 
   // Fetch next upcoming public quiz (and its room code)
   useEffect(() => {
@@ -771,69 +820,125 @@ export default function Home() {
           gap: "0.4rem",
         }}
       >
-        {/* Farcaster Auth / Quick Menu trigger */}
-        <button
-          type="button"
-          onClick={() => setShowQuickMenu(true)}
+        {/* Badge + rank pill row */}
+        <div
           style={{
-            backgroundColor: "#795AFF",
-            color: "white",
-            padding: "0.5rem 1rem",
-            borderRadius: "0.5rem",
-            fontSize: "0.875rem",
             display: "flex",
             alignItems: "center",
-            gap: "0.5rem",
-            cursor: "pointer",
-            transition: "opacity 0.2s, transform 0.2s",
-            opacity:
-              loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
-            border: "none",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.opacity = "0.9";
-            e.currentTarget.style.transform = "scale(1.02)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.opacity = "1";
-            e.currentTarget.style.transform = "scale(1)";
+            gap: "0.4rem",
           }}
         >
-          {/* Status dot */}
-          <div
+          {/* Rank pill next to badge (on the left) */}
+          {loggedUser?.isAuthenticated && (
+            <button
+              type="button"
+              onClick={() => router.push("/leaderboard")}
+              disabled={isRankLoading}
+              style={{
+                padding: "0.4rem 0.8rem",
+                borderRadius: 0,
+                border: "none",
+                backgroundColor: "transparent",
+                color: "#e5e7eb",
+                fontSize: "1rem",
+                fontWeight: 700,
+                fontFamily: 'var(--font-montserrat), sans-serif',
+                cursor: isRankLoading ? "default" : "pointer",
+                opacity: isRankLoading ? 0.6 : 1,
+                whiteSpace: "nowrap",
+                minWidth: "3rem",
+                textAlign: "center",
+              }}
+            >
+              {isRankLoading ? (
+                "Loading…"
+              ) : (
+                <>
+                  <span style={{ marginRight: "0.25rem" }}>🏆</span>
+                  <span>{globalRank ? `#${globalRank}` : "no rank"}</span>
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Farcaster Auth / Quick Menu trigger */}
+          <button
+            type="button"
+            onClick={() => setShowQuickMenu(true)}
             style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              backgroundColor: badgeText.statusColor || "#4ade80",
-            }}
-          ></div>
-          <div
-            style={{
+              backgroundColor: "#795AFF",
+              color: "white",
+              padding: "0.5rem 1rem",
+              borderRadius: "0.5rem",
+              fontSize: "0.875rem",
               display: "flex",
-              flexDirection: "column",
-              gap: "0.125rem",
+              alignItems: "center",
+              gap: "0.5rem",
+              cursor: "pointer",
+              transition: "opacity 0.2s, transform 0.2s",
+              opacity:
+                loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
+              border: "none",
+              width: "220px",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = "0.9";
+              e.currentTarget.style.transform = "scale(1.02)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = "1";
+              e.currentTarget.style.transform = "scale(1)";
             }}
           >
-            {badgeText.primary && <div>{badgeText.primary}</div>}
-            {badgeText.secondary &&
-              !badgeText.secondary.includes("Farcaster") && (
-                <div style={{ fontSize: "0.75rem", opacity: 0.8 }}>
-                  {badgeText.secondary}
+            {/* Status dot */}
+            <div
+              style={{
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                backgroundColor: badgeText.statusColor || "#4ade80",
+              }}
+            ></div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.125rem",
+                overflow: "hidden",
+              }}
+            >
+              {badgeText.primary && (
+                <div
+                  style={{
+                    maxWidth: "140px",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={badgeText.primary || undefined}
+                >
+                  {badgeText.primary}
                 </div>
               )}
-          </div>
-          {/* Burger / menu icon */}
-          <div
-            style={{
-              marginLeft: "0.25rem",
-              fontSize: "1rem",
-              opacity: 0.9,
-            }}
-          >
-            ☰
-          </div>
-        </button>
+              {badgeText.secondary &&
+                !badgeText.secondary.includes("Farcaster") && (
+                  <div style={{ fontSize: "0.75rem", opacity: 0.8 }}>
+                    {badgeText.secondary}
+                  </div>
+                )}
+            </div>
+            {/* Burger / menu icon */}
+            <div
+              style={{
+                marginLeft: "0.25rem",
+                fontSize: "1rem",
+                opacity: 0.9,
+              }}
+            >
+              ☰
+            </div>
+          </button>
+        </div>
       </div>
 
       {/* Logo and description */}

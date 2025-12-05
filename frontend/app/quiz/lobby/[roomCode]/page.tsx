@@ -1767,7 +1767,7 @@ function LobbyContent() {
                 </span>
               </div>
               <AdsterixWidget
-                castHash="0x8fefd2767890587975982e9f530300f79e1a0ad1"
+                castHash="0xb060d3a4f9397115665760d58b53d0645aa0fdd1"
                 width="100%"
               />
                 <span className="text-[10px] text-purple-300 mt-2">
