@@ -17,6 +17,7 @@ import { ZERO_ADDRESS } from "@/lib/contracts";
 import QuizCalendarButton from "@/components/QuizCalendarButton";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { hapticImpact } from "@/lib/haptics";
+import { AdsterixWidget } from "@nektarlabs/adsterix-widget";
 
 function LobbyContent() {
   const router = useRouter();
@@ -1570,6 +1571,7 @@ function LobbyContent() {
               )}
             </div>
 
+
             {/* Chat Component */}
             <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
         <h2 className="text-xl font-semibold mb-4 text-purple-200 flex items-center justify-between">
@@ -1579,6 +1581,8 @@ function LobbyContent() {
             </span>
           )}
         </h2>
+
+        
 
         {/* Creator Banners - Only show to non-creators, only latest message */}
         {!isCreator && creatorBanners.length > 0 && (
@@ -1751,6 +1755,26 @@ function LobbyContent() {
           </form>
         )}
       </div>
+
+       {/* Adsterix Sponsored Banner */}
+       <div className="bg-purple-900/40 border border-purple-700/70 rounded-lg p-4 mb-8 w-full max-w-md">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-purple-200">
+                  Sponsored
+                </span>
+                <span className="text-[10px] text-purple-300">
+                  Powered by Adsterix
+                </span>
+              </div>
+              <AdsterixWidget
+                castHash="0x8fefd2767890587975982e9f530300f79e1a0ad1"
+                width="100%"
+              />
+                <span className="text-[10px] text-purple-300 mt-2">
+                  Buy a slot at 11.00 or 18.00 UTC+1 to be featured on a Hoot!
+                </span>
+            </div>
+
 
             {joined && (
               <div className="w-full max-w-md flex flex-col gap-4">
