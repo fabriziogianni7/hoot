@@ -4,16 +4,11 @@ import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { sdk } from "@farcaster/miniapp-sdk"
 
-import { useSupabase } from "@/lib/supabase-context"
 import { useAuth } from "@/lib/use-auth"
-import {
-  fetchUserLeaderboardRow,
-  type GlobalLeaderboardRow,
-} from "@/lib/leaderboard-client"
+import type { GlobalLeaderboardRow } from "@/lib/leaderboard-client"
 
 export default function LeaderboardPage() {
   const router = useRouter()
-  const { supabase } = useSupabase()
   const { loggedUser, isMiniapp, miniappClient } = useAuth()
 
   const [userRow, setUserRow] = useState<GlobalLeaderboardRow | null>(null)
@@ -23,21 +18,35 @@ export default function LeaderboardPage() {
     "idle"
   )
 
-  const currentFid = loggedUser?.fid ?? null
-  const currentAddress = loggedUser?.address ?? null
-
   useEffect(() => {
-    if (!supabase) return
+    if (!loggedUser?.isAuthenticated || !loggedUser.session?.access_token) {
+      setIsLoading(false)
+      return
+    }
 
     let cancelled = false
 
     const load = async () => {
       setIsLoading(true)
       try {
-        const selfRow = await fetchUserLeaderboardRow(supabase, {
-          fid: currentFid,
-          address: currentAddress,
+        const res = await fetch("/api/leaderboard/me", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${loggedUser.session.access_token}`,
+          },
         })
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          console.error("[Leaderboard] API error:", res.status, body)
+          if (!cancelled) {
+            setUserRow(null)
+          }
+          return
+        }
+
+        const json = (await res.json()) as { data: GlobalLeaderboardRow | null }
+        const selfRow = json.data ?? null
 
         if (cancelled) return
         setUserRow(selfRow)
@@ -58,7 +67,7 @@ export default function LeaderboardPage() {
     return () => {
       cancelled = true
     }
-  }, [supabase, currentFid, currentAddress])
+  }, [loggedUser?.isAuthenticated, loggedUser?.session?.access_token])
 
   const shareTextAndUrl = useMemo(() => {
     const baseUrl =
@@ -66,9 +75,11 @@ export default function LeaderboardPage() {
         ? `${window.location.origin}/leaderboard`
         : "https://hoot.quiz"
 
-    if (!userRow) {
+
+    if (!userRow || !userRow.rank) {
       const text =
-        "I'm playing quizzes on Hoot! come play the next quiz to try to beat me!"
+        "I'm playing quizzes on Hoot! Come play the next quiz to try to beat me! https://hoot-quiz.com"
+
       return { text, url: baseUrl }
     }
 
@@ -146,10 +157,8 @@ I have ${totalPoints} points and ${correct} correct answers (avg ${avgTime}s per
 
   const currentIdentityKey = useMemo(() => {
     if (userRow?.identity_key) return userRow.identity_key
-    if (currentFid != null) return String(currentFid)
-    if (currentAddress) return currentAddress.toLowerCase()
     return null
-  }, [userRow, currentFid, currentAddress])
+  }, [userRow])
 
   return (
     <div className="min-h-screen w-full bg-black text-white relative overflow-hidden">
