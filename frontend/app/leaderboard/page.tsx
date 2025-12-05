@@ -61,16 +61,28 @@ export default function LeaderboardPage() {
   }, [supabase, currentFid, currentAddress])
 
   const shareTextAndUrl = useMemo(() => {
-    const rank = userRow?.rank
-
     const baseUrl =
       typeof window !== "undefined"
         ? `${window.location.origin}/leaderboard`
         : "https://hoot.quiz"
 
-    const text = rank
-      ? `I'm ranked #${rank} on Hoot! come play the next quiz to do better than me!`
-      : "I'm playing quizzes on Hoot! come play the next quiz to try to beat me!"
+    if (!userRow) {
+      const text =
+        "I'm playing quizzes on Hoot! come play the next quiz to try to beat me!"
+      return { text, url: baseUrl }
+    }
+
+    const rank = userRow.rank
+    const totalPoints = Math.round(userRow.total_points).toLocaleString()
+    const correct = userRow.correct_answers.toLocaleString()
+    const avgTime = userRow.avg_correct_time.toFixed(1)
+    const created = userRow.quizzes_created
+    const createdPart =
+      created > 0
+        ? ` and created ${created} quiz${created === 1 ? "" : "zes"}`
+        : ""
+
+    const text = `I'm ranked #${rank} on Hoot! I have ${totalPoints} points, ${correct} correct answers with an average of ${avgTime}s${createdPart}. Come play the next quiz to do better than me!`
 
     return { text, url: baseUrl }
   }, [userRow])
