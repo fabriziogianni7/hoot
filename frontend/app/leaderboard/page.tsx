@@ -75,9 +75,11 @@ export default function LeaderboardPage() {
         ? `${window.location.origin}/leaderboard`
         : "https://hoot.quiz"
 
+
     if (!userRow || !userRow.rank) {
       const text =
         "I'm playing quizzes on Hoot! Come play the next quiz to try to beat me! https://hoot-quiz.com"
+
       return { text, url: baseUrl }
     }
 
@@ -86,15 +88,15 @@ export default function LeaderboardPage() {
     const correct = userRow.correct_answers.toLocaleString()
     const avgTime = userRow.avg_correct_time.toFixed(1)
     const created = userRow.quizzes_created
-    const createdLine =
+    const createdPart =
       created > 0
-        ? `• ${created} quiz${created === 1 ? "" : "zes"} created\n`
+        ? ` and created ${created} quiz${created === 1 ? "" : "zes"}`
         : ""
 
     const text = `🏆 I'm ranked #${rank} on Hoot!
-• ${totalPoints} points
-• ${correct} correct answers (avg ${avgTime}s)
-${createdLine}🔥 Come play the next Hoot! quiz and try to beat me!`
+I have ${totalPoints} points and ${correct} correct answers (avg ${avgTime}s per correct)${createdPart}.
+
+🔥 Come play the next quiz and try to beat me!`
 
     return { text, url: baseUrl }
   }, [userRow])
