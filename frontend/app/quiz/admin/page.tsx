@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuiz } from "@/lib/quiz-context";
 import { useSupabase } from "@/lib/supabase-context";
+import { callEdgeFunction } from "@/lib/supabase-client";
 import {
   useAccount,
   useSwitchChain,
@@ -172,10 +173,28 @@ function AdminPageContent() {
   }, [loggedUser]);
 
   useEffect(() => {
-    const hootAddress =
-      chain?.id === 8453
-        ? (`0x013e9b64f97e6943dcd1e167ec5c96754a6e9636` as `0x${string}`)
-        : (`0x573496a44ace1d713723f5d91fcde63bf3d82d3a` as `0x${string}`);
+    // Get contract address based on chain ID
+    // Base mainnet: 8453
+    // Base Sepolia: 84532
+    // Local Anvil: 31337
+    let hootAddress: `0x${string}`
+    
+    if (chain?.id === 8453) {
+      // Base mainnet
+      hootAddress = `0xe210C6Ae4a88327Aad8cd52Cb08cAAa90D8b0f27` as `0x${string}`
+    } else if (chain?.id === 84532) {
+      // Base Sepolia
+      hootAddress = `0x2dC5532610Fe67A185bC9199a2d5975a130ec7f8` as `0x${string}`
+    } else if (chain?.id === 31337) {
+      // Local Anvil
+      hootAddress = `0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0` as `0x${string}`
+    } else {
+      // Fallback: try to get from env config or default to Base Sepolia
+      console.warn(`Unknown chain ID: ${chain?.id}, defaulting to Base Sepolia contract`)
+      hootAddress = `0x2dC5532610Fe67A185bC9199a2d5975a130ec7f8` as `0x${string}`
+    }
+    
+    console.log(`Setting contract address for chain ${chain?.id}: ${hootAddress}`)
     setHootContractAddress(hootAddress);
   }, [chain]);
 
@@ -726,15 +745,14 @@ function AdminPageContent() {
       );
 
       // Update backend with prize token, contract address, and transaction hash
-      await supabase
-        .from("quizzes")
-        .update({
-          prize_token: tokenAddress,
-          prize_amount: parseFloat(bountyAmount),
-          contract_address: hootContractAddress,
-          contract_tx_hash: txHash,
-        })
-        .eq("id", quizId);
+      // Use update-quiz edge function to trigger Telegram notification when bounty is added
+      await callEdgeFunction("update-quiz", {
+        quiz_id: quizId,
+        prize_token: tokenAddress,
+        prize_amount: parseFloat(bountyAmount),
+        contract_address: hootContractAddress,
+        contract_tx_hash: txHash,
+      });
 
       console.log("Quiz created on-chain with bounty:", {
         quizId,

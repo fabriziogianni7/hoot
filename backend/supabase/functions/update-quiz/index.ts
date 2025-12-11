@@ -3,6 +3,7 @@ import { handleCorsPreFlight } from "../_shared/cors.ts"
 import { successResponse, errorResponse } from "../_shared/response.ts"
 import { validateRequired } from "../_shared/validation.ts"
 import { initSupabaseClient } from "../_shared/supabase.ts"
+import { sendTelegramMessage } from "../_shared/telegram.ts"
 
 function buildCronExpression(date: Date): string {
   const minutes = date.getUTCMinutes()
@@ -35,7 +36,7 @@ serve(async (req) => {
 
     const { data: quiz, error: quizError } = await supabase
       .from("quizzes")
-      .select("id, user_id, status, scheduled_start_time")
+      .select("id, user_id, status, scheduled_start_time, title, description, prize_amount, prize_token, is_private, scheduled_start_time")
       .eq("id", payload.quiz_id)
       .single()
 
@@ -47,6 +48,14 @@ serve(async (req) => {
       return errorResponse("Forbidden", 403)
     }
 
+    // Track if bounty is being added (prize_amount going from 0 or null to > 0)
+    const oldPrizeAmount = quiz.prize_amount || 0
+    const isBountyBeingAdded = 
+      payload.hasOwnProperty("prize_amount") && 
+      (typeof payload.prize_amount === "number") &&
+      payload.prize_amount > 0 && 
+      oldPrizeAmount === 0
+
     const updateData: Record<string, unknown> = {}
 
     if (typeof payload.title === "string") {
@@ -55,6 +64,22 @@ serve(async (req) => {
 
     if (typeof payload.description === "string" || payload.description === null) {
       updateData.description = payload.description
+    }
+
+    if (payload.hasOwnProperty("prize_amount") && typeof payload.prize_amount === "number") {
+      updateData.prize_amount = payload.prize_amount
+    }
+
+    if (payload.hasOwnProperty("prize_token")) {
+      updateData.prize_token = payload.prize_token || null
+    }
+
+    if (payload.hasOwnProperty("contract_address")) {
+      updateData.contract_address = payload.contract_address || null
+    }
+
+    if (payload.hasOwnProperty("contract_tx_hash")) {
+      updateData.contract_tx_hash = payload.contract_tx_hash || null
     }
 
     let shouldSchedule = false
@@ -118,6 +143,27 @@ serve(async (req) => {
         console.error("Failed to schedule cron job:", scheduleError)
         return errorResponse("Failed to schedule quiz start", 500)
       }
+    }
+
+    // Send Telegram notification if bounty is being added and quiz is not private
+    if (isBountyBeingAdded && !quiz.is_private) {
+      const frontendUrl = Deno.env.get("FRONTEND_URL") || Deno.env.get("FRONTEND_BASE_URL") || "http://localhost:3000"
+      const finalPrizeAmount = (payload.prize_amount as number) || 0
+      const finalPrizeToken = payload.prize_token || quiz.prize_token || null
+      
+      sendTelegramMessage({
+        quiz_id: quiz.id,
+        title: quiz.title || "Quiz",
+        description: quiz.description || null,
+        prize_amount: finalPrizeAmount,
+        prize_token: finalPrizeToken,
+        scheduled_start_time: quiz.scheduled_start_time || null,
+        room_code: undefined,
+        frontend_url: frontendUrl
+      }).catch((error) => {
+        // Log error but don't fail the update
+        console.error("Failed to send Telegram notification:", error)
+      })
     }
 
     return successResponse({
