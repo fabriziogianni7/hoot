@@ -5,6 +5,7 @@ import { validateRequired } from '../_shared/validation.ts'
 import { initSupabaseClient } from '../_shared/supabase.ts'
 import { QUIZ_STATUS } from '../_shared/constants.ts'
 import type { CreateQuizRequest } from '../_shared/types.ts'
+import { sendTelegramMessage } from '../_shared/telegram.ts'
 
 function validateQuizData(request: CreateQuizRequest): string | null {
   const requiredError = validateRequired({
@@ -173,6 +174,26 @@ serve(async (req) => {
 
     // Create questions
     await createQuestions(supabase, quiz.id, request.questions)
+
+    // Send Telegram notification if quiz has a prize and is not private (non-blocking)
+    if (request.prize_amount > 0 && !request.is_private) {
+      // Support both FRONTEND_URL and FRONTEND_BASE_URL for flexibility
+      const frontendUrl = Deno.env.get("FRONTEND_URL") || Deno.env.get("FRONTEND_BASE_URL") || "http://localhost:3000"
+      
+      sendTelegramMessage({
+        quiz_id: quiz.id,
+        title: request.title,
+        description: request.description,
+        prize_amount: request.prize_amount,
+        prize_token: request.prize_token || null,
+        scheduled_start_time: request.scheduled_start_time || null,
+        room_code: undefined, // Game session is created later when quiz starts
+        frontend_url: frontendUrl
+      }).catch((error) => {
+        // Log error but don't fail the quiz creation
+        console.error("Failed to send Telegram notification:", error)
+      })
+    }
 
     return successResponse({ 
       success: true, 
