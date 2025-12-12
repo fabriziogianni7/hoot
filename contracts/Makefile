@@ -102,6 +102,17 @@ deploy-local: ## Deploy to local Anvil (requires TREASURY_ADDRESS in env)
 		--private-key $(PRIVATE_KEY) \
 		--broadcast
 
+deploy-async-local: ## Deploy AsyncQuizPool to local Anvil
+	@echo "$(GREEN)Deploying AsyncQuizPool to local Anvil...$(NC)"
+	@if [ -z "$(PRIVATE_KEY)" ] || [ -z "$(TREASURY_ADDRESS)" ]; then \
+		echo "$(RED)Error: PRIVATE_KEY or TREASURY_ADDRESS not set$(NC)"; \
+		exit 1; \
+	fi
+	forge script script/DeployAsyncQuizPoolLocal.s.sol \
+		--rpc-url http://localhost:8545 \
+		--private-key $(PRIVATE_KEY) \
+		--broadcast
+
 ##@ Testnet Deployments
 
 deploy-sepolia: ## Deploy to Base Sepolia testnet
@@ -111,6 +122,18 @@ deploy-sepolia: ## Deploy to Base Sepolia testnet
 		exit 1; \
 	fi
 	forge script script/DeployBaseSepolia.s.sol \
+		--rpc-url https://base-sepolia.drpc.org \
+		--private-key $(PRIVATE_KEY) \
+		--broadcast \
+		--verify --verifier-url https://api.etherscan.io/v2/api?chainid=84532 --etherscan-api-key $(BASESCAN_API_KEY) 
+
+deploy-async-sepolia: ## Deploy AsyncQuizPool to Base Sepolia
+	@echo "$(GREEN)Deploying AsyncQuizPool to Base Sepolia...$(NC)"
+	@if [ -z "$(PRIVATE_KEY)" ] || [ -z "$(TREASURY_ADDRESS)" ]; then \
+		echo "$(RED)Error: PRIVATE_KEY or TREASURY_ADDRESS not set$(NC)"; \
+		exit 1; \
+	fi
+	forge script script/DeployAsyncQuizPoolBaseSepolia.s.sol \
 		--rpc-url https://base-sepolia.drpc.org \
 		--private-key $(PRIVATE_KEY) \
 		--broadcast \
@@ -141,6 +164,20 @@ deploy-base: ## Deploy to Base mainnet
 		--verify --verifier-url https://api.etherscan.io/v2/api?chainid=8453 --etherscan-api-key $(BASESCAN_API_KEY) 
 		
 
+deploy-async-base: ## Deploy AsyncQuizPool to Base mainnet
+	@echo "$(RED)WARNING: Deploying AsyncQuizPool to Base MAINNET$(NC)"
+	@echo "Press Ctrl+C to cancel, or wait 5 seconds to continue..."
+	@sleep 5
+	@if [ -z "$(PRIVATE_KEY)" ] || [ -z "$(TREASURY_ADDRESS)" ]; then \
+		echo "$(RED)Error: PRIVATE_KEY or TREASURY_ADDRESS not set$(NC)"; \
+		exit 1; \
+	fi
+	forge script script/DeployAsyncQuizPoolBase.s.sol \
+		--rpc-url $(RPC_URL_BASE) \
+		--private-key $(PRIVATE_KEY) \
+		--broadcast \
+		--verify --verifier-url https://api.etherscan.io/v2/api?chainid=8453 --etherscan-api-key $(BASESCAN_API_KEY) 
+
 deploy-base-dry: ## Dry run deployment to Base mainnet
 	@echo "$(YELLOW)Dry run: Base mainnet deployment$(NC)"
 	forge script script/DeployBase.s.sol \
@@ -163,6 +200,20 @@ verify-sepolia: ## Verify contract on Base Sepolia (usage: make verify-sepolia C
 		--etherscan-api-key $(BASESCAN_API_KEY) \
 		--watch
 
+verify-async-sepolia: ## Verify AsyncQuizPool on Base Sepolia (usage: make verify-async-sepolia CONTRACT=0x...)
+	@echo "$(GREEN)Verifying AsyncQuizPool on Base Sepolia...$(NC)"
+	@if [ -z "$(CONTRACT)" ]; then \
+		echo "$(RED)Error: CONTRACT address not set. Usage: make verify-async-sepolia CONTRACT=0x...$(NC)"; \
+		exit 1; \
+	fi
+	forge verify-contract $(CONTRACT) \
+		AsyncQuizPool \
+		--chain-id 84532 \
+		--verifier-url https://api-sepolia.basescan.org/v2/api \
+		--constructor-args $$(cast abi-encode "constructor(address,uint16,uint16)" $(TREASURY_ADDRESS) $(CREATOR_FEE_BPS) $(PROTOCOL_FEE_BPS)) \
+		--etherscan-api-key $(BASESCAN_API_KEY) \
+		--watch
+
 verify-base: ## Verify contract on Base mainnet (usage: make verify-base CONTRACT=0x...)
 	@echo "$(GREEN)Verifying contract on Base mainnet...$(NC)"
 	@if [ -z "$(CONTRACT)" ]; then \
@@ -174,6 +225,20 @@ verify-base: ## Verify contract on Base mainnet (usage: make verify-base CONTRAC
 		--chain-id 8453 \
 		--verifier-url https://api.basescan.org/v2/api \
 		--constructor-args $$(cast abi-encode "constructor(address,uint256,uint256)" $(TREASURY_ADDRESS) $(TREASURY_FEE_PERCENT) $(FEE_PRECISION)) \
+		--etherscan-api-key $(BASESCAN_API_KEY) \
+		--watch
+
+verify-async-base: ## Verify AsyncQuizPool on Base mainnet (usage: make verify-async-base CONTRACT=0x...)
+	@echo "$(GREEN)Verifying AsyncQuizPool on Base mainnet...$(NC)"
+	@if [ -z "$(CONTRACT)" ]; then \
+		echo "$(RED)Error: CONTRACT address not set. Usage: make verify-async-base CONTRACT=0x...$(NC)"; \
+		exit 1; \
+	fi
+	forge verify-contract $(CONTRACT) \
+		AsyncQuizPool \
+		--chain-id 8453 \
+		--verifier-url https://api.basescan.org/v2/api \
+		--constructor-args $$(cast abi-encode "constructor(address,uint16,uint16)" $(TREASURY_ADDRESS) $(CREATOR_FEE_BPS) $(PROTOCOL_FEE_BPS)) \
 		--etherscan-api-key $(BASESCAN_API_KEY) \
 		--watch
 
