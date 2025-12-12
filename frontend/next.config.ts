@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  serverExternalPackages: ['pino-pretty', 'lokijs', 'encoding'],
+  serverExternalPackages: ['pino', 'pino-pretty', 'thread-stream']
 };
 
 export default nextConfig;
