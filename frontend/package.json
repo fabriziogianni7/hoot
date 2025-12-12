@@ -42,7 +42,8 @@
     "tailwindcss": "^3.3.0",
     "viem": "^2.38.3",
     "wagmi": "^2.19.2",
-    "why-is-node-running": "^3.2.2"
+    "why-is-node-running": "^3.2.2",
+    "tape": "^5.8.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
