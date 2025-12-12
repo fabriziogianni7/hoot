@@ -6,9 +6,9 @@
     "dev": "next dev --turbo",
     "dev:local": "ENV=local next dev --turbo",
     "dev:production": "ENV=production next dev --turbo",
-    "build": "next build --turbo",
-    "build:testnet": "ENV=testnet next build --turbo",
-    "build:prod": "ENV=production next build --turbo",
+    "build": "next build",
+    "build:testnet": "ENV=testnet next build",
+    "build:prod": "ENV=production next build",
     "start": "next start",
     "lint": "next lint"
   },
@@ -44,8 +44,7 @@
     "tailwindcss": "^3.3.0",
     "tape": "^5.8.1",
     "viem": "^2.38.3",
-    "wagmi": "^2.19.2",
-    "why-is-node-running": "^3.2.2"
+    "wagmi": "^2.19.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
