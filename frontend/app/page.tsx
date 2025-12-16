@@ -8,11 +8,11 @@ import { useSupabase } from "@/lib/supabase-context";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { useAuth } from "@/lib/use-auth";
 import WalletModal from "@/components/WalletModal";
+import Footer from "@/components/Footer";
 import { generateQuizViaAI } from "@/lib/supabase-client";
 import { extractPdfText, extractTextFile } from "@/lib/utils";
 import type { GenerateQuizResponse } from "@/lib/backend-types";
 import { getTokensForNetwork } from "@/lib/token-config";
-import QuizCalendarButton from "@/components/QuizCalendarButton";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -55,8 +55,6 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showIntroModal, setShowIntroModal] = useState(false);
   const [hasSeenIntro, setHasSeenIntro] = useState(false);
-  const [showReminderSheet, setShowReminderSheet] = useState(false);
-  const [showBaseProceedModal, setShowBaseProceedModal] = useState(false);
   const [aiForm, setAiForm] = useState({
     topic: "",
     questionCount: 5,
@@ -65,45 +63,19 @@ export default function Home() {
     documents: [] as { name: string; content: string }[],
   });
 
-  type NextPublicSession = {
+  // Upcoming quizzes banner state
+  type UpcomingQuiz = {
     quizId: string;
     title: string;
     scheduled_start_time: string;
-    room_code: string | null;
     prize_amount?: number | null;
-    prize_token?: string | null; // contract address
+    prize_token?: string | null;
     network_id?: number | null;
   };
+  const [upcomingQuizzes, setUpcomingQuizzes] = useState<UpcomingQuiz[]>([]);
+  const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
+  const [timeRemaining, setTimeRemaining] = useState<Record<string, number>>({});
 
-  const [upcomingSessions, setUpcomingSessions] = useState<NextPublicSession[]>(
-    []
-  );
-  const [activeSessionIndex, setActiveSessionIndex] = useState(0);
-  const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
-  const [bannerTouchStartX, setBannerTouchStartX] = useState<number | null>(
-    null
-  );
-
-  const currentSession =
-    upcomingSessions.length > 0
-      ? upcomingSessions[
-          Math.min(activeSessionIndex, upcomingSessions.length - 1)
-        ]
-      : null;
-
-  const goToNextSession = () => {
-    if (upcomingSessions.length <= 1) return;
-    setActiveSessionIndex((prev) =>
-      prev + 1 >= upcomingSessions.length ? 0 : prev + 1
-    );
-  };
-
-  const goToPreviousSession = () => {
-    if (upcomingSessions.length <= 1) return;
-    setActiveSessionIndex((prev) =>
-      prev - 1 < 0 ? upcomingSessions.length - 1 : prev - 1
-    );
-  };
 
   const isFarcasterMiniapp = Boolean(
     isMiniapp && miniappClient === "farcaster"
@@ -111,237 +83,6 @@ export default function Home() {
   const isBaseMiniapp = Boolean(isMiniapp && miniappClient === "base");
   const canEnableNotifications = isFarcasterMiniapp || isBaseMiniapp;
 
-  // Fetch next upcoming public quiz (and its room code)
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchNextSessions = async () => {
-      try {
-        console.log("[Home] Fetching upcoming public quiz sessions...");
-        const nowIso = new Date().toISOString();
-        // First, find the next public scheduled quizzes (up to 15)
-        const { data: quizzes, error: quizError } = await supabase
-          .from("quizzes")
-          .select(
-            "id,title,scheduled_start_time,is_private,status,prize_amount,prize_token,network_id"
-          )
-          .eq("is_private", false)
-          .not("scheduled_start_time", "is", null)
-          .gt("scheduled_start_time", nowIso)
-          .in("status", ["pending", "starting"])
-          .order("scheduled_start_time", { ascending: true })
-          .limit(15);
-
-        if (quizError) {
-          console.error("Error fetching upcoming public quizzes:", quizError);
-          if (!cancelled) {
-            setUpcomingSessions([]);
-            setTimeRemainingMs(null);
-          }
-          return;
-        }
-
-        const quizRows =
-          (quizzes || []) as {
-            id: string;
-            title: string;
-            scheduled_start_time: string | null;
-            prize_amount?: number | null;
-            prize_token?: string | null;
-            network_id?: number | null;
-          }[];
-
-        console.log("[Home] Upcoming quiz candidates:", quizRows);
-
-        if (!quizRows.length) {
-          console.log("[Home] No suitable quizzes found for banner.");
-          if (!cancelled) {
-            setUpcomingSessions([]);
-            setTimeRemainingMs(null);
-          }
-          return;
-        }
-
-        const quizIds = quizRows
-          .filter((q) => q.scheduled_start_time)
-          .map((q) => q.id);
-
-        if (!quizIds.length) {
-          console.log("[Home] No quizzes with scheduled_start_time; hiding banner.");
-          if (!cancelled) {
-            setUpcomingSessions([]);
-            setTimeRemainingMs(null);
-          }
-          return;
-        }
-
-        // Then, find waiting/starting game sessions for those quizzes to get room codes
-        const { data: sessions, error: sessionError } = await supabase
-          .from("game_sessions")
-          .select("quiz_id,room_code,status,created_at")
-          .in("quiz_id", quizIds)
-          .in("status", ["waiting", "starting"])
-          .order("created_at", { ascending: true });
-
-        if (sessionError) {
-          console.error(
-            "Error fetching game sessions for upcoming quizzes:",
-            sessionError
-          );
-          if (!cancelled) {
-            setUpcomingSessions([]);
-            setTimeRemainingMs(null);
-          }
-          return;
-        }
-
-        const sessionRows =
-          (sessions || []) as {
-            quiz_id: string;
-            room_code: string | null;
-            status: string;
-            created_at: string;
-          }[];
-
-        // For each quiz, pick the earliest-created waiting/starting session
-        const sessionByQuizId = new Map<string, (typeof sessionRows)[number]>();
-        for (const s of sessionRows) {
-          if (!sessionByQuizId.has(s.quiz_id)) {
-            sessionByQuizId.set(s.quiz_id, s);
-          }
-        }
-
-        const combined: NextPublicSession[] = [];
-
-        for (const quiz of quizRows) {
-          if (!quiz.scheduled_start_time) continue;
-          const sessionRow = sessionByQuizId.get(quiz.id);
-          if (!sessionRow) continue;
-
-          const scheduledTime = new Date(quiz.scheduled_start_time).getTime();
-          const diff = scheduledTime - Date.now();
-          if (diff <= 0) continue;
-
-          combined.push({
-            quizId: quiz.id,
-            title: quiz.title,
-            scheduled_start_time: quiz.scheduled_start_time,
-            room_code: sessionRow.room_code ?? null,
-            prize_amount: quiz.prize_amount ?? null,
-            prize_token: quiz.prize_token ?? null,
-            network_id: quiz.network_id ?? null,
-          });
-        }
-
-        console.log("[Home] Filtered upcoming sessions with room codes:", combined);
-
-        if (!cancelled) {
-          if (!combined.length) {
-            console.log(
-              "[Home] No upcoming quizzes with active sessions; hiding banner."
-            );
-            setUpcomingSessions([]);
-            setTimeRemainingMs(null);
-            return;
-          }
-
-          // combined is already ordered by scheduled_start_time asc via quizzes query
-          setUpcomingSessions(combined);
-          setActiveSessionIndex(0);
-
-          const firstScheduledTime = new Date(
-            combined[0].scheduled_start_time
-          ).getTime();
-          setTimeRemainingMs(firstScheduledTime - Date.now());
-        }
-      } catch (err) {
-        console.error(
-          "Unexpected error loading next public quiz session:",
-          err
-        );
-      }
-    };
-
-    console.log("[Home] useEffect[supabase] running", {
-      hasSupabase: Boolean(supabase),
-    });
-
-    if (!supabase) {
-      console.warn("[Home] Supabase client not available, skipping fetch.");
-      return;
-    }
-    fetchNextSessions();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase]);
-
-  // Countdown timer for the next session
-  useEffect(() => {
-    const session = currentSession;
-    if (!session || !session.scheduled_start_time) {
-      return;
-    }
-
-    const scheduledTime = new Date(session.scheduled_start_time).getTime();
-
-    const update = () => {
-      const diff = scheduledTime - Date.now();
-      if (diff <= 0) {
-        setTimeRemainingMs(0);
-        return false;
-      }
-      setTimeRemainingMs(diff);
-      return true;
-    };
-
-    // Run once immediately
-    if (!update()) return;
-
-    const interval = setInterval(() => {
-      const keepRunning = update();
-      if (!keepRunning) {
-        clearInterval(interval);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [currentSession]);
-
-  const formatTimeRemaining = (ms: number) => {
-    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    const parts = [
-      hours.toString().padStart(2, "0"),
-      minutes.toString().padStart(2, "0"),
-      seconds.toString().padStart(2, "0"),
-    ];
-    return parts.join(":");
-  };
-
-  const getPrizeLabel = (session: NextPublicSession) => {
-    if (
-      session.prize_amount == null ||
-      !session.prize_token ||
-      !session.network_id
-    ) {
-      return null;
-    }
-
-    const tokens = getTokensForNetwork(session.network_id);
-    const token = tokens.find(
-      (t) => t.address.toLowerCase() === session.prize_token!.toLowerCase()
-    );
-
-    if (!token) {
-      return null;
-    }
-
-    return `${session.prize_amount} ${token.symbol}`;
-  };
 
   // Load intro modal preference from localStorage (client-side only)
   useEffect(() => {
@@ -563,51 +304,6 @@ export default function Home() {
     }
   };
 
-  const eventStartIso =
-    currentSession?.scheduled_start_time != null
-      ? new Date(currentSession.scheduled_start_time)
-      : null;
-  const eventEndIso =
-    eventStartIso != null
-      ? new Date(eventStartIso.getTime() + 30 * 60 * 1000)
-      : null;
-
-  const eventUrl =
-    typeof window !== "undefined" && currentSession?.room_code
-      ? `${window.location.origin}/quiz/lobby/${currentSession.room_code}`
-      : "";
-
-  const formatCalendarDateTime = (date: Date | null) => {
-    if (!date) {
-      return null;
-    }
-    const iso = date.toISOString().replace(/[-:]/g, "");
-    const withoutMs = iso.split(".")[0];
-    return `${withoutMs}Z`;
-  };
-
-  const googleCalendarUrl = (() => {
-    if (!eventStartIso || !eventEndIso) {
-      return null;
-    }
-
-    const start = formatCalendarDateTime(eventStartIso);
-    const end = formatCalendarDateTime(eventEndIso);
-
-    if (!start || !end) {
-      return null;
-    }
-
-    const title = encodeURIComponent(currentSession?.title ?? "Hoot Quiz");
-    const details = encodeURIComponent(
-      `Join the Hoot quiz – Room ${currentSession?.room_code ?? ""}${
-        eventUrl ? `\n\n${eventUrl}` : ""
-      }`
-    );
-    const location = encodeURIComponent(eventUrl || "");
-
-    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
-  })();
 
   const openExternalUrl = (url: string | null) => {
     if (!url) {
@@ -692,15 +388,153 @@ export default function Home() {
     authFlowState === "checking" ||
     walletNotReady;
 
-  const prizeLabel = currentSession ? getPrizeLabel(currentSession) : null;
+  // Fetch upcoming quizzes for banner
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchUpcomingQuizzes = async () => {
+      if (!supabase) return;
+
+      try {
+        const nowIso = new Date().toISOString();
+        
+        const { data: quizzes, error: quizError } = await supabase
+          .from("quizzes")
+          .select(
+            "id,title,scheduled_start_time,is_private,status,prize_amount,prize_token,network_id"
+          )
+          .eq("is_private", false)
+          .not("scheduled_start_time", "is", null)
+          .gt("scheduled_start_time", nowIso)
+          .in("status", ["pending", "starting"])
+          .order("scheduled_start_time", { ascending: true })
+          .limit(10);
+
+        if (quizError || !quizzes) {
+          console.error("Error fetching upcoming quizzes:", quizError);
+          if (!cancelled) setUpcomingQuizzes([]);
+          return;
+        }
+
+        const quizRows = quizzes as {
+          id: string;
+          title: string;
+          scheduled_start_time: string | null;
+          prize_amount?: number | null;
+          prize_token?: string | null;
+          network_id?: number | null;
+        }[];
+
+        const filtered: UpcomingQuiz[] = [];
+        for (const quiz of quizRows) {
+          if (!quiz.scheduled_start_time) continue;
+          const scheduledTime = new Date(quiz.scheduled_start_time).getTime();
+          const diff = scheduledTime - Date.now();
+          if (diff <= 0) continue;
+
+          filtered.push({
+            quizId: quiz.id,
+            title: quiz.title,
+            scheduled_start_time: quiz.scheduled_start_time,
+            prize_amount: quiz.prize_amount ?? null,
+            prize_token: quiz.prize_token ?? null,
+            network_id: quiz.network_id ?? null,
+          });
+        }
+
+        if (!cancelled) {
+          setUpcomingQuizzes(filtered);
+          setCurrentQuizIndex(0);
+        }
+      } catch (err) {
+        console.error("Error loading upcoming quizzes:", err);
+        if (!cancelled) setUpcomingQuizzes([]);
+      }
+    };
+
+    fetchUpcomingQuizzes();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  // Countdown timer for upcoming quizzes
+  useEffect(() => {
+    if (upcomingQuizzes.length === 0) return;
+
+    const updateTimers = () => {
+      const newTimeRemaining: Record<string, number> = {};
+      upcomingQuizzes.forEach((quiz) => {
+        const scheduledTime = new Date(quiz.scheduled_start_time).getTime();
+        const diff = scheduledTime - Date.now();
+        newTimeRemaining[quiz.quizId] = Math.max(0, diff);
+      });
+      setTimeRemaining(newTimeRemaining);
+    };
+
+    updateTimers();
+    const interval = setInterval(updateTimers, 1000);
+
+    return () => clearInterval(interval);
+  }, [upcomingQuizzes]);
+
+  // Auto-scroll to next quiz every 4 seconds
+  useEffect(() => {
+    if (upcomingQuizzes.length <= 1) return;
+
+    const interval = setInterval(() => {
+      setCurrentQuizIndex((prev) => (prev + 1) % upcomingQuizzes.length);
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [upcomingQuizzes.length]);
+
+  // Format time remaining
+  const formatTimeRemaining = (ms: number) => {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
+
+  // Get prize label
+  const getPrizeLabel = (quiz: UpcomingQuiz) => {
+    if (
+      quiz.prize_amount == null ||
+      !quiz.prize_token ||
+      !quiz.network_id
+    ) {
+      return null;
+    }
+
+    const tokens = getTokensForNetwork(quiz.network_id);
+    const token = tokens.find(
+      (t) => t.address.toLowerCase() === quiz.prize_token!.toLowerCase()
+    );
+
+    if (!token) {
+      return null;
+    }
+
+    return `${quiz.prize_amount} ${token.symbol}`;
+  };
 
   return (
     <div
       style={{
         minHeight: "100vh",
         width: "100%",
-        backgroundColor: "black",
-        color: "white",
+        backgroundColor: "var(--color-background)",
+        color: "var(--color-text)",
         position: "relative",
         display: "flex",
         flexDirection: "column",
@@ -725,49 +559,34 @@ export default function Home() {
         }}
       />
 
-      {/* Farcaster Auth / Quick Menu trigger in top right corner */}
+      {/* User badge in top right corner */}
       <div
         style={{
           position: "absolute",
-          top: "1rem",
-          right: "1rem",
+          top: "var(--spacing-md)",
+          right: "var(--spacing-md)",
           zIndex: 10,
         }}
       >
-        <button
-          type="button"
-          onClick={() => setShowQuickMenu(true)}
+        <div
+          className="btn btn--primary"
           style={{
-            backgroundColor: "#795AFF",
-            color: "white",
-            padding: "0.5rem 1rem",
-            borderRadius: "0.5rem",
-            fontSize: "0.875rem",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            cursor: "pointer",
-            transition: "opacity 0.2s, transform 0.2s",
             opacity:
               loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
-            border: "none",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.opacity = "0.9";
-            e.currentTarget.style.transform = "scale(1.02)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.opacity = "1";
-            e.currentTarget.style.transform = "scale(1)";
+            maxWidth: "140px",
+            overflow: "hidden",
+            cursor: "default",
           }}
         >
           {/* Status dot */}
           <div
             style={{
+              marginRight: "0.5rem",
               width: "8px",
               height: "8px",
               borderRadius: "50%",
               backgroundColor: badgeText.statusColor || "#4ade80",
+              flexShrink: 0,
             }}
           ></div>
           <div
@@ -775,34 +594,44 @@ export default function Home() {
               display: "flex",
               flexDirection: "column",
               gap: "0.125rem",
+              minWidth: 0,
+              flex: 1,
             }}
           >
-            {badgeText.primary && <div>{badgeText.primary}</div>}
-            {badgeText.secondary &&
-              !badgeText.secondary.includes("Farcaster") && (
-                <div style={{ fontSize: "0.75rem", opacity: 0.8 }}>
-                  {badgeText.secondary}
+            {badgeText.primary && (
+              <div
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {badgeText.primary}
                 </div>
               )}
-          </div>
-          {/* Burger / menu icon */}
+            {badgeText.secondary &&
+              !badgeText.secondary.includes("Farcaster") && (
           <div
+                  className="text-caption"
             style={{
-              marginLeft: "0.25rem",
-              fontSize: "1rem",
-              opacity: 0.9,
+                    opacity: 0.8,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
             }}
           >
-            ☰
+                  {badgeText.secondary}
           </div>
-        </button>
+              )}
+          </div>
+        </div>
       </div>
 
       {/* Logo and description */}
       <div
         style={{
           position: "absolute",
-          top: "2rem",
+          top: "var(--spacing-xl)",
           left: "50%",
           transform: "translateX(-50%)",
           zIndex: 10,
@@ -815,7 +644,7 @@ export default function Home() {
           src="/Logo.png"
           alt="Hoot Logo"
           style={{
-            height: "230px",
+            height: "210px",
             width: "auto",
           }}
         />
@@ -828,14 +657,62 @@ export default function Home() {
               textAlign: "center",
               lineHeight: "1.3",
               opacity: 0.9,
-              marginTop: "0.05rem",
+              marginTop: "-3rem",
               width: "250px",
             }}
           >
-            You can use Hoot to join an existing quiz or to create new ones
+            You can use Hoot joining  
+            an existing <br /> quiz or to creating new ones
           </p>
         )}
       </div>
+
+      {/* Upcoming quizzes banner */}
+      {upcomingQuizzes.length > 0 && (
+        <div
+          className="upcoming-banner"
+          onClick={() => router.push("/quiz/next")}
+          style={{
+            position: "absolute",
+            top: "calc(var(--spacing-xl) + 240px)",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 10,
+            width: "calc(100% - 2rem)",
+            maxWidth: "360px",
+          }}
+        >
+          <div className="upcoming-banner__label">Upcoming quizzes</div>
+          <div className="upcoming-banner__content">
+            {upcomingQuizzes[currentQuizIndex] && (
+              <div
+                key={currentQuizIndex}
+                className="upcoming-banner__slide-item"
+              >
+                <div className="upcoming-banner__text">
+                  {upcomingQuizzes[currentQuizIndex].title}
+                </div>
+                {getPrizeLabel(upcomingQuizzes[currentQuizIndex]) && (
+                  <div className="upcoming-banner__bounty-wrapper">
+                    <div className="upcoming-banner__bounty-label">prize</div>
+                    <div className="upcoming-banner__bounty">
+                      {getPrizeLabel(upcomingQuizzes[currentQuizIndex])}
+                    </div>
+                  </div>
+                )}
+                <div className="upcoming-banner__countdown-wrapper">
+                  <div className="upcoming-banner__countdown-label">starts in</div>
+                  <div className="upcoming-banner__countdown">
+                    {formatTimeRemaining(
+                      timeRemaining[upcomingQuizzes[currentQuizIndex].quizId] || 0
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main content */}
       <div
@@ -857,18 +734,18 @@ export default function Home() {
           style={{
             width: "100%",
             background:
-              "linear-gradient(135deg, rgba(121, 90, 255, 0.1) 0%, rgba(121, 90, 255, 0.05) 100%)",
-            borderRadius: "0.75rem",
-            padding: "1.5rem",
-            marginBottom: "1.5rem",
+              "linear-gradient(135deg, var(--color-primary-light) 0%, rgba(121, 90, 255, 0.05) 100%)",
+            borderRadius: "var(--radius-lg)",
+            padding: "var(--spacing-lg)",
+            marginBottom: "var(--spacing-lg)",
             border:
               gamePin.trim().length === 6
-                ? "3px solid rgba(121, 90, 255, 0.8)"
-                : "3px solid rgba(121, 90, 255, 0.2)",
+                ? `3px solid var(--color-primary)`
+                : `3px solid var(--color-primary-medium)`,
             boxShadow:
               gamePin.trim().length === 6
-                ? "0 8px 32px rgba(121, 90, 255, 0.4)"
-                : "0 8px 32px rgba(121, 90, 255, 0.1)",
+                ? "var(--shadow-primary)"
+                : "var(--shadow-md)",
             transition: "border 0.2s ease, boxShadow 0.2s ease",
           }}
         >
@@ -899,46 +776,28 @@ export default function Home() {
               onBlur={() => setIsPinFocused(false)}
               placeholder="Insert PIN"
               maxLength={6}
+              className="form-input"
               style={{
                 width: "100%",
-                padding: "0.75rem",
                 background:
-                  "linear-gradient(135deg, rgba(121, 90, 255, 0.3) 0%, rgba(121, 90, 255, 0.2) 100%)",
-                color: "white",
+                  "linear-gradient(135deg, var(--color-primary-medium) 0%, var(--color-primary-light) 100%)",
                 border: `1px solid ${
                   gamePin.length === 6
-                    ? "rgba(34, 197, 94, 0.5)"
-                    : "rgba(121, 90, 255, 0.3)"
+                    ? "var(--color-primary)"
+                    : "var(--color-primary-medium)"
                 }`,
-                borderRadius: "0.5rem",
-                marginBottom: "0.75rem",
+                marginBottom: "var(--spacing-md)",
                 textAlign: "center",
-                fontSize: "1rem",
                 backdropFilter: "blur(5px)",
+                padding: "var(--spacing-md) var(--spacing-md)",
               }}
             />
 
             <button
               type="submit"
               disabled={isJoining || gamePin.trim().length !== 6}
-              style={{
-                width: "100%",
-                padding: "0.75rem",
-                backgroundColor:
-                  isJoining || gamePin.trim().length !== 6
-                    ? "rgba(121, 90, 255, 0.3)"
-                    : "#795AFF",
-                color: "white",
-                border: "none",
-                borderRadius: "0.5rem",
-                cursor:
-                  isJoining || gamePin.trim().length !== 6
-                    ? "not-allowed"
-                    : "pointer",
-                fontSize: "1rem",
-                fontWeight: "500",
-                opacity: isJoining || gamePin.trim().length !== 6 ? 0.7 : 1,
-              }}
+              className="btn btn--primary btn--large"
+              style={{ width: "100%" }}
             >
               {isJoining ? "Joining..." : "Join"}
             </button>
@@ -948,15 +807,14 @@ export default function Home() {
         {/* Error message */}
         {error && (
           <div
+            className="card"
             style={{
               backgroundColor: "rgba(239, 68, 68, 0.2)",
-              border: "1px solid #ef4444",
-              borderRadius: "0.5rem",
-              padding: "0.75rem",
-              marginBottom: "2rem",
+              border: `1px solid var(--color-error)`,
+              marginBottom: "var(--spacing-xl)",
               width: "100%",
               textAlign: "center",
-              color: "#fca5a5",
+              color: "var(--color-error)",
             }}
           >
             {error}
@@ -967,43 +825,22 @@ export default function Home() {
         {isAuthLoading ? (
           // Show loading state while checking authentication
           <div
+            className="btn btn--primary btn--large"
             style={{
               width: "100%",
-              padding: "0.75rem",
-              backgroundColor: "rgba(121, 90, 255, 0.3)",
-              color: "white",
-              border: "none",
-              borderRadius: "0.5rem",
-              fontSize: "1rem",
-              fontWeight: "500",
-              textAlign: "center",
               opacity: 0.7,
+              cursor: "not-allowed",
             }}
           >
             Loading...
           </div>
         ) : loggedUser?.isAuthenticated && loggedUser?.session ? (
-          // User is authenticated - show button that opens modal
+          // User is authenticated - navigate directly to admin page
           <button
-            onClick={() => setShowMethodModal(true)}
+            onClick={() => router.push("/quiz/admin")}
             disabled={gamePin.trim().length === 6}
-            style={{
-              width: "100%",
-              padding: "0.75rem",
-              backgroundColor:
-                gamePin.trim().length === 6
-                  ? "rgba(121, 90, 255, 0.3)"
-                  : "#795AFF",
-              color: "white",
-              border: "none",
-              borderRadius: "0.5rem",
-              cursor: gamePin.trim().length === 6 ? "not-allowed" : "pointer",
-              fontSize: "1rem",
-              fontWeight: "500",
-              marginBottom: "0",
-              textAlign: "center",
-              opacity: gamePin.trim().length === 6 ? 0.7 : 1,
-            }}
+            className="btn btn--primary btn--large"
+            style={{ width: "100%" }}
           >
             Create Quiz
           </button>
@@ -1013,28 +850,8 @@ export default function Home() {
             <button
               disabled={!!isAuthActionDisabled}
               onClick={() => handleAuthenticate()}
-              style={{
-                width: "100%",
-                padding: "0.75rem",
-                backgroundColor: isAuthActionDisabled
-                  ? "rgba(121, 90, 255, 0.4)"
-                  : "#795AFF",
-                color: "white",
-                border: "none",
-                borderRadius: "0.5rem",
-                fontSize: "1rem",
-                fontWeight: "500",
-                textAlign: "center",
-                cursor: isAuthActionDisabled ? "not-allowed" : "pointer",
-                opacity: isAuthActionDisabled ? 0.7 : 1,
-                transition: "opacity 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                if (!isAuthActionDisabled) {
-                  e.currentTarget.style.opacity = "0.8";
-                }
-              }}
-              onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+              className="btn btn--primary btn--large"
+              style={{ width: "100%" }}
             >
               {walletNotReady
                 ? "Waiting for wallet..."
@@ -1057,13 +874,23 @@ export default function Home() {
           </div>
         )}
 
-        {/* Help text */}
+      </div>
+
+      {/* Help text - positioned near footer */}
         <div
           style={{
+          position: "fixed",
+          bottom: "70px",
+          left: "50%",
+          transform: "translateX(-50%)",
             textAlign: "center",
             color: "#6b7280",
             fontSize: "0.875rem",
             lineHeight: "1.5",
+          zIndex: 1,
+          width: "100%",
+          maxWidth: "400px",
+          padding: "0 var(--spacing-md)",
           }}
         >
           <p>
@@ -1082,7 +909,6 @@ export default function Home() {
               Contact us
             </a>
           </p>
-        </div>
       </div>
 
       {/* App intro modal – shown once after first successful connect */}
@@ -1157,21 +983,14 @@ export default function Home() {
                     marginBottom: "0.6rem",
                   }}
                 />
-                <h3
-                  style={{
-                    color: "white",
-                    fontSize: "1.1rem",
-                    fontWeight: 600,
-                    marginBottom: "0.15rem",
-                  }}
-                >
+                <h3 className="text-h2" style={{ marginBottom: "var(--spacing-xs)" }}>
                   Welcome to Hoot
                 </h3>
                 <p
+                  className="text-body"
                   style={{
-                    color: "#cbd5f5",
-                    fontSize: "0.85rem",
-                    lineHeight: 1.4,
+                    color: "var(--color-text-secondary)",
+                    lineHeight: "var(--line-height-normal)",
                   }}
                 >
                   Hoot is a crypto-native trivia platform to play, win and host quizzes.
@@ -1181,23 +1000,22 @@ export default function Home() {
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: "0.5rem",
-                  marginTop: "0.25rem",
+                  gap: "var(--spacing-sm)",
+                  marginTop: "var(--spacing-xs)",
                 }}
               >
                 <div
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
-                    gap: "0.5rem",
+                    gap: "var(--spacing-xs)",
                   }}
                 >
-                  <span style={{ fontSize: "1rem" }}>🎯</span>
+                  <span style={{ fontSize: "var(--font-size-body-lg)" }}>🎯</span>
                   <p
+                    className="text-body"
                     style={{
-                      color: "#e5e7eb",
-                      fontSize: "0.82rem",
-                      lineHeight: 1.4,
+                      lineHeight: "var(--line-height-normal)",
                       margin: 0,
                     }}
                   >
@@ -1209,15 +1027,14 @@ export default function Home() {
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
-                    gap: "0.5rem",
+                    gap: "var(--spacing-xs)",
                   }}
                 >
-                  <span style={{ fontSize: "1rem" }}>🔔</span>
+                  <span style={{ fontSize: "var(--font-size-body-lg)" }}>🔔</span>
                   <p
+                    className="text-body"
                     style={{
-                      color: "#e5e7eb",
-                      fontSize: "0.82rem",
-                      lineHeight: 1.4,
+                      lineHeight: "var(--line-height-normal)",
                       margin: 0,
                     }}
                   >
@@ -1228,15 +1045,14 @@ export default function Home() {
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
-                    gap: "0.5rem",
+                    gap: "var(--spacing-xs)",
                   }}
                 >
-                  <span style={{ fontSize: "1rem" }}>🛠️</span>
+                  <span style={{ fontSize: "var(--font-size-body-lg)" }}>🛠️</span>
                   <p
+                    className="text-body"
                     style={{
-                      color: "#e5e7eb",
-                      fontSize: "0.82rem",
-                      lineHeight: 1.4,
+                      lineHeight: "var(--line-height-normal)",
                       margin: 0,
                     }}
                   >
@@ -1247,19 +1063,8 @@ export default function Home() {
               <button
                 type="button"
                 onClick={closeIntroModal}
-                style={{
-                  marginTop: "0.6rem",
-                  width: "100%",
-                  padding: "0.65rem 1rem",
-                  borderRadius: "9999px",
-                  border: "1px solid rgba(129,140,248,0.9)",
-                  background:
-                    "linear-gradient(135deg, rgba(129,140,248,0.95), rgba(56,189,248,0.9))",
-                  color: "white",
-                  fontSize: "0.9rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
+                className="btn btn--primary btn--large"
+                style={{ marginTop: "var(--spacing-md)", width: "100%" }}
               >
                 Got it, let&apos;s play
               </button>
@@ -1279,69 +1084,46 @@ export default function Home() {
       {/* Quick Menu Bottom Sheet */}
       {showQuickMenu && (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "center",
-            zIndex: 60,
-          }}
+          className="bottom-sheet"
           onClick={(e) => {
             if (e.target === e.currentTarget) {
               setShowQuickMenu(false);
             }
           }}
         >
-          <div
-            style={{
-              backgroundColor: "#000",
-              border: "1px solid white",
-              borderTopLeftRadius: "0.75rem",
-              borderTopRightRadius: "0.75rem",
-              padding: "1.5rem",
-              width: "100%",
-              maxWidth: "28rem",
-              margin: "0 1rem",
-              marginBottom: 0,
-              position: "relative",
-            }}
-          >
+          <div className="bottom-sheet__content">
             <button
               onClick={() => setShowQuickMenu(false)}
+              className="btn"
               style={{
                 position: "absolute",
-                top: "1rem",
-                right: "1rem",
-                color: "white",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                fontSize: "1.25rem",
+                top: "var(--spacing-md)",
+                right: "var(--spacing-md)",
+                padding: "var(--spacing-xs)",
+                minWidth: "auto",
+                background: "transparent",
+                color: "var(--color-text)",
               }}
+              aria-label="Close"
             >
               ×
             </button>
 
-            <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
-              <h3
-                style={{
-                  color: "white",
-                  fontSize: "1.125rem",
-                  fontWeight: 600,
-                  marginBottom: "0.5rem",
-                }}
-              >
+            <div style={{ textAlign: "center", marginBottom: "var(--spacing-lg)" }}>
+              <h3 className="text-h2" style={{ marginBottom: "var(--spacing-xs)" }}>
                 Quick Actions
               </h3>
-              <p style={{ color: "#d1d5db", fontSize: "0.875rem" }}>
+              <p className="text-body" style={{ color: "var(--color-text-secondary)" }}>
                 Jump to your quizzes or open your wallet
               </p>
             </div>
 
             <div
-              style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--spacing-md)",
+              }}
             >
               {/* Your Quizzes */}
               <button
@@ -1350,34 +1132,31 @@ export default function Home() {
                   setShowQuickMenu(false);
                   router.push("/quiz/admin/my-quizzes");
                 }}
+                className="btn btn--primary btn--large"
                 style={{
                   width: "100%",
-                  padding: "1rem",
-                  backgroundColor: "rgba(121, 90, 255, 0.4)",
-                  border: "2px solid #795AFF",
-                  borderRadius: "0.5rem",
-                  color: "white",
-                  cursor: "pointer",
                   textAlign: "left",
+                  justifyContent: "flex-start",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
                 }}
               >
                 <div
+                  className="text-h2"
                   style={{
-                    fontWeight: 600,
-                    fontSize: "1.125rem",
                     display: "flex",
                     alignItems: "center",
-                    gap: "0.5rem",
+                    gap: "var(--spacing-xs)",
+                    marginBottom: "var(--spacing-xs)",
                   }}
                 >
                   <span>📚</span>
                   <span>Your quizzes</span>
                 </div>
                 <div
+                  className="text-body"
                   style={{
-                    fontSize: "0.875rem",
-                    color: "#c084fc",
-                    marginTop: "0.25rem",
+                    color: "var(--color-primary-light)",
                   }}
                 >
                   View and manage the quizzes you have created
@@ -1388,43 +1167,38 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => {
-                  // Mirror the existing badge behavior:
-                  // only open wallet if the user is authenticated and has a wallet address
                   if (loggedUser?.isAuthenticated && loggedUser?.address) {
                     setShowQuickMenu(false);
                     setShowWalletModal(true);
                   }
                 }}
+                className="btn btn--secondary btn--large"
                 style={{
                   width: "100%",
-                  padding: "1rem",
-                  backgroundColor: "rgba(31, 41, 55, 0.9)",
-                  border: "1px solid #4b5563",
-                  borderRadius: "0.5rem",
-                  color: "white",
-                  cursor: "pointer",
                   textAlign: "left",
+                  justifyContent: "flex-start",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
                   opacity:
                     loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
                 }}
               >
                 <div
+                  className="text-h2"
                   style={{
-                    fontWeight: 600,
-                    fontSize: "1.125rem",
                     display: "flex",
                     alignItems: "center",
-                    gap: "0.5rem",
+                    gap: "var(--spacing-xs)",
+                    marginBottom: "var(--spacing-xs)",
                   }}
                 >
                   <span>👛</span>
                   <span>Wallet</span>
                 </div>
                 <div
+                  className="text-body"
                   style={{
-                    fontSize: "0.875rem",
-                    color: "#d1d5db",
-                    marginTop: "0.25rem",
+                    color: "var(--color-text-secondary)",
                   }}
                 >
                   {loggedUser?.isAuthenticated && loggedUser?.address
@@ -1440,35 +1214,14 @@ export default function Home() {
       {/* Method Chooser Modal */}
       {showMethodModal && (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "center",
-            zIndex: 50,
-          }}
+          className="bottom-sheet"
           onClick={(e) => {
             if (e.target === e.currentTarget && !isGenerating) {
               setShowMethodModal(false);
             }
           }}
         >
-          <div
-            style={{
-              backgroundColor: "#000",
-              border: "1px solid white",
-              borderTopLeftRadius: "0.5rem",
-              borderTopRightRadius: "0.5rem",
-              padding: "1.5rem",
-              width: "100%",
-              maxWidth: "28rem",
-              margin: "0 1rem",
-              marginBottom: 0,
-              position: "relative",
-            }}
-          >
+          <div className="bottom-sheet__content">
             <button
               onClick={() => {
                 if (!isGenerating) {
@@ -1476,37 +1229,35 @@ export default function Home() {
                 }
               }}
               disabled={isGenerating}
+              className="btn"
               style={{
                 position: "absolute",
-                top: "1rem",
-                right: "1rem",
-                color: isGenerating ? "#6b7280" : "white",
-                background: "none",
-                border: "none",
-                cursor: isGenerating ? "not-allowed" : "pointer",
-                fontSize: "1.25rem",
+                top: "var(--spacing-md)",
+                right: "var(--spacing-md)",
+                padding: "var(--spacing-xs)",
+                minWidth: "auto",
+                background: "transparent",
+                color: isGenerating ? "var(--color-text-muted)" : "var(--color-text)",
               }}
+              aria-label="Close"
             >
               ×
             </button>
-            <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
-              <h3
-                style={{
-                  color: "white",
-                  fontSize: "1.125rem",
-                  fontWeight: 600,
-                  marginBottom: "0.5rem",
-                }}
-              >
+            <div style={{ textAlign: "center", marginBottom: "var(--spacing-lg)" }}>
+              <h3 className="text-h2" style={{ marginBottom: "var(--spacing-xs)" }}>
                 Create Quiz
               </h3>
-              <p style={{ color: "#d1d5db", fontSize: "0.875rem" }}>
+              <p className="text-body" style={{ color: "var(--color-text-secondary)" }}>
                 Choose how you want to create your quiz
               </p>
             </div>
 
             <div
-              style={{ display: "flex", flexDirection: "column", gap: "1rem" }}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--spacing-md)",
+              }}
             >
               {/* AI Option - First/Primary */}
               <button
@@ -1515,35 +1266,33 @@ export default function Home() {
                   setShowAiModal(true);
                 }}
                 disabled={isGenerating}
+                className="btn btn--primary btn--large"
                 style={{
                   width: "100%",
-                  padding: "1rem",
-                  backgroundColor: "rgba(121, 90, 255, 0.4)",
-                  border: "2px solid #795AFF",
-                  borderRadius: "0.5rem",
-                  color: "white",
-                  cursor: isGenerating ? "not-allowed" : "pointer",
-                  opacity: isGenerating ? 0.5 : 1,
                   textAlign: "left",
+                  justifyContent: "flex-start",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
                 }}
               >
                 <div
                   style={{
                     fontWeight: 600,
-                    fontSize: "1.125rem",
+                    fontSize: "var(--font-size-h2)",
                     display: "flex",
                     alignItems: "center",
-                    gap: "0.5rem",
+                    gap: "var(--spacing-xs)",
+                    marginBottom: "var(--spacing-xs)",
                   }}
                 >
                   <span>✨</span>
                   <span>Create with AI (Recommended)</span>
                 </div>
                 <div
+                  className="text-body"
                   style={{
-                    fontSize: "0.875rem",
-                    color: "#c084fc",
-                    marginTop: "0.25rem",
+                    color: "var(--color-primary-light)",
+                    fontSize: "var(--font-size-body)",
                   }}
                 >
                   Generate quiz questions automatically using AI
@@ -1557,26 +1306,22 @@ export default function Home() {
                   router.push("/quiz/admin");
                 }}
                 disabled={isGenerating}
+                className="btn btn--secondary btn--large"
                 style={{
                   width: "100%",
-                  padding: "1rem",
-                  backgroundColor: "rgba(121, 90, 255, 0.2)",
-                  border: "1px solid #4b5563",
-                  borderRadius: "0.5rem",
-                  color: "white",
-                  cursor: isGenerating ? "not-allowed" : "pointer",
-                  opacity: isGenerating ? 0.5 : 1,
                   textAlign: "left",
+                  justifyContent: "flex-start",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
                 }}
               >
-                <div style={{ fontWeight: 600, fontSize: "1.125rem" }}>
+                <div className="text-h2" style={{ marginBottom: "var(--spacing-xs)" }}>
                   Build Manually
                 </div>
                 <div
+                  className="text-body"
                   style={{
-                    fontSize: "0.875rem",
-                    color: "#d1d5db",
-                    marginTop: "0.25rem",
+                    color: "var(--color-text-secondary)",
                   }}
                 >
                   Create quiz questions one by one
@@ -1590,37 +1335,15 @@ export default function Home() {
       {/* AI Generation Modal */}
       {showAiModal && (
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "flex-end",
-            justifyContent: "center",
-            zIndex: 50,
-            overflowY: "auto",
-          }}
+          className="bottom-sheet"
+          style={{ overflowY: "auto" }}
           onClick={(e) => {
             if (e.target === e.currentTarget && !isGenerating) {
               setShowAiModal(false);
             }
           }}
         >
-          <div
-            style={{
-              backgroundColor: "#000",
-              border: "1px solid white",
-              borderTopLeftRadius: "0.5rem",
-              borderTopRightRadius: "0.5rem",
-              padding: "1.5rem",
-              width: "100%",
-              maxWidth: "28rem",
-              margin: "0 1rem",
-              marginBottom: 0,
-              marginTop: "2rem",
-              position: "relative",
-            }}
-          >
+          <div className="bottom-sheet__content" style={{ marginTop: "var(--spacing-xl)" }}>
             <button
               onClick={() => {
                 if (!isGenerating) {
@@ -1628,31 +1351,25 @@ export default function Home() {
                 }
               }}
               disabled={isGenerating}
+              className="btn"
               style={{
                 position: "absolute",
-                top: "1rem",
-                right: "1rem",
-                color: isGenerating ? "#6b7280" : "white",
-                background: "none",
-                border: "none",
-                cursor: isGenerating ? "not-allowed" : "pointer",
-                fontSize: "1.25rem",
+                top: "var(--spacing-md)",
+                right: "var(--spacing-md)",
+                padding: "var(--spacing-xs)",
+                minWidth: "auto",
+                background: "transparent",
+                color: isGenerating ? "var(--color-text-muted)" : "var(--color-text)",
               }}
+              aria-label="Close"
             >
               ×
             </button>
-            <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
-              <h3
-                style={{
-                  color: "white",
-                  fontSize: "1.125rem",
-                  fontWeight: 600,
-                  marginBottom: "0.5rem",
-                }}
-              >
+            <div style={{ textAlign: "center", marginBottom: "var(--spacing-lg)" }}>
+              <h3 className="text-h2" style={{ marginBottom: "var(--spacing-xs)" }}>
                 Generate Quiz with AI
               </h3>
-              <p style={{ color: "#d1d5db", fontSize: "0.875rem" }}>
+              <p className="text-body" style={{ color: "var(--color-text-secondary)" }}>
                 Let AI create your quiz questions
               </p>
             </div>
@@ -1664,23 +1381,21 @@ export default function Home() {
                   flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  padding: "3rem 1rem",
-                  gap: "1rem",
+                  padding: "var(--spacing-2xl) var(--spacing-md)",
+                  gap: "var(--spacing-md)",
                 }}
               >
                 <div
                   style={{
                     width: "3rem",
                     height: "3rem",
-                    border: "4px solid rgba(121, 90, 255, 0.3)",
-                    borderTopColor: "#795AFF",
+                    border: "4px solid var(--color-primary-medium)",
+                    borderTopColor: "var(--color-primary)",
                     borderRadius: "50%",
                     animation: "spin 1s linear infinite",
                   }}
                 />
-                <p style={{ color: "white", fontSize: "1rem" }}>
-                  Generating your quiz...
-                </p>
+                <p className="text-body">Generating your quiz...</p>
                 <style>{`
                   @keyframes spin {
                     to { transform: rotate(360deg); }
@@ -1692,21 +1407,13 @@ export default function Home() {
                 style={{
                   display: "flex",
                   flexDirection: "column",
-                  gap: "1rem",
+                  gap: "var(--spacing-md)",
                 }}
               >
                 {/* Topic Input */}
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      color: "white",
-                      fontSize: "0.875rem",
-                      fontWeight: 500,
-                      marginBottom: "0.5rem",
-                    }}
-                  >
-                    Topic <span style={{ color: "#ef4444" }}>*</span>
+                <div className="form-group">
+                  <label className="form-label">
+                    Topic <span style={{ color: "var(--color-error)" }}>*</span>
                   </label>
                   <input
                     type="text"
@@ -1716,29 +1423,13 @@ export default function Home() {
                     }
                     placeholder="e.g., Ethereum, Web3, History of Bitcoin"
                     disabled={isGenerating}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem 1rem",
-                      backgroundColor: "#1f2937",
-                      border: "1px solid #4b5563",
-                      borderRadius: "0.5rem",
-                      color: "white",
-                      fontSize: "0.875rem",
-                    }}
+                    className="form-input"
                   />
                 </div>
 
                 {/* Question Count Slider */}
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      color: "white",
-                      fontSize: "0.875rem",
-                      fontWeight: 500,
-                      marginBottom: "0.5rem",
-                    }}
-                  >
+                <div className="form-group">
+                  <label className="form-label">
                     Number of Questions: {aiForm.questionCount}
                   </label>
                   <input
@@ -1756,18 +1447,18 @@ export default function Home() {
                     style={{
                       width: "100%",
                       height: "0.5rem",
-                      backgroundColor: "#374151",
-                      borderRadius: "0.25rem",
+                      backgroundColor: "var(--color-surface)",
+                      borderRadius: "var(--radius-sm)",
                       outline: "none",
                     }}
                   />
                   <div
+                    className="text-caption"
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
-                      fontSize: "0.75rem",
-                      color: "#9ca3af",
-                      marginTop: "0.25rem",
+                      marginTop: "var(--spacing-xs)",
+                      color: "var(--color-text-muted)",
                     }}
                   >
                     <span>1</span>
@@ -1776,18 +1467,8 @@ export default function Home() {
                 </div>
 
                 {/* Difficulty Level */}
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      color: "white",
-                      fontSize: "0.875rem",
-                      fontWeight: 500,
-                      marginBottom: "0.5rem",
-                    }}
-                  >
-                    Difficulty Level
-                  </label>
+                <div className="form-group">
+                  <label className="form-label">Difficulty Level</label>
                   <select
                     value={aiForm.difficulty}
                     onChange={(e) =>
@@ -1800,15 +1481,7 @@ export default function Home() {
                       })
                     }
                     disabled={isGenerating}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem 1rem",
-                      backgroundColor: "#1f2937",
-                      border: "1px solid #4b5563",
-                      borderRadius: "0.5rem",
-                      color: "white",
-                      fontSize: "0.875rem",
-                    }}
+                    className="form-input"
                   >
                     <option value="easy">Easy 😇</option>
                     <option value="medium">Medium 🤔</option>
@@ -1817,18 +1490,8 @@ export default function Home() {
                 </div>
 
                 {/* Optional Context */}
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      color: "white",
-                      fontSize: "0.875rem",
-                      fontWeight: 500,
-                      marginBottom: "0.5rem",
-                    }}
-                  >
-                    Additional Instructions (Optional)
-                  </label>
+                <div className="form-group">
+                  <label className="form-label">Additional Instructions (Optional)</label>
                   <textarea
                     value={aiForm.context}
                     onChange={(e) =>
@@ -1837,36 +1500,20 @@ export default function Home() {
                     placeholder="e.g., Focus on technical details, Make questions challenging"
                     disabled={isGenerating}
                     rows={3}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem 1rem",
-                      backgroundColor: "#1f2937",
-                      border: "1px solid #4b5563",
-                      borderRadius: "0.5rem",
-                      color: "white",
-                      fontSize: "0.875rem",
-                      resize: "none",
-                    }}
+                    className="form-input"
+                    style={{ resize: "none" }}
                   />
                 </div>
 
                 {/* File Upload */}
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      color: "white",
-                      fontSize: "0.875rem",
-                      fontWeight: 500,
-                      marginBottom: "0.5rem",
-                    }}
-                  >
+                <div className="form-group">
+                  <label className="form-label">
                     Upload Documents (Optional)
                     <span
+                      className="text-caption"
                       style={{
-                        color: "#9ca3af",
-                        fontSize: "0.75rem",
-                        marginLeft: "0.5rem",
+                        color: "var(--color-text-muted)",
+                        marginLeft: "var(--spacing-xs)",
                       }}
                     >
                       PDF or text files, max 3 files, 5MB each
@@ -1878,23 +1525,15 @@ export default function Home() {
                     multiple
                     onChange={handleFileUpload}
                     disabled={isGenerating || aiForm.documents.length >= 3}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem 1rem",
-                      backgroundColor: "#1f2937",
-                      border: "1px solid #4b5563",
-                      borderRadius: "0.5rem",
-                      color: "white",
-                      fontSize: "0.875rem",
-                    }}
+                    className="form-input"
                   />
                   {aiForm.documents.length > 0 && (
                     <div
                       style={{
-                        marginTop: "0.5rem",
+                        marginTop: "var(--spacing-sm)",
                         display: "flex",
                         flexDirection: "column",
-                        gap: "0.5rem",
+                        gap: "var(--spacing-xs)",
                       }}
                     >
                       {aiForm.documents.map((doc, index) => (
@@ -1904,15 +1543,14 @@ export default function Home() {
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "space-between",
-                            backgroundColor: "#1f2937",
-                            borderRadius: "0.5rem",
-                            padding: "0.5rem",
+                            backgroundColor: "var(--color-surface)",
+                            borderRadius: "var(--radius-md)",
+                            padding: "var(--spacing-xs)",
                           }}
                         >
                           <span
+                            className="text-body"
                             style={{
-                              color: "white",
-                              fontSize: "0.875rem",
                               overflow: "hidden",
                               textOverflow: "ellipsis",
                               whiteSpace: "nowrap",
@@ -1924,13 +1562,15 @@ export default function Home() {
                           <button
                             onClick={() => handleRemoveDocument(index)}
                             disabled={isGenerating}
+                            className="btn"
                             style={{
-                              marginLeft: "0.5rem",
-                              color: "#ef4444",
-                              background: "none",
-                              border: "none",
-                              cursor: isGenerating ? "not-allowed" : "pointer",
+                              marginLeft: "var(--spacing-xs)",
+                              padding: "var(--spacing-xs)",
+                              minWidth: "auto",
+                              background: "transparent",
+                              color: "var(--color-error)",
                             }}
+                            aria-label="Remove document"
                           >
                             ×
                           </button>
@@ -1944,24 +1584,8 @@ export default function Home() {
                 <button
                   onClick={handleGenerateQuiz}
                   disabled={isGenerating || !aiForm.topic.trim()}
-                  style={{
-                    width: "100%",
-                    padding: "1rem",
-                    backgroundColor:
-                      isGenerating || !aiForm.topic.trim()
-                        ? "rgba(121, 90, 255, 0.3)"
-                        : "#795AFF",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "0.5rem",
-                    fontSize: "1rem",
-                    fontWeight: 600,
-                    cursor:
-                      isGenerating || !aiForm.topic.trim()
-                        ? "not-allowed"
-                        : "pointer",
-                    opacity: isGenerating || !aiForm.topic.trim() ? 0.5 : 1,
-                  }}
+                  className="btn btn--primary btn--large"
+                  style={{ width: "100%" }}
                 >
                   Generate Quiz
                 </button>
@@ -1971,467 +1595,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Reminder Sheet: calendar + notifications */}
-      {showReminderSheet &&
-        currentSession &&
-        currentSession.room_code &&
-        eventStartIso &&
-        eventEndIso && (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              backgroundColor: "rgba(0, 0, 0, 0.5)",
-              display: "flex",
-              alignItems: "flex-end",
-              justifyContent: "center",
-              zIndex: 55,
-            }}
-            onClick={(e) => {
-              if (e.target === e.currentTarget) {
-                setShowReminderSheet(false);
-              }
-            }}
-          >
-            <div
-              style={{
-                backgroundColor: "#000",
-                border: "1px solid white",
-                borderTopLeftRadius: "0.75rem",
-                borderTopRightRadius: "0.75rem",
-                padding: "1.5rem",
-                width: "100%",
-                maxWidth: "28rem",
-                margin: "0 1rem",
-                marginBottom: 0,
-                position: "relative",
-              }}
-            >
-              <button
-                onClick={() => setShowReminderSheet(false)}
-                style={{
-                  position: "absolute",
-                  top: "1rem",
-                  right: "1rem",
-                  color: "white",
-                  background: "none",
-                  border: "none",
-                  cursor: "pointer",
-                  fontSize: "1.25rem",
-                }}
-              >
-                ×
-              </button>
-
-              <div style={{ textAlign: "center", marginBottom: "1.25rem" }}>
-                <h3
-                  style={{
-                    color: "white",
-                    fontSize: "1.1rem",
-                    fontWeight: 600,
-                    marginBottom: "0.4rem",
-                  }}
-                >
-                  Stay in the loop
-                </h3>
-                <p style={{ color: "#d1d5db", fontSize: "0.85rem" }}>
-                  Add this quiz to your calendar or enable notifications
-                </p>
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.75rem",
-                }}
-              >
-                {/* Calendar option */}
-                {eventStartIso && eventEndIso && typeof isMiniapp === "boolean" && (
-                  <QuizCalendarButton
-                    title={currentSession.title}
-                    eventStart={eventStartIso}
-                    eventEnd={eventEndIso}
-                    roomCode={currentSession.room_code}
-                    eventUrl={eventUrl}
-                    isMiniapp={isMiniapp}
-                    isBaseMiniapp={isBaseMiniapp}
-                    googleCalendarUrl={googleCalendarUrl}
-                    openExternalUrl={openExternalUrl}
-                    onBaseMiniappClick={() => setShowBaseProceedModal(true)}
-                  />
-                )}
-
-                {/* Notification option */}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!canEnableNotifications) return;
-                    await handleEnableNotifications();
-                  }}
-                  disabled={!canEnableNotifications || isAddingMiniApp}
-                  style={{
-                    width: "100%",
-                    padding: "0.9rem",
-                    borderRadius: "0.5rem",
-                    border: "1px solid #4b5563",
-                    backgroundColor: "rgba(17,24,39,0.95)",
-                    color: "white",
-                    fontSize: "0.9rem",
-                    textAlign: "left",
-                    opacity:
-                      !canEnableNotifications || isAddingMiniApp ? 0.6 : 1,
-                    cursor:
-                      !canEnableNotifications || isAddingMiniApp
-                        ? "not-allowed"
-                        : "pointer",
-                  }}
-                >
-                  <div style={{ fontWeight: 500, marginBottom: "0.2rem" }}>
-                    🔔{" "}
-                    {canEnableNotifications
-                      ? isAddingMiniApp
-                        ? "Enabling notifications..."
-                        : "Enable notifications"
-                      : "Notifications only in MiniApps"}
-                  </div>
-                  <div style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
-                    {canEnableNotifications
-                      ? isFarcasterMiniapp
-                        ? "We’ll add this MiniApp to your Farcaster client so you won’t miss the quiz."
-                        : "We’ll add this MiniApp to your Base app so you won’t miss the quiz."
-                      : "Open Hoot in Farcaster or Base MiniApp to enable notifications."}
-                  </div>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-      {/* Base app: confirm + explainer before opening browser */}
-      {isBaseMiniapp && showBaseProceedModal && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0,0,0,0.75)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 70,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#000",
-              borderRadius: "0.75rem",
-              border: "1px solid rgba(255,255,255,0.4)",
-              maxWidth: "22rem",
-              width: "90%",
-              padding: "1.25rem",
-              textAlign: "center",
-              position: "relative",
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setShowBaseProceedModal(false)}
-              style={{
-                position: "absolute",
-                top: "1rem",
-                right: "1.25rem",
-                color: "white",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                fontSize: "1.25rem",
-              }}
-            >
-              ×
-            </button>
-            <h4
-              style={{
-                color: "white",
-                fontSize: "1rem",
-                fontWeight: 600,
-                marginBottom: "0.5rem",
-              }}
-            >
-              Open in external browser
-            </h4>
-            <p
-              style={{
-                color: "#d1d5db",
-                fontSize: "0.85rem",
-                marginBottom: "0.75rem",
-              }}
-            >
-              In the Base app, tap the three dots in the top right and choose{" "}
-              <strong>“Open in external browser”</strong> to add the event to your
-              calendar. Then come back to Hoot.
-            </p>
-            <img
-              src="/base-open-external.jpeg"
-              alt="Tap the three dots and select Open in external browser"
-              style={{
-                width: "100%",
-                borderRadius: "0.5rem",
-                border: "1px solid rgba(255,255,255,0.2)",
-                marginBottom: "0.9rem",
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setShowBaseProceedModal(false);
-                if (googleCalendarUrl) {
-                  openExternalUrl(googleCalendarUrl);
-                }
-              }}
-              style={{
-                padding: "0.6rem 1.4rem",
-                borderRadius: "9999px",
-                border: "1px solid rgba(255,255,255,0.7)",
-                backgroundColor: "#795AFF",
-                color: "white",
-                fontSize: "0.9rem",
-                fontWeight: 500,
-                cursor: "pointer",
-              }}
-            >
-              Proceed
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Next upcoming public quiz banner */}
-      {currentSession &&
-        currentSession.room_code &&
-        timeRemainingMs !== null &&
-        timeRemainingMs > 0 && (
-          <div
-            style={{
-              position: "fixed",
-              left: 0,
-              right: 0,
-              bottom: 0,
-              padding: "0.75rem 1rem",
-              background:
-                "linear-gradient(90deg, rgba(121,90,255,0.95), rgba(30,64,175,0.95))",
-              borderTop: "1px solid rgba(255,255,255,0.2)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "0.75rem",
-              zIndex: 40,
-            }}
-            onTouchStart={(e) => {
-              if (e.touches && e.touches.length > 0) {
-                setBannerTouchStartX(e.touches[0].clientX);
-              }
-            }}
-            onTouchEnd={(e) => {
-              if (bannerTouchStartX === null) return;
-              const touchEndX = e.changedTouches[0]?.clientX ?? bannerTouchStartX;
-              const deltaX = touchEndX - bannerTouchStartX;
-              const threshold = 40;
-              if (Math.abs(deltaX) > threshold) {
-                if (deltaX < 0) {
-                  goToNextSession();
-                } else {
-                  goToPreviousSession();
-                }
-              }
-              setBannerTouchStartX(null);
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.15rem",
-                minWidth: 0,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: "0.7rem",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                  color: "#e5e7eb",
-                  opacity: 0.9,
-                }}
-              >
-                Next quiz starting soon
-              </span>
-              <div
-                style={{
-                  fontSize: "0.95rem",
-                  fontWeight: 600,
-                  color: "white",
-                  whiteSpace: "nowrap",
-                  textOverflow: "ellipsis",
-                  overflow: "hidden",
-                  maxWidth: "14rem",
-                }}
-              >
-                {currentSession.title}
-              </div>
-              <div
-                style={{
-                  fontSize: "0.8rem",
-                  color: "#e5e7eb",
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "0.35rem",
-                  alignItems: "center",
-                }}
-              >
-                <span>
-                  Starts in{" "}
-                  <span
-                    style={{
-                      fontFamily: "monospace",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {formatTimeRemaining(timeRemainingMs)}
-                  </span>
-                </span>
-                <span
-                  style={{
-                    opacity: 0.8,
-                  }}
-                >
-                  • Room {currentSession.room_code}
-                </span>
-                {prizeLabel && (
-                  <span
-                    style={{
-                      opacity: 0.9,
-                    }}
-                  >
-                    • Prize {prizeLabel}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "flex-end",
-                gap: "0.4rem",
-                flexShrink: 0,
-              }}
-            >
-              {upcomingSessions.length > 1 && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.25rem",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={goToPreviousSession}
-                    style={{
-                      width: "1.5rem",
-                      height: "1.5rem",
-                      borderRadius: "9999px",
-                      border: "1px solid rgba(255,255,255,0.6)",
-                      backgroundColor: "transparent",
-                      color: "white",
-                      fontSize: "0.75rem",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: "pointer",
-                    }}
-                    aria-label="Previous upcoming quiz"
-                  >
-                    ‹
-                  </button>
-                  <div
-                    style={{
-                      fontSize: "0.7rem",
-                      color: "#e5e7eb",
-                      opacity: 0.9,
-                      padding: "0.2rem 0.6rem",
-                      borderRadius: "9999px",
-                      border: "1px solid rgba(255,255,255,0.6)",
-                      backgroundColor: "rgba(17,24,39,0.7)",
-                    }}
-                  >
-                    {activeSessionIndex + 1}/{upcomingSessions.length}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={goToNextSession}
-                    style={{
-                      width: "1.5rem",
-                      height: "1.5rem",
-                      borderRadius: "9999px",
-                      border: "1px solid rgba(255,255,255,0.6)",
-                      backgroundColor: "transparent",
-                      color: "white",
-                      fontSize: "0.75rem",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: "pointer",
-                    }}
-                    aria-label="Next upcoming quiz"
-                  >
-                    ›
-                  </button>
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => setShowReminderSheet(true)}
-                style={{
-                  whiteSpace: "nowrap",
-                  padding: "0.45rem 0.9rem",
-                  borderRadius: "9999px",
-                  border: "1px solid rgba(255,255,255,0.7)",
-                  backgroundColor: "rgba(17,24,39,0.7)",
-                  color: "white",
-                  fontSize: "0.8rem",
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  width: "100%",
-                  textAlign: "center",
-                }}
-              >
-                {isAddingMiniApp ? "Adding..." : "Get Notified 🛎️"}
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  router.push(`/quiz/lobby/${currentSession.room_code}`)
-                }
-                style={{
-                  whiteSpace: "nowrap",
-                  padding: "0.55rem 1rem",
-                  borderRadius: "9999px",
-                  border: "1px solid rgba(255,255,255,0.9)",
-                  backgroundColor: "rgba(17,24,39,0.9)",
-                  color: "white",
-                  fontSize: "0.85rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  width: "100%",
-                  textAlign: "center",
-                }}
-              >
-                Go to lobby
-              </button>
-            </div>
-          </div>
-        )}
+      <Footer />
     </div>
   );
 }

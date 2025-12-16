@@ -46,7 +46,7 @@ export default function QuizCalendarButton({
         padding: "0.9rem",
         borderRadius: "0.5rem",
         backgroundColor: "rgba(121, 90, 255, 0.3)",
-        border: "1px solid #795AFF",
+        border: "1px solid var(--color-primary)",
       }}
     >
       <div

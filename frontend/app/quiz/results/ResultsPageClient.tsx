@@ -9,6 +9,7 @@ import Link from "next/link";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { ZERO_ADDRESS } from "@/lib/contracts";
 import { NETWORK_TOKENS } from "@/lib/token-config";
+import Footer from "@/components/Footer";
 import type { Quiz as QuizType, GameState as GameStateType } from "@/lib/types";
 
 interface ResultsPageClientProps {
@@ -796,16 +797,18 @@ export default function ResultsPageClient({ roomCode }: ResultsPageClientProps) 
                       disabled={isDistributing || !address}
                       className="w-full py-3 rounded text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                       style={{
-                        backgroundColor: isDistributing ? "#16a34a" : "#22c55e", // green-600 when loading, green-500 when ready
+                        backgroundColor: isDistributing ? "var(--color-success)" : "var(--color-success)",
                       }}
                       onMouseEnter={(e) => {
                         if (!isDistributing) {
-                          e.currentTarget.style.backgroundColor = "#16a34a"; // green-600 on hover
+                          e.currentTarget.style.backgroundColor = "var(--color-success)";
+                          e.currentTarget.style.opacity = "0.9";
                         }
                       }}
                       onMouseLeave={(e) => {
                         if (!isDistributing) {
-                          e.currentTarget.style.backgroundColor = "#22c55e"; // green-500 normal state
+                          e.currentTarget.style.backgroundColor = "var(--color-success)";
+                          e.currentTarget.style.opacity = "1";
                         }
                       }}
                     >
@@ -863,6 +866,8 @@ export default function ResultsPageClient({ roomCode }: ResultsPageClientProps) 
           </div>
         </div>
       </div>
+
+      <Footer />
     </div>
   );
 }

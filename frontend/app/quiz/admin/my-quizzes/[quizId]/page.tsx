@@ -50,6 +50,8 @@ export default function QuizDetailPage() {
   const [scheduleInput, setScheduleInput] = useState<string>("");
   const [scheduleMessage, setScheduleMessage] = useState<string | null>(null);
   const [scheduling, setScheduling] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const quizId = params?.quizId;
 
@@ -191,60 +193,142 @@ export default function QuizDetailPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!quiz || !supabase) return;
+
+    try {
+      setIsDeleting(true);
+      const { error } = await supabase
+        .from("quizzes")
+        .delete()
+        .eq("id", quiz.id);
+
+      if (error) throw error;
+
+      // Redirect to profile page after successful deletion
+      router.push("/quiz/profile");
+    } catch (err) {
+      console.error("Failed to delete quiz:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to delete quiz"
+      );
+      setShowDeleteConfirm(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen w-full bg-black text-white relative overflow-hidden px-4 py-12">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="min-h-screen w-full relative overflow-hidden" style={{ backgroundColor: "var(--color-background)", color: "var(--color-text)" }}>
+      {/* Back button - top left */}
+      <div
+        style={{
+          position: "absolute",
+          top: "var(--spacing-md)",
+          left: "var(--spacing-md)",
+          zIndex: 100,
+          pointerEvents: "auto",
+        }}
+      >
         <button
-          onClick={() => router.back()}
-          className="text-sm text-gray-300 hover:text-white flex items-center gap-2"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log("Back button clicked");
+            try {
+              if (window.history.length > 1) {
+                window.history.back();
+              } else {
+                router.push("/quiz/admin/my-quizzes");
+              }
+            } catch (err) {
+              console.error("Error navigating back:", err);
+              router.push("/quiz/admin/my-quizzes");
+            }
+          }}
+          className="btn btn--secondary"
+          style={{
+            padding: "var(--spacing-sm) var(--spacing-md)",
+            minWidth: "auto",
+            fontSize: "var(--font-size-body)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+          }}
+          aria-label="Back"
+          type="button"
         >
-          ← Back
+          Back
         </button>
+      </div>
+
+      {/* Logo centered */}
+      <div className="absolute left-1/2 transform -translate-x-1/2 z-20">
+        <img
+          src="/Logo.png"
+          alt="Hoot Logo"
+          className="h-28 w-auto cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={() => router.push('/')}
+        />
+      </div>
+
+      <div className="max-w-3xl mx-auto space-y-6 px-4" style={{ paddingTop: "calc(var(--spacing-xl) + 7rem)" }}>
 
         {loading ? (
-          <div className="text-gray-300">Loading quiz details...</div>
+          <div style={{ color: "var(--color-text-secondary)" }}>Loading quiz details...</div>
         ) : error ? (
           <div className="text-red-400">{error}</div>
         ) : quiz ? (
           <>
-            <div className="bg-gray-900/40 border border-white/10 rounded-lg p-6 space-y-4">
+            <div className="rounded-lg p-6 space-y-4" style={{ backgroundColor: "var(--color-surface-elevated)", border: "1px solid var(--color-border-light)" }}>
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
                   <h1 className="text-2xl font-semibold">{quiz.title}</h1>
-                  <p className="text-gray-300 text-sm mt-1">
+                  <p className="text-sm mt-1" style={{ color: "var(--color-text-secondary)" }}>
                     {quiz.description || "No description provided."}
                   </p>
                 </div>
                 <StatusBadge status={quiz.status} />
               </div>
-              <div className="grid md:grid-cols-3 gap-4 text-sm text-gray-200">
+              <div className="grid md:grid-cols-3 gap-4 text-sm" style={{ color: "var(--color-text-secondary)" }}>
                 <div>
-                  <p className="text-gray-400 text-xs uppercase">Created</p>
+                  <p className="text-xs uppercase" style={{ color: "var(--color-text-muted)" }}>Created</p>
                   {formatDate(quiz.created_at)}
                 </div>
                 <div>
-                  <p className="text-gray-400 text-xs uppercase">Started</p>
+                  <p className="text-xs uppercase" style={{ color: "var(--color-text-muted)" }}>Started</p>
                   {formatDate(quiz.started_at)}
                 </div>
                 <div>
-                  <p className="text-gray-400 text-xs uppercase">Completed</p>
+                  <p className="text-xs uppercase" style={{ color: "var(--color-text-muted)" }}>Completed</p>
                   {formatDate(quiz.ended_at)}
                 </div>
                 <div>
-                  <p className="text-gray-400 text-xs uppercase">Scheduled</p>
+                  <p className="text-xs uppercase" style={{ color: "var(--color-text-muted)" }}>Scheduled</p>
                   {quiz.scheduled_start_time
                     ? formatDate(quiz.scheduled_start_time)
                     : "Not scheduled"}
                 </div>
                 <div>
-                  <p className="text-gray-400 text-xs uppercase">Prize</p>
+                  <p className="text-xs uppercase" style={{ color: "var(--color-text-muted)" }}>Prize</p>
                   {quiz.prize_amount || 0} {quiz.prize_token ? "Token" : "ETH"}
                 </div>
+              </div>
+              <div className="pt-2">
+                <button
+                  onClick={() => setShowDeleteConfirm(true)}
+                  disabled={isDeleting}
+                  className="px-4 py-2 rounded text-sm font-medium bg-red-600/80 hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  aria-label="Delete quiz"
+                >
+                  {isDeleting ? "Deleting..." : "Delete Quiz"}
+                </button>
               </div>
             </div>
 
             {quiz.status === "pending" && (
-              <div className="bg-gray-900/40 border border-purple-500/30 rounded-lg p-6 space-y-3">
+              <div className="rounded-lg p-6 space-y-3" style={{ backgroundColor: "var(--color-surface-elevated)", border: "1px solid var(--color-primary-medium)" }}>
                 <h2 className="text-lg font-semibold">Schedule Start</h2>
                 <input
                   type="datetime-local"
@@ -257,7 +341,18 @@ export default function QuizDetailPage() {
                   <button
                     onClick={handleSchedule}
                     disabled={!scheduleInput || scheduling}
-                    className="px-4 py-2 rounded bg-purple-600/80 hover:bg-purple-600 disabled:opacity-50 text-sm"
+                    className="px-4 py-2 rounded disabled:opacity-50 text-sm transition-colors"
+                    style={{ backgroundColor: "var(--color-primary)", color: "var(--color-text)" }}
+                    onMouseEnter={(e) => {
+                      if (!scheduling && scheduleInput) {
+                        e.currentTarget.style.backgroundColor = "var(--color-primary-hover)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!scheduling && scheduleInput) {
+                        e.currentTarget.style.backgroundColor = "var(--color-primary)";
+                      }
+                    }}
                   >
                     {scheduling ? "Scheduling..." : "Schedule Start"}
                   </button>
@@ -272,15 +367,15 @@ export default function QuizDetailPage() {
                   )}
                 </div>
                 {scheduleMessage && (
-                  <p className="text-sm text-gray-200">{scheduleMessage}</p>
+                  <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{scheduleMessage}</p>
                 )}
               </div>
             )}
 
-            <div className="bg-gray-900/40 border border-white/10 rounded-lg p-6 space-y-4">
+            <div className="rounded-lg p-6 space-y-4" style={{ backgroundColor: "var(--color-surface-elevated)", border: "1px solid var(--color-border-light)" }}>
               <h2 className="text-lg font-semibold">Questions</h2>
               {questions.length === 0 ? (
-                <p className="text-gray-300 text-sm">No questions found.</p>
+                <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>No questions found.</p>
               ) : (
                 <div className="space-y-4">
                   {questions.map((question, idx) => (
@@ -288,19 +383,17 @@ export default function QuizDetailPage() {
                       key={question.id}
                       className="border border-white/10 rounded-lg p-4 space-y-2"
                     >
-                      <div className="text-sm uppercase text-gray-400">
+                      <div className="text-sm uppercase" style={{ color: "var(--color-text-muted)" }}>
                         Question {idx + 1}
                       </div>
                       <div className="font-medium">{question.question_text}</div>
-                      <ul className="list-decimal list-inside text-sm text-gray-300 space-y-1">
+                      <ul className="list-decimal list-inside text-sm space-y-1" style={{ color: "var(--color-text-secondary)" }}>
                         {question.options?.map((option, optionIdx) => (
                           <li
                             key={`${question.id}-${optionIdx}`}
-                            className={
-                              optionIdx === question.correct_answer_index
-                                ? "text-emerald-300"
-                                : ""
-                            }
+                            style={{
+                              color: optionIdx === question.correct_answer_index ? "var(--color-success)" : "var(--color-text-secondary)",
+                            }}
                           >
                             {option || "—"}
                           </li>
@@ -312,10 +405,10 @@ export default function QuizDetailPage() {
               )}
             </div>
 
-            <div className="bg-gray-900/40 border border-white/10 rounded-lg p-6 space-y-4">
+            <div className="rounded-lg p-6 space-y-4" style={{ backgroundColor: "var(--color-surface-elevated)", border: "1px solid var(--color-border-light)" }}>
               <h2 className="text-lg font-semibold">Game Sessions</h2>
               {sessions.length === 0 ? (
-                <p className="text-gray-300 text-sm">No game sessions yet.</p>
+                <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>No game sessions yet.</p>
               ) : (
                 <div className="space-y-3">
                   {sessions.map((session) => (
@@ -324,25 +417,25 @@ export default function QuizDetailPage() {
                       className="border border-white/10 rounded-lg p-4 grid md:grid-cols-4 gap-3 text-sm"
                     >
                       <div>
-                        <p className="text-gray-400 text-xs uppercase">
+                        <p className="text-xs uppercase" style={{ color: "var(--color-text-muted)" }}>
                           Room Code
                         </p>
                         {session.room_code}
                       </div>
                       <div>
-                        <p className="text-gray-400 text-xs uppercase">
+                        <p className="text-xs uppercase" style={{ color: "var(--color-text-muted)" }}>
                           Status
                         </p>
                         {session.status}
                       </div>
                       <div>
-                        <p className="text-gray-400 text-xs uppercase">
+                        <p className="text-xs uppercase" style={{ color: "var(--color-text-muted)" }}>
                           Started
                         </p>
                         {formatDate(session.started_at)}
                       </div>
                       <div>
-                        <p className="text-gray-400 text-xs uppercase">
+                        <p className="text-xs uppercase" style={{ color: "var(--color-text-muted)" }}>
                           Ended
                         </p>
                         {formatDate(session.ended_at)}
@@ -354,6 +447,50 @@ export default function QuizDetailPage() {
             </div>
           </>
         ) : null}
+
+        {/* Delete confirmation modal */}
+        {showDeleteConfirm && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.75)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 1000,
+              padding: "var(--spacing-md)",
+            }}
+            onClick={() => !isDeleting && setShowDeleteConfirm(false)}
+          >
+            <div
+              className="rounded-lg p-6 max-w-md w-full"
+              style={{ backgroundColor: "var(--color-surface-elevated)", border: "1px solid var(--color-border)", zIndex: 1001 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-xl font-semibold mb-4">Delete Quiz?</h2>
+              <p className="mb-6" style={{ color: "var(--color-text-secondary)" }}>
+                Are you sure you want to delete &quot;{quiz?.title}&quot;? This action cannot be undone and will permanently remove the quiz and all its questions.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={isDeleting}
+                  className="px-4 py-2 rounded border border-white/30 hover:border-white text-sm disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="px-4 py-2 rounded bg-red-600/80 hover:bg-red-600 text-sm disabled:opacity-50"
+                >
+                  {isDeleting ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

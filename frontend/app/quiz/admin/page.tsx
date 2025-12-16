@@ -22,6 +22,10 @@ import {
 import { NETWORK_TOKENS, getDefaultTokenForNetwork } from "@/lib/token-config";
 import { parseEther, parseUnits } from "viem";
 import ShareBox from "@/components/ShareBox";
+import Footer from "@/components/Footer";
+import WalletModal from "@/components/WalletModal";
+import { generateQuizViaAI } from "@/lib/supabase-client";
+import type { GenerateQuizResponse } from "@/lib/backend-types";
 import { sdk } from "@farcaster/miniapp-sdk";
 import { useAuth } from "@/lib/use-auth";
 
@@ -82,8 +86,8 @@ function AdminPageContent() {
   const [createdRoomCode, setCreatedRoomCode] = useState<string>("");
   const [addQuestionError, setAddQuestionError] = useState<string>("");
   const [showTooltip, setShowTooltip] = useState(false);
-  const [showQuizOptions, setShowQuizOptions] = useState(false);
   const [bountyAmount, setBountyAmount] = useState("10");
+  const [bountyAmountSetFromStorage, setBountyAmountSetFromStorage] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState<string>("usdc");
   const [quizTransaction, setQuizTransaction] = useState<string>("");
   const [scheduledStartTime, setScheduledStartTime] = useState<string>("");
@@ -99,8 +103,12 @@ function AdminPageContent() {
   const [hasMyQuizzes, setHasMyQuizzes] = useState(false);
   const [isCheckingMyQuizzes, setIsCheckingMyQuizzes] = useState(false);
   const [loadedFromReuseId, setLoadedFromReuseId] = useState<string | null>(null);
+  const [isRestoringFromStorage, setIsRestoringFromStorage] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [showQuickMenu, setShowQuickMenu] = useState(false);
+  const [showWalletModal, setShowWalletModal] = useState(false);
+  const [pendingQuizCreation, setPendingQuizCreation] = useState<{ type: "free" | "bounty"; options: any } | null>(null);
 
   // Badge state for showing user handle (same behavior as Home page)
   const [badgeText, setBadgeText] = useState<{
@@ -110,7 +118,7 @@ function AdminPageContent() {
   }>({
     primary: "Connecting...",
     secondary: null,
-    statusColor: "#fbbf24",
+    statusColor: "var(--color-warning)",
   });
 
   // Wagmi hooks for transactions
@@ -128,7 +136,7 @@ function AdminPageContent() {
       setBadgeText({
         primary: "Connecting...",
         secondary: null,
-        statusColor: "#fbbf24",
+        statusColor: "var(--color-warning)",
       });
     }
   }, [isAuthLoading]);
@@ -139,7 +147,7 @@ function AdminPageContent() {
       setBadgeText({
         primary: "Not Connected",
         secondary: null,
-        statusColor: "#ef4444",
+        statusColor: "var(--color-error)",
       });
     }
   }, [authError, isAuthLoading]);
@@ -147,27 +155,42 @@ function AdminPageContent() {
   // Handle authenticated user data
   useEffect(() => {
     if (loggedUser?.isAuthenticated) {
-      let primary = "Connected";
+      // ← Add the isAuthenticated check
+      let primary: string | null = null;
       let secondary: string | null = null;
-      let statusColor = "#4ade80";
+      let statusColor = "var(--color-success)"; // Green for connected
 
+      // Check if user is authenticated and has data
       if (loggedUser.session?.user?.user_metadata?.display_name) {
         primary = loggedUser.session.user.user_metadata.display_name;
       }
 
+      // Add Farcaster badge if user has FID
       if (loggedUser.fid || loggedUser.session?.user?.user_metadata?.fid) {
         secondary = "Farcaster";
       }
 
+      // Add wallet address as tertiary info
       if (loggedUser.address) {
-        const walletInfo = `${loggedUser.address.slice(0, 6)}...${loggedUser.address.slice(-4)}`;
-        secondary = secondary ? `${secondary} • ${walletInfo}` : walletInfo;
+        const walletInfo = `${loggedUser.address.slice(
+          0,
+          6
+        )}...${loggedUser.address.slice(-4)}`;
+        if (secondary) {
+          secondary = `${secondary} • ${walletInfo}`;
+        } else {
+          secondary = walletInfo;
+        }
       } else if (!secondary) {
         secondary = "No wallet connected";
-        statusColor = "#ef4444";
+        statusColor = "var(--color-error)"; // Red for not connected
       }
 
-      setBadgeText({ primary, secondary: secondary || null, statusColor });
+      setBadgeText({
+        primary: primary,
+        secondary: secondary || null,
+        statusColor: statusColor,
+      });
     }
   }, [loggedUser]);
 
@@ -248,29 +271,156 @@ function AdminPageContent() {
     };
   }, [supabase, address, loggedUser?.fid]);
 
-  // Load AI-generated quiz if query param is present
+  // Restore quiz data when returning from create-quiz page (without creation)
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (isRestoringFromStorage) return;
+    
+    const createType = searchParams?.get('create');
+    const quizData = localStorage.getItem("quizDataBeforeCreation");
+    
+    // If we're returning from create-quiz page but not creating yet, restore quiz data
+    if (!createType && quizData) {
+      try {
+        const { questions: savedQuestions, currentQuestion: savedCurrentQuestion, currentQuestionIndex: savedIndex, title: savedTitle } = JSON.parse(quizData);
+        
+        // Only restore if we don't have questions already
+        if (questions.length === 0 && savedQuestions && savedQuestions.length > 0) {
+          setQuestions(savedQuestions);
+          setCurrentQuestionIndex(savedIndex || savedQuestions.length);
+          if (savedTitle && savedTitle !== "Name your Quiz") {
+            setQuizTitle(savedTitle);
+          }
+        }
+        
+        // Clean up after restoring
+        localStorage.removeItem("quizDataBeforeCreation");
+      } catch (e) {
+        console.error('Failed to restore quiz data:', e);
+        localStorage.removeItem("quizDataBeforeCreation");
+      }
+    }
+  }, [searchParams, questions.length, isRestoringFromStorage]);
+
+  // Handle quiz creation from create-quiz page
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    
+    const createType = searchParams?.get('create');
+    if (!createType) return;
+    
+    const optionsData = localStorage.getItem("quizCreationOptions");
+    if (!optionsData) return;
+    
+    // Restore quiz data before creating
+    const quizData = localStorage.getItem("quizDataBeforeCreation");
+    if (quizData) {
+      try {
+        const { questions: savedQuestions, currentQuestion: savedCurrentQuestion, currentQuestionIndex: savedIndex, title: savedTitle } = JSON.parse(quizData);
+        
+        if (savedQuestions && savedQuestions.length > 0) {
+          setQuestions(savedQuestions);
+          setCurrentQuestionIndex(savedIndex || savedQuestions.length);
+          if (savedTitle && savedTitle !== "Name your Quiz") {
+            setQuizTitle(savedTitle);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to restore quiz data before creation:', e);
+      }
+    }
+    
+    try {
+      const options = JSON.parse(optionsData);
+      
+      // Set pending creation
+      setPendingQuizCreation({
+        type: createType as "free" | "bounty",
+        options,
+      });
+      
+      // Set options from localStorage
+      setIsPrivate(options.isPrivate || false);
+      setIsScheduled(options.isScheduled || false);
+      setScheduledStartTime(options.scheduledStartTime || "");
+      
+      if (createType === "bounty") {
+        // Set bounty options
+        if (options.bountyAmount) {
+          setBountyAmount(options.bountyAmount);
+          setBountyAmountSetFromStorage(true);
+        } else {
+          setBountyAmount("10");
+        }
+        setSelectedCurrency(options.selectedCurrency || "usdc");
+      }
+      
+      // Clean up
+      localStorage.removeItem("quizCreationOptions");
+      localStorage.removeItem("quizDataBeforeCreation");
+      // Remove query param to prevent re-triggering
+      router.replace("/quiz/admin", { scroll: false });
+    } catch (e) {
+      console.error('Failed to parse quiz creation options:', e);
+      localStorage.removeItem("quizCreationOptions");
+      localStorage.removeItem("quizDataBeforeCreation");
+    }
+  }, [searchParams, router]);
+
+  // Execute pending quiz creation
+  useEffect(() => {
+    if (!pendingQuizCreation || isCreating) return;
+    
+    // Use setTimeout to ensure all state updates are applied, including question restoration
+    const timer = setTimeout(() => {
+      // Double-check that we have questions before creating
+      if (questions.length === 0) {
+        console.error('Cannot create quiz: no questions available');
+        setError("Please add at least one question");
+        setPendingQuizCreation(null);
+        return;
+      }
+      
+      if (pendingQuizCreation.type === "free") {
+        handleFreeQuiz();
+      } else if (pendingQuizCreation.type === "bounty") {
+        // Pass the bounty amount directly from options to avoid race condition with state
+        handleBountyQuiz(pendingQuizCreation.options.bountyAmount, pendingQuizCreation.options.selectedCurrency);
+      }
+      
+      setPendingQuizCreation(null);
+    }, 200); // Increased timeout to ensure questions are restored
+    
+    return () => clearTimeout(timer);
+  }, [pendingQuizCreation, isCreating, questions.length]);
+
+  // Restore existing questions when returning from AI generation page (without new questions)
+  // or add new AI questions to existing ones
+  // This must run FIRST before any other useEffect that might modify questions
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (isRestoringFromStorage) return; // Prevent multiple restorations
+    
     const aiQuizData = searchParams?.get('aiQuiz');
+    const existingData = localStorage.getItem("existingQuizData");
+    
+    // If no data to restore, skip
+    if (!existingData && !aiQuizData) return;
+    
     if (aiQuizData && !loadedFromReuseId) {
+      setIsRestoringFromStorage(true);
+      // We have new AI questions
       try {
         const decoded = JSON.parse(decodeURIComponent(aiQuizData));
         console.log('AI Quiz Data Received:', decoded);
         
         if (decoded.title && decoded.questions) {
-          setQuizTitle(decoded.title || 'Name your Quiz');
-          
           const normalizedQuestions: QuizQuestion[] = decoded.questions.map((q: {
             question_text: string;
             options: string[];
             correct_answer_index: number;
             time_limit: number;
           }) => {
-            console.log('Processing question:', {
-              question_text: q.question_text,
-              options: q.options,
-              correct_answer_index: q.correct_answer_index,
-            });
-            
             return {
               text: q.question_text,
               options: q.options.map((option: string) => ({
@@ -281,16 +431,211 @@ function AdminPageContent() {
             };
           });
           
-          console.log('Normalized Questions:', normalizedQuestions);
+          // Check if we have existing questions to preserve
+          if (existingData) {
+            try {
+              const { questions: savedQuestions, currentQuestion: savedCurrentQuestion, currentQuestionIndex: savedIndex, title: savedTitle } = JSON.parse(existingData);
+              
+              // Prepare saved questions including current question if it was new
+              let savedQuestionsList = savedQuestions && savedQuestions.length > 0 ? [...savedQuestions] : [];
+              
+              // If there's a current question that wasn't saved in questions, add it
+              if (savedCurrentQuestion && savedIndex !== undefined && savedIndex >= savedQuestionsList.length) {
+                const hasContent = savedCurrentQuestion.text.trim() !== "" || 
+                  savedCurrentQuestion.options.some(opt => opt.text.trim() !== "");
+                if (hasContent) {
+                  savedQuestionsList.push(savedCurrentQuestion);
+                }
+              }
+              
+              console.log('Restoring with AI questions:', {
+                savedCount: savedQuestionsList.length,
+                aiCount: normalizedQuestions.length,
+                savedQuestions: savedQuestionsList.map(q => q.text),
+              });
+              
+              // Add new AI-generated questions to saved ones
+              // Use saved questions as source of truth, then add AI questions
+              const allQuestions = [...savedQuestionsList, ...normalizedQuestions];
+              
+              console.log('Setting all questions:', {
+                total: allQuestions.length,
+                questions: allQuestions.map(q => q.text),
+              });
+              
+              // Force set questions - saved data is the source of truth
+              // This will replace any existing questions in state
+              // Use setTimeout to ensure this happens after other effects
+              setTimeout(() => {
+                setQuestions(allQuestions);
+                
+                // Set index to first new AI question
+                const firstNewQuestionIndex = savedQuestionsList.length;
+                setCurrentQuestionIndex(firstNewQuestionIndex);
+                
+                // Reset current question to empty for new editing
+                setCurrentQuestion({
+                  text: "",
+                  options: [
+                    { text: "", color: "hover:opacity-80" },
+                    { text: "", color: "hover:opacity-80" },
+                    { text: "", color: "hover:opacity-80" },
+                    { text: "", color: "hover:opacity-80" },
+                  ],
+                  correctAnswer: 0,
+                });
+                
+              // Update title: first restore saved title if it exists and is not default
+              // Only use AI title if saved title is empty or still the default
+              if (savedTitle && savedTitle !== "Name your Quiz" && savedTitle.trim() !== "") {
+                // We have a valid saved title - keep it
+                setQuizTitle(savedTitle);
+              } else if (decoded.title && decoded.title !== "Name your Quiz") {
+                // No valid saved title, use AI-generated title
+                setQuizTitle(decoded.title);
+              } else if (savedTitle) {
+                // Fallback: restore saved title even if it's default
+                setQuizTitle(savedTitle);
+              }
+                
+                // Clear the stored data and reset flag AFTER setting questions
+                if (existingData) {
+                  localStorage.removeItem("existingQuizData");
+                }
+                setIsRestoringFromStorage(false);
+              }, 0);
+            } catch (e) {
+              console.error('Failed to parse existing data:', e);
+              // Fallback: just use new questions
+              setTimeout(() => {
           setQuestions(normalizedQuestions);
           setCurrentQuestionIndex(0);
-          setLoadedFromReuseId('ai-generated'); // Mark as loaded to prevent re-loading
+                // Only set AI title if current title is empty or still the default
+                if (decoded.title && decoded.title !== "Name your Quiz") {
+                  // Check current quizTitle state - only replace if it's empty or default
+                  setQuizTitle((currentTitle) => {
+                    if (!currentTitle || currentTitle === "Name your Quiz" || currentTitle.trim() === "") {
+                      return decoded.title;
+                    }
+                    return currentTitle; // Keep existing title
+                  });
+                }
+                setIsRestoringFromStorage(false);
+              }, 0);
+            }
+          } else {
+            // No existing questions - just use new ones
+            setTimeout(() => {
+              setQuestions(normalizedQuestions);
+              setCurrentQuestionIndex(0);
+              // Only set AI title if current title is empty or still the default
+              if (decoded.title && decoded.title !== "Name your Quiz") {
+                // Check current quizTitle state - only replace if it's empty or default
+                setQuizTitle((currentTitle) => {
+                  if (!currentTitle || currentTitle === "Name your Quiz" || currentTitle.trim() === "") {
+                    return decoded.title;
+                  }
+                  return currentTitle; // Keep existing title
+                });
+              }
+              setIsRestoringFromStorage(false);
+            }, 0);
+          }
+          
+          setLoadedFromReuseId('ai-generated');
         }
       } catch (e) {
         console.error('Failed to load AI quiz data:', e);
+        setIsRestoringFromStorage(false);
+      }
+    } else if (existingData) {
+      setIsRestoringFromStorage(true);
+      // No new AI questions but we have existing data - restore them
+      try {
+        const { questions: savedQuestions, currentQuestion: savedCurrentQuestion, currentQuestionIndex: savedIndex, title: savedTitle } = JSON.parse(existingData);
+        
+        // Prepare questions to restore - start with saved questions
+        let questionsToRestore = savedQuestions && savedQuestions.length > 0 ? [...savedQuestions] : [];
+        
+        // If there's a current question that wasn't saved in questions, add it
+        if (savedCurrentQuestion && savedIndex !== undefined && savedIndex >= questionsToRestore.length) {
+          const hasContent = savedCurrentQuestion.text.trim() !== "" || 
+            savedCurrentQuestion.options.some(opt => opt.text.trim() !== "");
+          if (hasContent) {
+            questionsToRestore.push(savedCurrentQuestion);
+          }
+        }
+        
+        console.log('Restoring questions without AI:', {
+          savedCount: questionsToRestore.length,
+          questions: questionsToRestore.map(q => q.text),
+        });
+        
+        // Restore questions directly - use saved as source of truth
+        // This will replace any existing questions in state
+        // Use setTimeout to ensure this happens after other effects
+        setTimeout(() => {
+          setQuestions(questionsToRestore);
+          
+          // Restore current question and index
+          if (savedCurrentQuestion && savedIndex !== undefined) {
+            const hasContent = savedCurrentQuestion.text.trim() !== "" || 
+              savedCurrentQuestion.options.some(opt => opt.text.trim() !== "");
+            
+            if (hasContent) {
+              if (savedIndex < (savedQuestions?.length || 0)) {
+                // Editing an existing question
+                setCurrentQuestion(savedCurrentQuestion);
+                setCurrentQuestionIndex(savedIndex);
+              } else {
+                // Current question was a new question being edited
+                setCurrentQuestion(savedCurrentQuestion);
+                setCurrentQuestionIndex(questionsToRestore.length);
+              }
+            } else {
+              // No content, reset to empty
+              setCurrentQuestion({
+                text: "",
+                options: [
+                  { text: "", color: "hover:opacity-80" },
+                  { text: "", color: "hover:opacity-80" },
+                  { text: "", color: "hover:opacity-80" },
+                  { text: "", color: "hover:opacity-80" },
+                ],
+                correctAnswer: 0,
+              });
+              setCurrentQuestionIndex(questionsToRestore.length);
+            }
+          } else {
+            // No saved current question, reset to empty
+            setCurrentQuestion({
+              text: "",
+              options: [
+                { text: "", color: "hover:opacity-80" },
+                { text: "", color: "hover:opacity-80" },
+                { text: "", color: "hover:opacity-80" },
+                { text: "", color: "hover:opacity-80" },
+              ],
+              correctAnswer: 0,
+            });
+            setCurrentQuestionIndex(questionsToRestore.length);
+          }
+          
+          if (savedTitle && savedTitle !== "Name your Quiz") {
+            setQuizTitle(savedTitle);
+          }
+          
+          // Clear the stored data and reset flag AFTER setting questions
+          localStorage.removeItem("existingQuizData");
+          setIsRestoringFromStorage(false);
+        }, 0);
+      } catch (e) {
+        console.error('Failed to restore existing quiz data:', e);
+        localStorage.removeItem("existingQuizData");
+        setIsRestoringFromStorage(false);
       }
     }
-  }, [searchParams, loadedFromReuseId]);
+  }, [searchParams, loadedFromReuseId, isRestoringFromStorage]);
 
   // Load quiz for reuse if query param is present
   useEffect(() => {
@@ -440,8 +785,24 @@ function AdminPageContent() {
     }
   }, [selectedToken?.id, chain?.id, refetchErc20Balance]);
 
-  // Update default amount when token changes
+  // Update default amount when token changes (only if no value is set from localStorage)
   useEffect(() => {
+    // Don't override if bountyAmount was set from localStorage
+    if (bountyAmountSetFromStorage) {
+      return;
+    }
+    
+    // Don't override if we have a pending quiz creation with a bounty amount
+    if (pendingQuizCreation?.type === "bounty" && pendingQuizCreation?.options?.bountyAmount) {
+      return;
+    }
+    
+    // Don't override if we're in the middle of creating a quiz with bounty
+    if (isCreating && creationStep !== CreationStep.NONE) {
+      return;
+    }
+    
+    // Set default based on token type
     if (selectedToken?.id === "usdc") {
       setBountyAmount("10");
     } else if (selectedToken?.isNative) {
@@ -449,10 +810,13 @@ function AdminPageContent() {
     } else {
       setBountyAmount("100");
     }
-  }, [selectedToken]);
+  }, [selectedToken?.id, selectedToken?.isNative, bountyAmountSetFromStorage, pendingQuizCreation, isCreating, creationStep]);
 
   // Effetto per caricare la domanda corrente quando cambia l'indice
   useEffect(() => {
+    // Don't interfere if we're restoring from storage
+    if (isRestoringFromStorage) return;
+    
     if (currentQuestionIndex < questions.length) {
       // Stiamo modificando una domanda esistente
       const question = questions[currentQuestionIndex];
@@ -475,7 +839,7 @@ function AdminPageContent() {
         correctAnswer: 0,
       });
     }
-  }, [currentQuestionIndex, questions]);
+  }, [currentQuestionIndex, questions, isRestoringFromStorage]);
 
   // Auto-scroll to current question when it changes
   useEffect(() => {
@@ -608,6 +972,7 @@ function AdminPageContent() {
     }
   };
 
+
   const minScheduledTime = useMemo(() => {
     const date = new Date(Date.now() + 60_000);
     const offset = date.getTimezoneOffset();
@@ -620,14 +985,13 @@ function AdminPageContent() {
     const result = await handleSaveQuiz();
 
     if (result) {
-      // After quiz is created, show share box
-      setShowQuizOptions(false);
-      setShowShareBox(true);
+      // After quiz is created, navigate directly to lobby
+      router.push(`/quiz/lobby/${result.roomCode}`);
     }
   };
 
   // Step 2: Create quiz and add bounty on-chain
-  const handleBountyQuiz = async () => {
+  const handleBountyQuiz = async (bountyAmountOverride?: string, currencyOverride?: string) => {
     if (!address) {
       setError("Please connect your wallet to add a bounty");
       return;
@@ -647,8 +1011,23 @@ function AdminPageContent() {
       const { quizId } = result;
       setCreationStep(CreationStep.PREPARING_BOUNTY);
 
+      // Use override values if provided (from pendingQuizCreation), otherwise use state
+      const actualBountyAmount = bountyAmountOverride || bountyAmount;
+      const actualCurrency = currencyOverride || selectedCurrency;
+      
+      // Update state if override values were provided
+      if (bountyAmountOverride) {
+        setBountyAmount(bountyAmountOverride);
+      }
+      if (currencyOverride) {
+        setSelectedCurrency(currencyOverride);
+      }
+
+      // Get the correct token based on actual currency
+      const actualToken = availableTokens.find(token => token.id === actualCurrency);
+
       // Validate bounty amount
-      const bountyAmountNum = parseFloat(bountyAmount);
+      const bountyAmountNum = parseFloat(actualBountyAmount);
       if (isNaN(bountyAmountNum) || bountyAmountNum <= 0) {
         setError("Invalid bounty amount");
         return;
@@ -658,26 +1037,53 @@ function AdminPageContent() {
       let tokenAddress: string;
       let decimals: number;
 
-      if (selectedToken?.isNative) {
+      if (actualToken?.isNative) {
         tokenAddress = ZERO_ADDRESS;
         decimals = 18;
 
         // Check ETH balance
         if (ethBalance && parseFloat(ethBalance.formatted) < bountyAmountNum) {
           setError(
-            `Insufficient ${selectedToken.symbol} balance. You have ${ethBalance.formatted} ${selectedToken.symbol} but need ${bountyAmount} ${selectedToken.symbol}`
+            `Insufficient ${actualToken.symbol} balance. You have ${ethBalance.formatted} ${actualToken.symbol} but need ${actualBountyAmount} ${actualToken.symbol}`
           );
           return;
         }
-      } else if (selectedToken) {
-        tokenAddress = selectedToken.address;
-        decimals = tokenDecimals ? Number(tokenDecimals) : selectedToken.decimals;
+      } else if (actualToken) {
+        tokenAddress = actualToken.address;
+        decimals = tokenDecimals ? Number(tokenDecimals) : actualToken.decimals;
+
+        // Read token balance for the actual token
+        let actualDisplayBalance = "0";
+        if (actualToken.isNative) {
+          actualDisplayBalance = ethBalance?.formatted || "0";
+        } else {
+          // Read ERC20 balance using publicClient
+          try {
+            const balance = await publicClient?.readContract({
+              address: actualToken.address as `0x${string}`,
+              abi: ERC20_ABI,
+              functionName: "balanceOf",
+              args: [address!],
+            }) as bigint | undefined;
+            
+            if (balance !== undefined) {
+              const tokenDecs = tokenDecimals ? Number(tokenDecimals) : actualToken.decimals;
+              actualDisplayBalance = (Number(balance) / Math.pow(10, tokenDecs)).toString();
+            }
+          } catch (err) {
+            console.error("Error reading token balance:", err);
+            // Fallback to displayBalance if available and token matches
+            if (selectedToken?.id === actualToken.id) {
+              actualDisplayBalance = displayBalance;
+            }
+          }
+        }
 
         // Check token balance
-        const tokenBalanceNum = parseFloat(displayBalance);
+        const tokenBalanceNum = parseFloat(actualDisplayBalance);
         if (tokenBalanceNum < bountyAmountNum) {
           setError(
-            `Insufficient ${selectedToken.symbol} balance. You have ${displayBalance} ${selectedToken.symbol} but need ${bountyAmount} ${selectedToken.symbol}`
+            `Insufficient ${actualToken.symbol} balance. You have ${actualDisplayBalance} ${actualToken.symbol} but need ${actualBountyAmount} ${actualToken.symbol}`
           );
           return;
         }
@@ -688,7 +1094,7 @@ function AdminPageContent() {
 
       // For ERC20 tokens, approve the contract first
         if (tokenAddress !== ZERO_ADDRESS) {
-          const amountWei = parseUnits(bountyAmount, decimals);
+          const amountWei = parseUnits(actualBountyAmount, decimals);
 
           setCreationStep(CreationStep.CHECKING_ALLOWANCE);
 
@@ -720,7 +1126,7 @@ function AdminPageContent() {
       const txHash = await createQuizOnChain(
         quizId,
         tokenAddress,
-        bountyAmount,
+        actualBountyAmount,
         decimals
       );
 
@@ -729,7 +1135,7 @@ function AdminPageContent() {
       await callEdgeFunction("update-quiz", {
         quiz_id: quizId,
         prize_token: tokenAddress,
-        prize_amount: parseFloat(bountyAmount),
+        prize_amount: parseFloat(actualBountyAmount),
         contract_address: hootContractAddress,
         contract_tx_hash: txHash,
       });
@@ -738,8 +1144,8 @@ function AdminPageContent() {
         quizId,
         roomCode: createdRoomCode,
         txHash,
-        amount: bountyAmount,
-        currency: selectedCurrency,
+        amount: actualBountyAmount,
+        currency: actualCurrency,
         tokenAddress,
       });
     } catch (error) {
@@ -754,12 +1160,14 @@ function AdminPageContent() {
   };
 
   useEffect(() => {
-    if (quizTransaction) {
-      setShowQuizOptions(false);
-      setShowShareBox(true);
+    if (quizTransaction && createdRoomCode) {
+      // Navigate directly to lobby instead of showing share box
       setCreationStep(CreationStep.NONE);
+      // Reset the flag so default values work for next quiz
+      setBountyAmountSetFromStorage(false);
+      router.push(`/quiz/lobby/${createdRoomCode}`);
     }
-  }, [quizTransaction]);
+  }, [quizTransaction, createdRoomCode, router]);
 
   // Step 1: Create quiz in backend and generate room
   const handleSaveQuiz = async (): Promise<{
@@ -904,41 +1312,34 @@ function AdminPageContent() {
         }}
       />
 
-      {/* User badge (handle) top-right - FIXED: aligned with logo */}
+      {/* User badge in top right corner */}
       <div
         style={{
           position: "absolute",
-          top: "1.2rem",
-          right: "1rem",
-          zIndex: 30,
+          top: "var(--spacing-md)",
+          right: "var(--spacing-md)",
+          zIndex: 10,
         }}
       >
-        <button
-          type="button"
-          onClick={() => router.push('/quiz/admin/my-quizzes')}
-          title="My Quizzes"
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.9")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = "1")}
+        <div
+          className="btn btn--primary"
           style={{
-            backgroundColor: "#795AFF",
-            color: "white",
-            padding: "0.5rem 1rem",
-            borderRadius: "0.5rem",
-            fontSize: "0.875rem",
-            display: "flex",
-            alignItems: "center",
-            gap: "0.5rem",
-            cursor: "pointer",
-            border: "none",
-            outline: "none",
+            opacity:
+              loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
+            maxWidth: "140px",
+            overflow: "hidden",
+            cursor: "default",
           }}
         >
+          {/* Status dot */}
           <div
             style={{
+              marginRight: "0.5rem",
               width: "8px",
               height: "8px",
               borderRadius: "50%",
-              backgroundColor: badgeText.statusColor || "#4ade80",
+              backgroundColor: badgeText.statusColor || "var(--color-success)",
+              flexShrink: 0,
             }}
           ></div>
           <div
@@ -946,50 +1347,37 @@ function AdminPageContent() {
               display: "flex",
               flexDirection: "column",
               gap: "0.125rem",
+              minWidth: 0,
               flex: 1,
-              alignItems: "center",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: "0.375rem" }}>
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ opacity: 0.9 }}
-                aria-hidden="true"
+            {badgeText.primary && (
+              <div
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
               >
-                <path d="M3 10l9-7 9 7" />
-                <path d="M5 10v10h6v-6h2v6h6V10" />
-              </svg>
+                {badgeText.primary}
             </div>
-            {(() => {
-              const secondaryText = badgeText.primary !== "Connected" ? badgeText.primary : badgeText.secondary;
-              return secondaryText && !secondaryText.includes("Farcaster") ? (
-                <div style={{ fontSize: "0.75rem", opacity: 0.8, textAlign: "center" }}>{secondaryText}</div>
-              ) : null;
-            })()}
+            )}
+            {badgeText.secondary &&
+              !badgeText.secondary.includes("Farcaster") && (
+                <div
+                  className="text-caption"
+                  style={{
+                    opacity: 0.8,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {badgeText.secondary}
+                </div>
+              )}
           </div>
-          {/* small chevron icon to indicate clickability */}
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ opacity: 0.85 }}
-            aria-hidden="true"
-          >
-            <path d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
+        </div>
       </div>
 
       {/* Logo - centered vertically with badge */}
@@ -1009,27 +1397,46 @@ function AdminPageContent() {
           <div className="relative">
             {/* <button
               onClick={() => setShowNetworkSwitcher(!showNetworkSwitcher)}
-              className="flex items-center space-x-2 bg-gray-800/50 rounded-lg px-3 py-2 hover:bg-gray-700/50 transition-colors cursor-pointer"
+              className="flex items-center space-x-2 rounded-lg px-3 py-2 transition-colors cursor-pointer"
+              style={{ backgroundColor: "var(--color-surface-elevated)" }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--color-surface)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--color-surface-elevated)";
+              }}
             >
               <div className="w-4 h-4 rounded-full bg-green-500"></div>
-              <span className="text-sm text-gray-300">
+              <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
                 Base Sepolia
               </span>
-              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" style={{ color: "var(--color-text-muted)" }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </button> */}
 
             {/* {showNetworkSwitcher && (
-              <div className="absolute top-full left-0 mt-1 w-full bg-gray-800 rounded-lg shadow-lg z-50">
+              <div className="absolute top-full left-0 mt-1 w-full rounded-lg shadow-lg z-50" style={{ backgroundColor: "var(--color-surface-elevated)" }}>
                 {/* <button
                   onClick={() => {
                     setNetwork('baseSepolia');
                     setShowNetworkSwitcher(false);
                   }}
-                  className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-700 rounded-lg ${
-                    currentNetwork === 'baseSepolia' ? 'bg-gray-700 text-white' : 'text-gray-300'
-                  }`}
+                  className="w-full px-3 py-2 text-left text-sm rounded-lg transition-colors"
+                  style={{
+                    backgroundColor: currentNetwork === 'baseSepolia' ? "var(--color-surface)" : "transparent",
+                    color: currentNetwork === 'baseSepolia' ? "var(--color-text)" : "var(--color-text-secondary)",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (currentNetwork !== 'baseSepolia') {
+                      e.currentTarget.style.backgroundColor = "var(--color-surface)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (currentNetwork !== 'baseSepolia') {
+                      e.currentTarget.style.backgroundColor = "transparent";
+                    }
+                  }}
                 >
                   Base Sepolia
                 </button> */}
@@ -1040,17 +1447,17 @@ function AdminPageContent() {
 
         {/* Error/Status Messages */}
         {error && (
-          <div className="w-full max-w-md mb-1 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+          <div className="w-full max-w-md mb-1 rounded-lg p-3 text-center" style={{ backgroundColor: "rgba(239, 68, 68, 0.2)", border: "1px solid var(--color-error)", color: "var(--color-error)" }}>
             {error}
           </div>
         )}
         {writeError && (
-          <div className="w-full max-w-md mb-1 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+          <div className="w-full max-w-md mb-1 rounded-lg p-3 text-center" style={{ backgroundColor: "rgba(239, 68, 68, 0.2)", border: "1px solid var(--color-error)", color: "var(--color-error)" }}>
             Transaction Error: {writeError.message}
           </div>
         )}
         {sendError && (
-          <div className="w-full max-w-md mb-1 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+          <div className="w-full max-w-md mb-1 rounded-lg p-3 text-center" style={{ backgroundColor: "rgba(239, 68, 68, 0.2)", border: "1px solid var(--color-error)", color: "var(--color-error)" }}>
             Send Error: {sendError.message}
           </div>
         )}
@@ -1076,41 +1483,43 @@ function AdminPageContent() {
 
         {/* Question input */}
         <div className="w-full max-w-md mb-6">
-          <div className="bg-white rounded p-3 h-24 relative">
-            <textarea
-              value={currentQuestion.text}
-              onChange={(e) => {
-                setCurrentQuestion({
-                  ...currentQuestion,
-                  text: e.target.value,
-                });
-                // Pulisci l'errore quando l'utente modifica il testo della domanda
-                setAddQuestionError("");
-                // Nascondi il tooltip se la domanda è ora completa
-                const filledOptions = currentQuestion.options.filter(
-                  (opt) => opt.text.trim() !== ""
-                );
-                if (e.target.value.trim() !== "" && filledOptions.length >= 2) {
-                  setShowTooltip(false);
-                }
-              }}
-              placeholder="Enter your question here"
-              maxLength={MAX_QUESTION_LENGTH}
-              className="quiz-input question-text w-full h-full bg-transparent text-center resize-none focus:outline-none absolute inset-0 flex items-center justify-center text-sm font-bold text-black"
-              style={{ 
-                display: 'flex', 
-                marginTop: '16px',
-                alignItems: 'center', 
-                justifyContent: 'center',
-                padding: '1rem'
-              }}
-            />
-            {/* Character counter for question - only show when limit reached */}
-            {currentQuestion.text.length >= MAX_QUESTION_LENGTH && (
-              <div className="absolute bottom-1 right-1 text-xs text-red-500 bg-red-100 px-1 rounded">
-                {currentQuestion.text.length}/{MAX_QUESTION_LENGTH}
-              </div>
-            )}
+          <div style={{ display: "flex", gap: "var(--spacing-sm)", alignItems: "flex-start" }}>
+            <div className="bg-white rounded p-3 h-24 relative" style={{ flex: 1 }}>
+              <textarea
+                value={currentQuestion.text}
+                onChange={(e) => {
+                  setCurrentQuestion({
+                    ...currentQuestion,
+                    text: e.target.value,
+                  });
+                  // Pulisci l'errore quando l'utente modifica il testo della domanda
+                  setAddQuestionError("");
+                  // Nascondi il tooltip se la domanda è ora completa
+                  const filledOptions = currentQuestion.options.filter(
+                    (opt) => opt.text.trim() !== ""
+                  );
+                  if (e.target.value.trim() !== "" && filledOptions.length >= 2) {
+                    setShowTooltip(false);
+                  }
+                }}
+                placeholder="Enter your question here"
+                maxLength={MAX_QUESTION_LENGTH}
+                className="quiz-input question-text w-full h-full bg-transparent text-center resize-none focus:outline-none absolute inset-0 flex items-center justify-center text-sm font-bold text-black"
+                style={{ 
+                  display: 'flex', 
+                  marginTop: '16px',
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  padding: '1rem'
+                }}
+              />
+              {/* Character counter for question - only show when limit reached */}
+              {currentQuestion.text.length >= MAX_QUESTION_LENGTH && (
+                <div className="absolute bottom-1 right-1 text-xs px-1 rounded" style={{ color: "var(--color-error)", backgroundColor: "rgba(239, 68, 68, 0.2)" }}>
+                  {currentQuestion.text.length}/{MAX_QUESTION_LENGTH}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1139,7 +1548,7 @@ function AdminPageContent() {
                   className="absolute -top-2 -right-2 w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 z-10 shadow-lg"
                   style={{
                     backgroundColor: isCorrect
-                      ? "#10B981"
+                      ? "var(--color-success)"
                       : "rgba(255, 255, 255, 0.2)",
                     border: "3px solid white",
                   }}
@@ -1171,12 +1580,14 @@ function AdminPageContent() {
                     onChange={(e) => handleOptionChange(index, e.target.value)}
                     placeholder={`add reply ${index + 1}`}
                     maxLength={MAX_ANSWER_LENGTH}
-                    className="quiz-input w-full bg-transparent text-white placeholder:text-gray-300 focus:outline-none pr-12"
+                    className="quiz-input w-full bg-transparent focus:outline-none pr-12"
+                    style={{ color: "var(--color-text)" }}
+                    placeholder="add reply"
                     onClick={(e) => e.stopPropagation()}
                   />
                   {/* Character counter for answer - only show when limit reached */}
                   {option.text.length >= MAX_ANSWER_LENGTH && (
-                    <div className="absolute bottom-0 right-12 text-xs text-red-300 bg-red-900/50 px-1 rounded">
+                    <div className="absolute bottom-0 right-12 text-xs px-1 rounded" style={{ color: "var(--color-error)", backgroundColor: "rgba(239, 68, 68, 0.3)" }}>
                       {option.text.length}/{MAX_ANSWER_LENGTH}
                     </div>
                   )}
@@ -1206,7 +1617,14 @@ function AdminPageContent() {
                     e.stopPropagation();
                     handleDeleteQuestion(index);
                   }}
-                  className="absolute top-0 right-0 text-white hover:text-gray-300 p-1"
+                  className="absolute top-0 right-0 p-1 transition-colors"
+                  style={{ color: "var(--color-text)" }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = "var(--color-text-secondary)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = "var(--color-text)";
+                  }}
                   title="Delete question"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1231,6 +1649,7 @@ function AdminPageContent() {
             
             {/* Add question button - always visible on the right */}
             <div className="flex flex-col items-center relative flex-shrink-0">
+              <div className="flex items-end gap-2">
               <button 
                 ref={addButtonRef}
                 className="bg-black border border-white/30 rounded px-4 py-2 text-2xl hover:border-white transition-colors"
@@ -1238,13 +1657,81 @@ function AdminPageContent() {
               >
                 +
               </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Save existing questions, current question (if has content), and title before navigating
+                    if (typeof window !== "undefined") {
+                      // Check if current question has content
+                      const hasCurrentQuestionContent = currentQuestion.text.trim() !== "" || 
+                        currentQuestion.options.some(opt => opt.text.trim() !== "");
+                      
+                      console.log('Saving before AI generation:', {
+                        questionsCount: questions.length,
+                        currentQuestionIndex,
+                        hasCurrentQuestionContent,
+                        currentQuestionText: currentQuestion.text,
+                        questions: questions.map(q => q.text),
+                      });
+                      
+                      // Always include ALL questions, including currentQuestion if it has content
+                      let questionsToSave = [...questions];
+                      
+                      // If current question has content and is a new question (not yet in list), include it
+                      if (hasCurrentQuestionContent && currentQuestionIndex === questions.length) {
+                        // Current question is a new question being edited, add it to the list
+                        questionsToSave.push(currentQuestion);
+                        console.log('Including current question in saved questions, new count:', questionsToSave.length);
+                      } else if (hasCurrentQuestionContent && currentQuestionIndex < questions.length) {
+                        // Current question is editing an existing question - make sure it's updated in the list
+                        questionsToSave[currentQuestionIndex] = currentQuestion;
+                        console.log('Updating existing question at index', currentQuestionIndex);
+                      }
+                      
+                      // Save empty current question for restoration
+                      const currentQuestionToSave = {
+                        text: "",
+                        options: [
+                          { text: "", color: "hover:opacity-80" },
+                          { text: "", color: "hover:opacity-80" },
+                          { text: "", color: "hover:opacity-80" },
+                          { text: "", color: "hover:opacity-80" },
+                        ],
+                        correctAnswer: 0,
+                      };
+                      
+                      localStorage.setItem("existingQuizData", JSON.stringify({
+                        questions: questionsToSave,
+                        currentQuestion: currentQuestionToSave,
+                        currentQuestionIndex: questionsToSave.length, // Point to next new question
+                        title: quizTitle,
+                      }));
+                      
+                      console.log('Saved to localStorage:', {
+                        questionsCount: questionsToSave.length,
+                        questions: questionsToSave.map(q => q.text),
+                      });
+                    }
+                    router.push("/quiz/admin/generate-ai-question");
+                  }}
+                  className="btn btn--secondary"
+                  style={{
+                    padding: "var(--spacing-sm) var(--spacing-md)",
+                    whiteSpace: "nowrap",
+                    minWidth: "auto",
+                  }}
+                  title="Generate question with AI"
+                >
+                  ✨ Generate with AI
+                </button>
+              </div>
               {addQuestionError && (
-                <div className="mt-2 text-xs text-red-400 text-center max-w-48">
+                <div className="mt-2 text-xs text-center max-w-48" style={{ color: "var(--color-error)" }}>
                   {addQuestionError}
                 </div>
               )}
               {showTooltip && (
-                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 bg-gray-300 text-black text-xs px-2 py-1 rounded shadow-lg z-50 whitespace-nowrap">
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 text-xs px-2 py-1 rounded shadow-lg z-50 whitespace-nowrap" style={{ backgroundColor: "var(--color-text)", color: "var(--color-background)" }}>
                   Complete the current question
                   <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-300"></div>
                 </div>
@@ -1269,11 +1756,45 @@ function AdminPageContent() {
           ) : loggedUser?.isAuthenticated && loggedUser?.session ? (
             // User is authenticated - show Create Quiz button
             <button
-              onClick={() => setShowQuizOptions(true)}
+              onClick={() => {
+                // Save current quiz state before navigating
+                if (typeof window !== "undefined") {
+                  // Save current question if it has content
+                  const hasCurrentQuestionContent = currentQuestion.text.trim() !== "" || 
+                    currentQuestion.options.some(opt => opt.text.trim() !== "");
+                  
+                  let questionsToSave = [...questions];
+                  
+                  // If current question has content and is a new question (not yet in list), include it
+                  if (hasCurrentQuestionContent && currentQuestionIndex === questions.length) {
+                    questionsToSave.push(currentQuestion);
+                  } else if (hasCurrentQuestionContent && currentQuestionIndex < questions.length) {
+                    // Current question is editing an existing question - make sure it's updated in the list
+                    questionsToSave[currentQuestionIndex] = currentQuestion;
+                  }
+                  
+                  localStorage.setItem("quizDataBeforeCreation", JSON.stringify({
+                    questions: questionsToSave,
+                    currentQuestion: {
+                      text: "",
+                      options: [
+                        { text: "", color: "hover:opacity-80" },
+                        { text: "", color: "hover:opacity-80" },
+                        { text: "", color: "hover:opacity-80" },
+                        { text: "", color: "hover:opacity-80" },
+                      ],
+                      correctAnswer: 0,
+                    },
+                    currentQuestionIndex: questionsToSave.length,
+                    title: quizTitle,
+                  }));
+                }
+                router.push("/quiz/admin/create-quiz");
+              }}
               disabled={isCreating}
               className="px-8 py-4 rounded text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed"
               style={{
-                backgroundColor: isCreating ? "#666" : "#795AFF",
+                backgroundColor: isCreating ? "var(--color-text-muted)" : "var(--color-primary)",
               }}
             >
               {isCreating ? "Creating..." : "Create Quiz"}
@@ -1284,7 +1805,7 @@ function AdminPageContent() {
               onClick={() => triggerAuth(8453)}
               className="px-8 py-4 rounded text-white font-bold"
               style={{
-                backgroundColor: "#795AFF",
+                backgroundColor: "var(--color-primary)",
               }}
             >
               Connect To Hoot to Create Quiz
@@ -1297,251 +1818,6 @@ function AdminPageContent() {
         </div>
       </div>
 
-      {/* Quiz Options Modal */}
-      {showQuizOptions && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-end justify-center z-50"
-          onClick={(e) => {
-            // Prevent closing modal during creation
-            if (creationStep === CreationStep.NONE && e.target === e.currentTarget) {
-              setShowQuizOptions(false);
-            }
-          }}
-        >
-          <div className="bg-black border border-white rounded-t-lg p-6 w-full max-w-md mx-4 mb-0 relative">
-            {/* X button to close modal */}
-            <button
-              onClick={() => {
-                // Prevent closing during creation
-                if (creationStep === CreationStep.NONE) {
-                  setShowQuizOptions(false);
-                }
-              }}
-              disabled={creationStep !== CreationStep.NONE}
-              className={`absolute top-4 right-4 transition-colors z-10 ${
-                creationStep !== CreationStep.NONE
-                  ? "text-gray-500 cursor-not-allowed"
-                  : "text-white hover:text-gray-300"
-              }`}
-            >
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-            <div className="text-center mb-6">
-              <h3 className="text-white text-lg font-semibold mb-2">
-                Choose Quiz Type
-              </h3>
-              <p className="text-gray-300 text-sm">
-                How would you like to create your quiz?
-              </p>
-            </div>
-
-            {/* Creation status banner */}
-            {creationStep && (
-              <div className="mb-4 bg-purple-500/20 border border-purple-500 rounded-lg p-3 text-center text-purple-200">
-                {creationStep}
-              </div>
-            )}
-
-            {/* Privacy configuration */}
-            <div className="mb-4 bg-purple-600/10 border border-purple-500/40 rounded-lg p-4 text-sm text-white">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isPrivate}
-                  onChange={(e) => setIsPrivate(e.target.checked)}
-                  className="h-4 w-4 rounded border-white/40 bg-transparent mt-0.5"
-                  disabled={creationStep !== CreationStep.NONE}
-                />
-                <div>
-                  <span className="font-medium block">Make this quiz private</span>
-                  <p className="text-gray-300 text-xs mt-1">
-                    Private quizzes will not be shown on the home page banner. Only players with the room code can join.
-                  </p>
-                </div>
-              </label>
-            </div>
-
-            {/* Scheduled start configuration */}
-            <div className="mb-6 bg-purple-600/10 border border-purple-500/40 rounded-lg p-4 text-sm text-white">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isScheduled}
-                  onChange={(e) => {
-                    setIsScheduled(e.target.checked);
-                    if (!e.target.checked) {
-                      setScheduledStartTime("");
-                    }
-                  }}
-                  className="h-4 w-4 rounded border-white/40 bg-transparent"
-                  disabled={creationStep !== CreationStep.NONE}
-                />
-                <span className="font-medium">
-                  Schedule this quiz to start automatically
-                </span>
-              </label>
-              {isScheduled && (
-                <div className="mt-3 space-y-2">
-                  <input
-                    type="datetime-local"
-                    value={scheduledStartTime}
-                    onChange={(e) => setScheduledStartTime(e.target.value)}
-                    min={minScheduledTime}
-                    className="w-full rounded-md bg-black/40 border border-white/30 px-3 py-2 text-white focus:outline-none focus:border-white"
-                    disabled={creationStep !== CreationStep.NONE}
-                  />
-                  <p className="text-gray-300 text-xs">
-                    Times are shown in your local timezone. The quiz will move to
-                    the lobby automatically and generate a room code.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-4">
-              {/* Free Quiz Option */}
-              <button
-                onClick={handleFreeQuiz}
-                disabled={creationStep !== CreationStep.NONE}
-                className={`w-full p-4 bg-purple-600/20 border border-gray-600 rounded-lg text-white transition-colors ${
-                  creationStep !== CreationStep.NONE
-                    ? "opacity-50 cursor-not-allowed"
-                    : "hover:bg-purple-700"
-                }`}
-              >
-                <div className="text-left">
-                  <div className="font-semibold text-lg">Free Quiz</div>
-                  <div className="text-sm text-gray-300">
-                    Create quiz without bounty
-                  </div>
-                </div>
-              </button>
-
-              {/* Quiz Bounty Option with Input */}
-              <div className="bg-purple-600/20 rounded-lg p-4">
-                <button
-                  onClick={handleBountyQuiz}
-                  disabled={creationStep !== CreationStep.NONE}
-                  className={`w-full p-3 bg-purple-600/40 border border-purple-500 rounded-lg text-white transition-colors mb-3 ${
-                    creationStep !== CreationStep.NONE
-                      ? "opacity-50 cursor-not-allowed"
-                      : "hover:bg-purple-700"
-                  }`}
-                >
-                  <div className="text-left">
-                    <div className="font-semibold">Quiz with Bounty</div>
-                    <div className="text-sm text-purple-200">
-                      Add bounty from your wallet
-                    </div>
-                  </div>
-                </button>
-
-                {/* Network Switcher */}
-                <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
-                  <button
-                    onClick={() => {
-                      const newNetworkid = chain?.id === 84532 ? 8453 : 84532;
-                      console.log("newNetworkid", newNetworkid);
-                      switchChain({ chainId: newNetworkid });
-                    }}
-                    className="w-full flex items-center justify-between p-2 bg-gray-600 hover:bg-gray-500 rounded text-white transition-colors"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <span className="text-sm font-medium">
-                        {chain?.id === 84532
-                          ? "Base Sepolia"
-                          : chain?.id === 8453
-                          ? "Base Mainnet"
-                          : "Base Sepolia"}
-                      </span>
-                    </div>
-                    <svg
-                      className="w-4 h-4 text-gray-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
-                      />
-                    </svg>
-                  </button>
-                </div>
-
-                {/* Currency Selector */}
-                <div className="p-3 bg-purple-600/20 rounded-lg mb-3">
-                  <label className="block text-white text-sm font-medium mb-2">
-                    Bounty Currency
-                  </label>
-                  <div className="flex gap-2 flex-wrap">
-                    {availableTokens.map((token) => (
-                      <button
-                        key={token.id}
-                        onClick={() => setSelectedCurrency(token.id)}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          selectedCurrency === token.id
-                            ? "bg-purple-600/40 text-white"
-                            : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                        }`}
-                      >
-                        {token.symbol}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-
-                {/* Quiz Bounty Amount Input */}
-                <div className="p-3 bg-purple-600/20 rounded-lg">
-                  <label className="block text-white text-sm font-medium mb-2">
-                    Quiz Bounty (
-                    {selectedToken?.symbol || "Tokens"}
-                    )
-                  </label>
-                  <input
-                    type="number"
-                    step="1"
-                    min="0"
-                    value={bountyAmount}
-                    onChange={(e) => setBountyAmount(e.target.value)}
-                    className="w-full px-3 py-2 bg-gray-600 border border-gray-500 rounded text-white focus:outline-none focus:border-purple-500"
-                    placeholder={
-                      selectedToken?.id === "usdc"
-                        ? "10"
-                        : selectedToken?.isNative
-                        ? "0.001"
-                        : "100"
-                    }
-                  />
-                  <div className="text-xs text-gray-400 mt-1">
-                    Current balance:{" "}
-                    {parseFloat(displayBalance).toFixed(
-                      selectedToken?.isNative ? 4 : 2
-                    )}{" "}
-                    {selectedToken?.symbol || "Tokens"}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Share Box */}
       {showShareBox && (
@@ -1561,6 +1837,143 @@ function AdminPageContent() {
 
       {/* Signature confirmation modal */}
       {signatureModal}
+
+      {/* Wallet Modal */}
+      {showWalletModal && (
+        <WalletModal onClose={() => setShowWalletModal(false)} />
+      )}
+
+      {/* Quick Menu Bottom Sheet */}
+      {showQuickMenu && (
+        <div
+          className="bottom-sheet"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowQuickMenu(false);
+            }
+          }}
+        >
+          <div className="bottom-sheet__content">
+            <button
+              onClick={() => setShowQuickMenu(false)}
+              className="btn"
+              style={{
+                position: "absolute",
+                top: "var(--spacing-md)",
+                right: "var(--spacing-md)",
+                padding: "var(--spacing-xs)",
+                minWidth: "auto",
+                background: "transparent",
+                color: "var(--color-text)",
+              }}
+              aria-label="Close"
+            >
+              ×
+            </button>
+
+            <div style={{ textAlign: "center", marginBottom: "var(--spacing-lg)" }}>
+              <h3 className="text-h2" style={{ marginBottom: "var(--spacing-xs)" }}>
+                Quick Actions
+              </h3>
+              <p className="text-body" style={{ color: "var(--color-text-secondary)" }}>
+                Jump to your quizzes or open your wallet
+              </p>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--spacing-md)",
+              }}
+            >
+              {/* Your Quizzes */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQuickMenu(false);
+                  router.push("/quiz/admin/my-quizzes");
+                }}
+                className="btn btn--primary btn--large"
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  justifyContent: "flex-start",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div
+                className="text-h2"
+                style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--spacing-xs)",
+                  marginBottom: "var(--spacing-xs)",
+                }}
+              >
+                  <span>📚</span>
+                  <span>Your quizzes</span>
+                </div>
+                <div
+                className="text-body"
+                style={{
+                    color: "var(--color-primary-light)",
+                }}
+              >
+                  View and manage the quizzes you have created
+            </div>
+              </button>
+
+              {/* Wallet */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (loggedUser?.isAuthenticated && loggedUser?.address) {
+                    setShowQuickMenu(false);
+                    setShowWalletModal(true);
+                  }
+                }}
+                className="btn btn--secondary btn--large"
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  justifyContent: "flex-start",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  opacity:
+                    loggedUser?.isAuthenticated && loggedUser?.address ? 1 : 0.7,
+                }}
+              >
+                <div
+                  className="text-h2"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--spacing-xs)",
+                    marginBottom: "var(--spacing-xs)",
+                  }}
+                >
+                  <span>👛</span>
+                  <span>Wallet</span>
+              </div>
+              <div
+                  className="text-body"
+                style={{
+                    color: "var(--color-text-secondary)",
+                }}
+              >
+                  {loggedUser?.isAuthenticated && loggedUser?.address
+                    ? "Open your wallet to view balances and activity"
+                    : "Connect and create your wallet first to open it here"}
+                </div>
+                </button>
+              </div>
+          </div>
+        </div>
+      )}
+
+      <Footer />
     </div>
   );
 }
@@ -1572,7 +1985,7 @@ export default function AdminPage() {
       <div className="min-h-screen w-full bg-black text-white flex items-center justify-center">
         <div className="text-center">
           <div className="text-xl font-semibold mb-2">Loading...</div>
-          <div className="text-gray-400">Please wait</div>
+          <div style={{ color: "var(--color-text-muted)" }}>Please wait</div>
         </div>
       </div>
     }>
