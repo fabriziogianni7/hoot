@@ -968,7 +968,7 @@ function PlayQuizContent() {
       </div>
 
       {/* Room code badge */}
-      {roomCode && (
+      {/* {roomCode && (
         <div className="absolute top-4 left-4 z-20 bg-white/10 backdrop-blur rounded-xl px-4 py-2 border border-white/20 shadow-lg flex flex-col gap-1">
           <span className="text-[10px] uppercase tracking-[0.2em] text-gray-300">
             Room Code
@@ -984,7 +984,7 @@ function PlayQuizContent() {
             </button>
           </div>
         </div>
-      )}
+      )} */}
 
       {/* Next Question Countdown */}
       {nextQuestionCountdown !== null && !isPhaseLastQuestion && (
@@ -1085,8 +1085,8 @@ function PlayQuizContent() {
               border: '8px solid transparent',
               background: `linear-gradient(white, white) padding-box, 
                           conic-gradient(from 0deg, 
-                            ${timeLeft <= 5 ? '#ef4444' : '#8b5cf6'} ${(timeLeft / initialTime) * 360}deg, 
-                            #374151 ${(timeLeft / initialTime) * 360}deg) border-box`,
+                            ${timeLeft <= 5 ? 'var(--color-error)' : 'var(--color-primary)'} ${(timeLeft / initialTime) * 360}deg, 
+                            var(--color-text-muted) ${(timeLeft / initialTime) * 360}deg) border-box`,
               transition: isAnswered ? 'none' : 'all 1s linear'
             }}
           >
@@ -1221,18 +1221,20 @@ function PlayQuizContent() {
                   disabled={timeLeft > 0}
                   className="w-full py-3 rounded text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{
-                    backgroundColor: timeLeft > 0 ? "#6b7280" : "#22c55e",
+                    backgroundColor: timeLeft > 0 ? "var(--color-text-muted)" : "var(--color-success)",
                   }}
                   onMouseEnter={(e) => {
                     if (timeLeft === 0) {
-                      e.currentTarget.style.backgroundColor = "#16a34a";
+                      e.currentTarget.style.backgroundColor = "var(--color-success)";
+                      e.currentTarget.style.opacity = "0.9";
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (timeLeft === 0) {
-                      e.currentTarget.style.backgroundColor = "#22c55e";
+                      e.currentTarget.style.backgroundColor = "var(--color-success)";
+                      e.currentTarget.style.opacity = "1";
                     } else {
-                      e.currentTarget.style.backgroundColor = "#6b7280";
+                      e.currentTarget.style.backgroundColor = "var(--color-text-muted)";
                     }
                   }}
                 >
@@ -1281,13 +1283,15 @@ function PlayQuizContent() {
                   onClick={handleNextQuestion}
                   className="w-full py-3 rounded text-white font-semibold transition-colors"
                   style={{
-                    backgroundColor: isLastQuestion ? "#f97316" : "#22c55e",
+                    backgroundColor: isLastQuestion ? "var(--color-warning)" : "var(--color-success)",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = isLastQuestion ? "#ea580c" : "#16a34a";
+                    e.currentTarget.style.backgroundColor = isLastQuestion ? "var(--color-warning)" : "var(--color-success)";
+                    e.currentTarget.style.opacity = "0.9";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = isLastQuestion ? "#f97316" : "#22c55e";
+                    e.currentTarget.style.backgroundColor = isLastQuestion ? "var(--color-warning)" : "var(--color-success)";
+                    e.currentTarget.style.opacity = "1";
                   }}
                 >
                   {isLastQuestion ? 'Show Results →' : 'Next Question →'}
@@ -1341,14 +1345,14 @@ function PlayQuizContent() {
               
               if (isAnswered) {
                 if (index === correctAnswerIndex) {
-                  backgroundColor = "#22c55e40"; // green-500 con trasparenza
-                  borderColor = "#22c55e";
+                  backgroundColor = "rgba(16, 185, 129, 0.25)"; // var(--color-success) con trasparenza
+                  borderColor = "var(--color-success)";
                 } else if (index === selectedAnswer && index !== correctAnswerIndex) {
-                  backgroundColor = "#dc262640"; // red-600 con trasparenza
-                  borderColor = "#dc2626";
+                  backgroundColor = "rgba(239, 68, 68, 0.25)"; // var(--color-error) con trasparenza
+                  borderColor = "var(--color-error)";
                 } else {
-                  backgroundColor = "#37415140"; // gray-700 con trasparenza
-                  borderColor = "#374151";
+                  backgroundColor = "rgba(255, 255, 255, 0.1)"; // var(--color-surface) con trasparenza
+                  borderColor = "var(--color-border-light)";
                 }
               }
               

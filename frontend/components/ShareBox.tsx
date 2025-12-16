@@ -66,60 +66,119 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50">
-      <div className="bg-black border border-white rounded-t-lg p-6 w-full max-w-md mx-4 mb-0 transform transition-transform duration-300 ease-out animate-slide-up">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-xl font-bold text-white">Quiz Created Successfully! 🎉</h3>
+    <div
+      className="bottom-sheet"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div className="share-box animate-slide-up">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: "var(--spacing-md)",
+          }}
+        >
+          <h3 className="share-box__title">Quiz Created Successfully! 🎉</h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="btn"
+            style={{
+              padding: "var(--spacing-xs)",
+              minWidth: "auto",
+              background: "transparent",
+              color: "var(--color-text-secondary)",
+            }}
+            aria-label="Close"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
         
-        <div className="space-y-4">
-          {/* External box containing all sharing options */}
-          <div className="bg-purple-900/30 border border-purple-700 rounded-lg p-4">
-            {/* Title */}
-            <div className="mb-4">
-              <h4 className="text-lg font-semibold text-white">Share Box:</h4>
-            </div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "var(--spacing-md)",
+          }}
+        >
+          {/* Share Box Container */}
+          <div className="share-box__section">
+            <h4
+              className="text-h2"
+              style={{
+                marginBottom: "var(--spacing-md)",
+              }}
+            >
+              Share Box
+            </h4>
             
-            <div className="space-y-4">
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--spacing-md)",
+              }}
+            >
               {/* QR Codes Button */}
-              <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3">
                 <button
                   onClick={() => setShowQRModal(true)}
-                  className="w-full py-2 px-4 rounded-lg font-medium bg-purple-600 hover:bg-purple-700 text-white transition-colors flex items-center justify-center gap-2"
+                className="btn btn--primary"
+                style={{ width: "100%" }}
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ marginRight: "var(--spacing-xs)" }}>
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
                   </svg>
                   QR Codes
                 </button>
-              </div>
               
               {/* Link Box */}
-              <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3 flex items-center justify-between gap-2">
-                <p className="text-sm text-blue-400 break-all flex-1">{quizUrl}</p>
+              <div
+                className="share-box__section"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "var(--spacing-sm)",
+                  padding: "var(--spacing-sm) var(--spacing-md)",
+                }}
+              >
+                <p
+                  className="text-body"
+                  style={{
+                    color: "var(--color-primary)",
+                    wordBreak: "break-all",
+                    flex: 1,
+                    fontSize: "var(--font-size-caption)",
+                  }}
+                >
+                  {quizUrl}
+                </p>
                 <button
                   onClick={handleCopyLink}
-                  className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
-                    copied 
-                      ? 'bg-green-600 text-white' 
-                      : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                  }`}
-                  title={copied ? 'Copied!' : 'Copy link'}
+                  className="btn"
+                  style={{
+                    padding: "var(--spacing-xs)",
+                    minWidth: "auto",
+                    backgroundColor: copied ? "var(--color-success)" : "var(--color-surface)",
+                    color: "var(--color-text)",
+                    flexShrink: 0,
+                  }}
+                  title={copied ? "Copied!" : "Copy link"}
+                  aria-label={copied ? "Copied!" : "Copy link"}
                 >
                   {copied ? (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                   ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
                   )}
@@ -127,23 +186,45 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
               </div>
               
               {/* PIN Box */}
-              <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3 flex items-center justify-between gap-2">
-                <p className="text-2xl font-bold text-white font-mono flex-1 text-center">{roomCode}</p>
+              <div
+                className="share-box__section"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "var(--spacing-sm)",
+                  padding: "var(--spacing-sm) var(--spacing-md)",
+                }}
+              >
+                <p
+                  className="text-h1"
+                  style={{
+                    fontFamily: "monospace",
+                    flex: 1,
+                    textAlign: "center",
+                  }}
+                >
+                  {roomCode}
+                </p>
                 <button
                   onClick={handleCopyPin}
-                  className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
-                    pinCopied 
-                      ? 'bg-green-600 text-white' 
-                      : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                  }`}
-                  title={pinCopied ? 'Copied!' : 'Copy PIN'}
+                  className="btn"
+                  style={{
+                    padding: "var(--spacing-xs)",
+                    minWidth: "auto",
+                    backgroundColor: pinCopied ? "var(--color-success)" : "var(--color-surface)",
+                    color: "var(--color-text)",
+                    flexShrink: 0,
+                  }}
+                  title={pinCopied ? "Copied!" : "Copy PIN"}
+                  aria-label={pinCopied ? "Copied!" : "Copy PIN"}
                 >
                   {pinCopied ? (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                   ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
                   )}
@@ -154,9 +235,10 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
           
           <button
             onClick={handleCastQuiz}
-            className="w-full py-3 px-4 rounded-lg font-medium bg-purple-600 hover:bg-purple-700 text-white transition-colors flex items-center justify-center gap-2"
+            className="btn btn--primary btn--large"
+            style={{ width: "100%" }}
           >
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24" style={{ marginRight: "var(--spacing-xs)" }}>
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
             </svg>
             Cast your Quiz
@@ -165,23 +247,24 @@ export default function ShareBox({ roomCode, onClose, onGoToLobby }: ShareBoxPro
           {onGoToLobby && (
             <button
               onClick={onGoToLobby}
-              className="w-full py-3 px-4 rounded-lg font-medium text-white transition-colors"
+              className="btn btn--large"
               style={{
-                backgroundColor: "#22c55e", // Verde delle risposte corrette
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = "#16a34a"; // Verde più scuro per hover
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = "#22c55e"; // Verde normale
+                width: "100%",
+                backgroundColor: "var(--color-success)",
+                color: "var(--color-text)",
               }}
             >
               Go to Lobby
             </button>
           )}
           
-          <div className="text-center">
-            <p className="text-sm text-gray-400">
+          <div style={{ textAlign: "center" }}>
+            <p
+              className="text-caption"
+              style={{
+                color: "var(--color-text-muted)",
+              }}
+            >
               Players can join using QR codes, link, or PIN
             </p>
           </div>
