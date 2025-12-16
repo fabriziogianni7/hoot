@@ -8,6 +8,7 @@ import {
   useWriteContract,
   useReadContract,
   useReadContracts,
+  useSwitchChain,
 } from "wagmi";
 import { parseEther, formatEther, parseUnits, formatUnits, isAddress } from "viem";
 import { useAuth } from "@/lib/use-auth";
@@ -27,6 +28,7 @@ type ViewMode = "main" | "send" | "receive";
 
 export default function WalletModal({ onClose }: WalletModalProps) {
   const { address, chain } = useAccount();
+  const { switchChain } = useSwitchChain();
   const { loggedUser } = useAuth();
 
   const chainId = chain?.id ?? 8453;
@@ -143,7 +145,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
               onClick={() => setSelectedTokenId(token.id)}
               className={`w-full rounded-lg border px-4 py-3 text-left transition-colors flex items-center justify-between gap-4 ${
                 isSelected
-                  ? "border-[#795AFF] bg-[#795AFF]/10 text-white"
+                  ? "border-[var(--color-primary)] bg-[var(--color-primary-light)] text-white"
                   : "border-gray-800 text-gray-300 hover:text-white hover:border-gray-600"
               }`}
             >
@@ -278,7 +280,13 @@ export default function WalletModal({ onClose }: WalletModalProps) {
               : "Wallet"}
           </h3>
           <button
-            onClick={onClose}
+            onClick={() => {
+              if (viewMode === "send" || viewMode === "receive") {
+                setViewMode("main");
+              } else {
+                onClose();
+              }
+            }}
             className="text-gray-400 hover:text-white transition-colors"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -290,6 +298,60 @@ export default function WalletModal({ onClose }: WalletModalProps) {
         {/* Main View */}
         {viewMode === "main" && (
           <div className="space-y-6">
+            {/* Network Switcher */}
+            <div 
+              className="rounded-lg p-3"
+              style={{ 
+                backgroundColor: "var(--color-surface-elevated)",
+              }}
+            >
+              <button
+                onClick={() => {
+                  const newNetworkid = chain?.id === 84532 ? 8453 : 84532;
+                  switchChain({ chainId: newNetworkid });
+                }}
+                style={{ 
+                  width: "100%", 
+                  display: "flex", 
+                  alignItems: "center", 
+                  justifyContent: "space-between",
+                  padding: "var(--spacing-sm)",
+                  backgroundColor: "var(--color-background)",
+                  border: "none",
+                  borderRadius: "var(--radius-md)",
+                  color: "var(--color-text)",
+                  cursor: "pointer",
+                  transition: "background-color 0.2s",
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "var(--color-surface)"}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "var(--color-background)"}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "var(--spacing-sm)" }}>
+                  <div style={{ width: "12px", height: "12px", backgroundColor: "#0052FF", borderRadius: "2px", marginRight: "var(--spacing-xs)" }}></div>
+                  <span className="text-body" style={{ color: "var(--color-text)", fontWeight: "500" }}>
+                    {chain?.id === 84532
+                      ? "Base Sepolia"
+                      : chain?.id === 8453
+                      ? "Base"
+                      : "Base Sepolia"}
+                  </span>
+                </div>
+                <svg
+                  style={{ width: "16px", height: "16px", color: "var(--color-text-secondary)" }}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
+                  />
+                </svg>
+              </button>
+            </div>
+
             {/* Token Selector */}
             <TokenSelector />
 
@@ -319,13 +381,13 @@ export default function WalletModal({ onClose }: WalletModalProps) {
             <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={() => setViewMode("send")}
-                className="bg-[#795AFF] hover:bg-[#6a4de6] text-white font-medium py-3 px-4 rounded-lg transition-colors"
+                className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-medium py-3 px-4 rounded-lg transition-colors"
               >
                 Send
               </button>
               <button
                 onClick={() => setViewMode("receive")}
-                className="bg-[#795AFF] hover:bg-[#6a4de6] text-white font-medium py-3 px-4 rounded-lg transition-colors"
+                className="bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-medium py-3 px-4 rounded-lg transition-colors"
               >
                 Receive
               </button>
@@ -336,16 +398,6 @@ export default function WalletModal({ onClose }: WalletModalProps) {
         {/* Send View */}
         {viewMode === "send" && (
           <div className="space-y-4">
-            {/* Back button */}
-            <button
-              onClick={() => setViewMode("main")}
-              className="text-gray-400 hover:text-white transition-colors text-sm flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Back
-            </button>
 
             {/* Token Selector in Send View */}
             <TokenSelector />
@@ -358,7 +410,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
                 value={sendTo}
                 onChange={(e) => setSendTo(e.target.value)}
                 placeholder="0x..."
-                className="w-full px-3 py-2 bg-gray-900 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#795AFF] font-mono text-sm"
+                className="w-full px-3 py-2 bg-gray-900 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] font-mono text-sm"
               />
             </div>
 
@@ -375,7 +427,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
                   placeholder="0.0"
                   step={selectedToken?.isNative ? "0.000001" : "0.01"}
                   min="0"
-                  className="flex-1 px-3 py-2 bg-gray-900 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[#795AFF]"
+                  className="flex-1 px-3 py-2 bg-gray-900 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                 />
                 <button
                   onClick={() => {
@@ -405,7 +457,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
             <button
               onClick={handleSend}
               disabled={isSending || !sendTo || !sendAmount}
-              className="w-full bg-[#795AFF] hover:bg-[#6a4de6] disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors"
+              className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors"
             >
               {isSending ? `Sending ${selectedToken?.symbol ?? ""}...` : `Send ${selectedToken?.symbol ?? ""}`}
             </button>
@@ -437,7 +489,16 @@ export default function WalletModal({ onClose }: WalletModalProps) {
             <TokenSelector />
 
             {/* Address Display */}
-            <div className="bg-gray-900 rounded-lg p-6 text-center">
+            <div className="bg-gray-900 rounded-lg p-6 text-center relative">
+              <button
+                onClick={() => setViewMode("main")}
+                className="absolute top-3 right-3 text-gray-400 hover:text-white transition-colors"
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
               <p className="text-gray-400 text-sm mb-4">Your Wallet Address</p>
               {walletAddress && (
                 <div className="bg-white rounded-lg p-4 mb-4 flex justify-center">
@@ -454,7 +515,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
               </div>
               <button
                 onClick={copyAddress}
-                className="w-full bg-[#795AFF] hover:bg-[#6a4de6] text-white font-medium py-3 px-4 rounded-lg transition-colors"
+                className="w-full bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white font-medium py-3 px-4 rounded-lg transition-colors"
               >
                 {copied ? "✓ Address Copied!" : "Copy Address"}
               </button>
