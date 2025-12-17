@@ -180,6 +180,25 @@ serve(async (req) => {
       // Support both FRONTEND_URL and FRONTEND_BASE_URL for flexibility
       const frontendUrl = Deno.env.get("FRONTEND_URL") || Deno.env.get("FRONTEND_BASE_URL") || "http://localhost:3000"
       
+      // Check if a game session already exists for this quiz
+      let roomCode: string | undefined = undefined
+      try {
+        const { data: existingGameSession } = await supabase
+          .from('game_sessions')
+          .select('room_code')
+          .eq('quiz_id', quiz.id)
+          .limit(1)
+          .single()
+        
+        if (existingGameSession?.room_code) {
+          roomCode = existingGameSession.room_code
+          console.log("Found existing game session with room_code:", roomCode)
+        }
+      } catch (error) {
+        // No game session exists yet, which is fine
+        console.log("No game session found for quiz, will send message without room_code")
+      }
+      
       sendTelegramMessage({
         quiz_id: quiz.id,
         title: request.title,
@@ -187,7 +206,7 @@ serve(async (req) => {
         prize_amount: request.prize_amount,
         prize_token: request.prize_token || null,
         scheduled_start_time: request.scheduled_start_time || null,
-        room_code: undefined, // Game session is created later when quiz starts
+        room_code: roomCode,
         frontend_url: frontendUrl
       }).catch((error) => {
         // Log error but don't fail the quiz creation

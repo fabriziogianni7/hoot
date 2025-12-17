@@ -5,6 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { useSupabase } from "@/lib/supabase-context";
 import StatusBadge from "@/components/StatusBadge";
 import { callEdgeFunction } from "@/lib/supabase-client";
+import Footer from "@/components/Footer";
 
 type QuizDetail = {
   id: string;
@@ -492,6 +493,8 @@ export default function QuizDetailPage() {
           </div>
         )}
       </div>
+
+      <Footer />
     </div>
   );
 }

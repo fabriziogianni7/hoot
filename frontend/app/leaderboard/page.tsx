@@ -9,6 +9,7 @@ import { sdk } from "@farcaster/miniapp-sdk"
 import { useAuth } from "@/lib/use-auth"
 
 import type { GlobalLeaderboardRow } from "@/lib/leaderboard-client"
+import Footer from "@/components/Footer"
 
 export default function LeaderboardPage() {
   const router = useRouter()
@@ -672,6 +673,8 @@ ${createdLine}🔥 Come play the next Hoot! quiz and try to beat me!`
           </div>
         )}
       </div>
+
+      <Footer />
     </div>
   )
 }

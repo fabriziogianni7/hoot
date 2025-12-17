@@ -381,6 +381,14 @@ function AdminPageContent() {
         return;
       }
       
+      // Check if wallet is connected (required for quiz creation)
+      if (!address || !chain?.id) {
+        console.error('Cannot create quiz: wallet not connected', { address, chainId: chain?.id });
+        setError("Please connect your wallet to create a quiz");
+        setPendingQuizCreation(null);
+        return;
+      }
+      
       if (pendingQuizCreation.type === "free") {
         handleFreeQuiz();
       } else if (pendingQuizCreation.type === "bounty") {
@@ -389,10 +397,10 @@ function AdminPageContent() {
       }
       
       setPendingQuizCreation(null);
-    }, 200); // Increased timeout to ensure questions are restored
+    }, 500); // Increased timeout to ensure wallet and questions are ready
     
     return () => clearTimeout(timer);
-  }, [pendingQuizCreation, isCreating, questions.length]);
+  }, [pendingQuizCreation, isCreating, questions.length, address, chain?.id]);
 
   // Restore existing questions when returning from AI generation page (without new questions)
   // or add new AI questions to existing ones
@@ -717,6 +725,12 @@ function AdminPageContent() {
     amount: string,
     decimals?: number
   ) => {
+    // Validate that amount is greater than 0 (free quizzes should not call this function)
+    const amountNum = parseFloat(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      throw new Error("Cannot create quiz on-chain with zero or negative amount. Use handleFreeQuiz for free quizzes.");
+    }
+
     const isETH = tokenAddress === ZERO_ADDRESS;
     const tokenDecimals = selectedToken?.decimals || decimals || 18;
 
@@ -731,18 +745,26 @@ function AdminPageContent() {
       decimals,
       amountWei: amountWei.toString(),
       isETH,
+      address,
+      chainId: chain?.id,
     });
 
-    const txHash = await writeContractAsync({
-      address: hootContractAddress as `0x${string}`,
-      abi: HOOT_QUIZ_MANAGER_ABI,
-      functionName: "createQuiz",
-      args: [quizId, tokenAddress as `0x${string}`, amountWei],
-      value: isETH ? amountWei : BigInt(0),
-    });
-    setQuizTransaction(txHash);
-    console.log("Quiz created on-chain, tx hash:", txHash);
-    return txHash;
+    try {
+      const txHash = await writeContractAsync({
+        address: hootContractAddress as `0x${string}`,
+        abi: HOOT_QUIZ_MANAGER_ABI,
+        functionName: "createQuiz",
+        args: [quizId, tokenAddress as `0x${string}`, amountWei],
+        value: isETH ? amountWei : BigInt(0),
+      });
+      
+      setQuizTransaction(txHash);
+      console.log("Quiz created on-chain, tx hash:", txHash);
+      return txHash;
+    } catch (error) {
+      console.error("Error in writeContractAsync:", error);
+      throw error;
+    }
   };
 
   const [currentQuestion, setCurrentQuestion] = useState<QuizQuestion>({
@@ -981,12 +1003,27 @@ function AdminPageContent() {
   }, []);
 
   const handleFreeQuiz = async () => {
-    // Create quiz without bounty
-    const result = await handleSaveQuiz();
+    try {
+      setError("");
+      console.log("Creating free quiz - NO on-chain transaction needed");
+      // Create quiz without bounty - NO on-chain transaction needed
+      const result = await handleSaveQuiz();
 
-    if (result) {
-      // After quiz is created, navigate directly to lobby
-      router.push(`/quiz/lobby/${result.roomCode}`);
+      if (result) {
+        console.log("Free quiz created successfully, navigating to lobby:", result.roomCode);
+        // After quiz is created, navigate directly to lobby
+        router.push(`/quiz/lobby/${result.roomCode}`);
+      } else {
+        console.error("Failed to create free quiz - handleSaveQuiz returned null");
+        setError("Failed to create quiz. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error creating free quiz:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to create quiz. Please try again."
+      );
     }
   };
 
@@ -1123,6 +1160,16 @@ function AdminPageContent() {
 
       // Create quiz on-chain with bounty
       setCreationStep(CreationStep.CREATING_ON_CHAIN);
+      
+      console.log("About to create quiz on-chain with:", {
+        quizId,
+        tokenAddress,
+        actualBountyAmount,
+        decimals,
+        address,
+        chainId: chain?.id,
+      });
+      
       const txHash = await createQuizOnChain(
         quizId,
         tokenAddress,
@@ -1194,11 +1241,41 @@ function AdminPageContent() {
       if (allQuestions.length === 0) {
         setError("Please add at least one question");
         setIsCreating(false);
+        setCreationStep(CreationStep.NONE);
+        return null;
+      }
+
+      // Validate all questions have content
+      const invalidQuestions = allQuestions.filter(q => 
+        !q.text.trim() || 
+        q.options.length < 4 || 
+        q.options.some(opt => !opt.text.trim())
+      );
+      
+      if (invalidQuestions.length > 0) {
+        setError("Please complete all questions. Each question needs text and 4 answer options.");
+        setIsCreating(false);
+        setCreationStep(CreationStep.NONE);
         return null;
       }
 
       if (isScheduled && !scheduledStartTime) {
         setError("Please choose a scheduled start time or disable scheduling");
+        setIsCreating(false);
+        setCreationStep(CreationStep.NONE);
+        return null;
+      }
+
+      // Validate required fields
+      if (!address) {
+        setError("Please connect your wallet to create a quiz");
+        setIsCreating(false);
+        setCreationStep(CreationStep.NONE);
+        return null;
+      }
+
+      if (!chain?.id) {
+        setError("Please connect to a supported network");
         setIsCreating(false);
         setCreationStep(CreationStep.NONE);
         return null;
@@ -1230,13 +1307,15 @@ function AdminPageContent() {
         questionCount: quiz.questions.length,
         isScheduled,
         scheduledStartIso,
+        address,
+        chainId: chain?.id,
       });
 
       // Create quiz in backend (no contract info yet)
       const backendQuizId = await createQuizOnBackend(
         quiz,
         undefined, // Contract address (will be set later if bounty is added)
-        chain?.id, // network id
+        chain.id, // network id
         userFid?.toString() || '', // user fid
         address, // user address
         0, // prize amount (will be updated later for bounty quizzes)
@@ -1252,20 +1331,37 @@ function AdminPageContent() {
 
       // Start game session and join as creator
       setCreationStep(CreationStep.CREATING_ROOM);
-      const generatedRoomCode = await startGame(backendQuizId);
+      let generatedRoomCode: string;
+      try {
+        generatedRoomCode = await startGame(backendQuizId);
+      } catch (gameError) {
+        console.error("Error starting game:", gameError);
+        throw new Error(`Failed to create game session: ${gameError instanceof Error ? gameError.message : "Unknown error"}`);
+      }
 
       // Auto-join as the creator
-      const creatorPlayerId = await joinGameContext(
-        "Creator",
-        address,
-        generatedRoomCode
-      );
+      let creatorPlayerId: string;
+      try {
+        creatorPlayerId = await joinGameContext(
+          "Creator",
+          address,
+          generatedRoomCode
+        );
+      } catch (joinError) {
+        console.error("Error joining as creator:", joinError);
+        throw new Error(`Failed to join as creator: ${joinError instanceof Error ? joinError.message : "Unknown error"}`);
+      }
 
       // Update game session with creator in one call
-      await supabase
+      const { error: updateError } = await supabase
         .from("game_sessions")
         .update({ creator_session_id: creatorPlayerId })
         .eq("room_code", generatedRoomCode);
+      
+      if (updateError) {
+        console.error("Error updating game session with creator:", updateError);
+        // Don't throw here, the quiz is already created and game session exists
+      }
 
       // Store creator ID in localStorage
       localStorage.setItem("playerSessionId", creatorPlayerId);
@@ -1582,7 +1678,6 @@ function AdminPageContent() {
                     maxLength={MAX_ANSWER_LENGTH}
                     className="quiz-input w-full bg-transparent focus:outline-none pr-12"
                     style={{ color: "var(--color-text)" }}
-                    placeholder="add reply"
                     onClick={(e) => e.stopPropagation()}
                   />
                   {/* Character counter for answer - only show when limit reached */}
@@ -1609,7 +1704,8 @@ function AdminPageContent() {
             {questions.map((question, index) => (
               <div 
                 key={index}
-                className={`bg-black border ${currentQuestionIndex === index ? 'border-white' : 'border-white/30'} rounded px-4 py-2 text-sm cursor-pointer hover:border-white transition-colors flex-shrink-0 relative`}
+                className={`bg-black border ${currentQuestionIndex === index ? 'border-white' : 'border-white/30'} rounded px-4 py-2 text-sm cursor-pointer hover:border-white transition-colors flex-shrink-0 relative flex items-center`}
+                style={{ minHeight: '40px' }}
                 onClick={() => handleQuestionClick(index)}
               >
                 <button
@@ -1640,7 +1736,8 @@ function AdminPageContent() {
             {/* Current question button (if it's a new question) */}
             {currentQuestionIndex === questions.length && (
               <div 
-                className="bg-black border border-white rounded px-4 py-2 text-sm flex-shrink-0"
+                className="bg-black border border-white rounded px-4 py-2 text-sm flex-shrink-0 flex items-center"
+                style={{ minHeight: '40px' }}
               >
                 Question {displayQuestionNumber}<br/>
                 {currentQuestion.text ? getQuestionSummary(currentQuestion) : ""}
@@ -1649,10 +1746,11 @@ function AdminPageContent() {
             
             {/* Add question button - always visible on the right */}
             <div className="flex flex-col items-center relative flex-shrink-0">
-              <div className="flex items-end gap-2">
+              <div className="flex items-center gap-2">
               <button 
                 ref={addButtonRef}
-                className="bg-black border border-white/30 rounded px-4 py-2 text-2xl hover:border-white transition-colors"
+                className="bg-black border border-white/30 rounded px-4 py-2 text-2xl hover:border-white transition-colors flex items-center justify-center"
+                style={{ minHeight: '40px', minWidth: '40px' }}
                 onClick={handleAddQuestion}
               >
                 +
@@ -1714,11 +1812,10 @@ function AdminPageContent() {
                     }
                     router.push("/quiz/admin/generate-ai-question");
                   }}
-                  className="btn btn--secondary"
+                  className="bg-black/50 border border-[var(--color-primary)] rounded px-4 py-2 text-sm hover:border-[var(--color-primary-hover)] transition-colors flex items-center justify-center"
                   style={{
-                    padding: "var(--spacing-sm) var(--spacing-md)",
                     whiteSpace: "nowrap",
-                    minWidth: "auto",
+                    minHeight: '40px',
                   }}
                   title="Generate question with AI"
                 >

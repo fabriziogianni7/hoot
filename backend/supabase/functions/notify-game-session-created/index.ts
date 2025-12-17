@@ -3,6 +3,7 @@ import { handleCorsPreFlight } from "../_shared/cors.ts"
 import { successResponse, errorResponse } from "../_shared/response.ts"
 import { initSupabaseClient } from "../_shared/supabase.ts"
 import { sendFrameNotification } from "../_shared/neynar.ts"
+import { sendTelegramMessage } from "../_shared/telegram.ts"
 
 const NOTIFICATION_TARGET_FIDS = []
 const FRONTEND_BASE_URL =
@@ -65,11 +66,13 @@ serve(async (req) => {
         quizzes (
           id,
           title,
+          description,
           prize_amount,
           prize_token,
           network_id,
           scheduled_start_time,
-          scheduled_notification_sent
+          scheduled_notification_sent,
+          is_private
         )
       `
       )
@@ -89,11 +92,13 @@ serve(async (req) => {
       | {
           id: string
           title: string
+          description: string | null
           prize_amount: number | null
           prize_token: string | null
           network_id: string | null
           scheduled_start_time: string | null
           scheduled_notification_sent?: boolean | null
+          is_private: boolean | null
         }
       | null
 
@@ -113,6 +118,28 @@ serve(async (req) => {
       new Date(quiz.scheduled_start_time as string).getTime() > Date.now()
     const alreadyNotified = !!quiz.scheduled_notification_sent
 
+    // Send Telegram notification for any quiz with prize when game session is created
+    // (regardless of whether it's scheduled or not)
+    if (hasPrizeAmount && !quiz.is_private) {
+      const frontendUrl = Deno.env.get("FRONTEND_URL") || Deno.env.get("FRONTEND_BASE_URL") || "http://localhost:3000"
+      const roomCode = gameSession.room_code
+      
+      sendTelegramMessage({
+        quiz_id: quiz.id,
+        title: quiz.title,
+        description: quiz.description || null,
+        prize_amount: quiz.prize_amount || 0,
+        prize_token: quiz.prize_token || null,
+        scheduled_start_time: quiz.scheduled_start_time || null,
+        room_code: roomCode,
+        frontend_url: frontendUrl
+      }).catch((error) => {
+        // Log error but don't fail the notification
+        console.error("Failed to send Telegram notification:", error)
+      })
+    }
+
+    // Continue with Neynar notification logic for scheduled quizzes only
     if (
       !hasPrizeToken ||
       !hasPrizeAmount ||
@@ -120,7 +147,7 @@ serve(async (req) => {
       !scheduledInFuture
     ) {
       console.log(
-        "notify-game-session-created: skipping (not eligible)",
+        "notify-game-session-created: skipping Neynar notification (not eligible)",
         {
           quizId: quiz.id,
           hasPrizeToken,
@@ -139,7 +166,7 @@ serve(async (req) => {
 
     if (alreadyNotified) {
       console.log(
-        "notify-game-session-created: skipping (already notified)",
+        "notify-game-session-created: skipping Neynar notification (already notified)",
         { quizId: quiz.id },
       )
       return successResponse({
