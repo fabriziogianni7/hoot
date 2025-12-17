@@ -753,6 +753,7 @@
   .footer__label {
     font-size: var(--font-size-caption);
     line-height: var(--line-height-tight);
+    margin-bottom: var(--spacing-xs);
   }
 
   /* ===== MODALS / BOTTOM SHEETS ===== */
