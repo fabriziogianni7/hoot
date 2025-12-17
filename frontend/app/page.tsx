@@ -937,7 +937,7 @@ export default function Home() {
               )}
           </div>
         </div>
-      </div>
+      </button>
 
       {/* Logo and description */}
       <div
