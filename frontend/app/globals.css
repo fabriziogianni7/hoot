@@ -753,6 +753,7 @@
   .footer__label {
     font-size: var(--font-size-caption);
     line-height: var(--line-height-tight);
+    margin-bottom: var(--spacing-xs);
   }
 
   /* ===== MODALS / BOTTOM SHEETS ===== */
@@ -914,5 +915,46 @@
   
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+
+  /* ===== ONCHAINKIT MODAL STYLING ===== */
+  /* Style OnchainKit transaction modals to match WalletModal */
+  /* Target all dialogs and alertdialogs from OnchainKit */
+  [data-radix-portal] > div[role="dialog"],
+  [data-radix-portal] > div[role="alertdialog"] {
+    max-width: 24rem !important; /* max-w-sm equivalent */
+  }
+
+  /* Target modal content containers - look for common OnchainKit patterns */
+  [data-radix-portal] > div[role="dialog"] > div:first-child,
+  [data-radix-portal] > div[role="alertdialog"] > div:first-child,
+  [data-radix-portal] > div[role="dialog"] > div[class*="content"],
+  [data-radix-portal] > div[role="alertdialog"] > div[class*="content"] {
+    border: 1px solid var(--color-primary) !important;
+    border-radius: 1rem 1rem 0 0 !important; /* rounded-t-2xl */
+  }
+
+  /* Target any div inside the portal that might be the modal container */
+  [data-radix-portal] > div > div[class*="bg-"],
+  [data-radix-portal] > div > div[class*="backdrop"] {
+    max-width: 24rem !important;
+  }
+
+  [data-radix-portal] > div > div[class*="bg-"] > div,
+  [data-radix-portal] > div > div[class*="backdrop"] > div {
+    border: 1px solid var(--color-primary) !important;
+    border-radius: 1rem 1rem 0 0 !important;
+  }
+
+  /* More aggressive selectors for OnchainKit modals */
+  body > div[data-radix-portal] > div,
+  body > div[id*="radix"] > div {
+    max-width: 24rem !important;
+  }
+
+  body > div[data-radix-portal] > div > div:first-child,
+  body > div[id*="radix"] > div > div:first-child {
+    border: 1px solid var(--color-primary) !important;
+    border-radius: 1rem 1rem 0 0 !important;
   }
 }

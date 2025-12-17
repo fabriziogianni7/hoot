@@ -269,7 +269,7 @@ export default function WalletModal({ onClose }: WalletModalProps) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-black border border-gray-800 rounded-t-2xl p-6 w-full max-w-md transform transition-transform duration-300 ease-out">
+      <div className="bg-black border border-[var(--color-primary)] rounded-t-2xl p-6 w-full max-w-sm transform transition-transform duration-300 ease-out">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xl font-bold text-white">
@@ -474,17 +474,6 @@ export default function WalletModal({ onClose }: WalletModalProps) {
         {/* Receive View */}
         {viewMode === "receive" && (
           <div className="space-y-4">
-            {/* Back button */}
-            <button
-              onClick={() => setViewMode("main")}
-              className="text-gray-400 hover:text-white transition-colors text-sm flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Back
-            </button>
-
             {/* Token Selector in Receive View */}
             <TokenSelector />
 
@@ -501,11 +490,11 @@ export default function WalletModal({ onClose }: WalletModalProps) {
               </button>
               <p className="text-gray-400 text-sm mb-4">Your Wallet Address</p>
               {walletAddress && (
-                <div className="bg-white rounded-lg p-4 mb-4 flex justify-center">
+                <div className="mb-4 flex justify-center">
                   <QRCode
                     value={walletAddress}
-                    size={192}
-                    style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                    size={80}
+                    style={{ height: "auto", maxWidth: "80px", width: "80px" }}
                     viewBox="0 0 256 256"
                   />
                 </div>

@@ -21,20 +21,21 @@ export interface TelegramMessageResult {
 }
 
 /**
- * Formats the prize amount with token symbol
+ * Formats the prize amount with token symbol - shows all decimals
  */
 function formatPrize(prizeAmount: number, prizeToken: string | null): string {
-  const amount = prizeAmount.toLocaleString(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 4
-  })
+  // Convert to string to preserve all decimals, remove trailing zeros
+  const amountStr = prizeAmount.toString()
+  const formattedAmount = amountStr.includes('.') 
+    ? amountStr.replace(/\.?0+$/, '')
+    : amountStr
   
   if (!prizeToken) {
-    return `${amount} ETH`
+    return `${formattedAmount} ETH`
   }
   
   // For now, just show token address. Could be enhanced to fetch token symbol
-  return `${amount} tokens`
+  return `${formattedAmount} tokens`
 }
 
 /**
@@ -63,6 +64,48 @@ function formatScheduledTime(scheduledTime: string | null): string {
 }
 
 /**
+ * Formats the scheduled date/time in a readable format with Italian timezone
+ */
+function formatScheduledDate(scheduledTime: string | null): string {
+  if (!scheduledTime) return ""
+  
+  try {
+    const date = new Date(scheduledTime)
+    
+    // Format date in Italian timezone (Europe/Rome)
+    const dateFormatter = new Intl.DateTimeFormat("it-IT", {
+      timeZone: "Europe/Rome",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    })
+    
+    const timezoneFormatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Europe/Rome",
+      timeZoneName: "short"
+    })
+    
+    const dateParts = dateFormatter.formatToParts(date)
+    const day = dateParts.find(p => p.type === "day")?.value || ""
+    const month = dateParts.find(p => p.type === "month")?.value || ""
+    const year = dateParts.find(p => p.type === "year")?.value || ""
+    const hours = dateParts.find(p => p.type === "hour")?.value || ""
+    const minutes = dateParts.find(p => p.type === "minute")?.value || ""
+    
+    // Get timezone abbreviation (CET or CEST)
+    const timezoneParts = timezoneFormatter.formatToParts(date)
+    const timezoneLabel = timezoneParts.find(p => p.type === "timeZoneName")?.value || "CET"
+    
+    return `${day}/${month}/${year} ${hours}:${minutes} (${timezoneLabel})`
+  } catch {
+    return ""
+  }
+}
+
+/**
  * Builds the message text for Telegram
  */
 export function buildTelegramMessage(payload: TelegramMessagePayload): string {
@@ -71,31 +114,35 @@ export function buildTelegramMessage(payload: TelegramMessagePayload): string {
   let message = `🎯 *New Quiz with Prize!*\n\n`
   message += `📝 *${title}*\n\n`
   
-  if (description) {
-    message += `${description}\n\n`
+  // Add prize information
+  if (prize_amount > 0) {
+    const prize = formatPrize(prize_amount, prize_token || null)
+    message += `💰 Prize: *${prize}*\n\n`
   }
   
-  const prize = formatPrize(prize_amount, prize_token)
-  message += `💰 Prize: *${prize}*\n\n`
-  
+  // Replace "created from admin etc" with scheduled date if present
   if (scheduled_start_time) {
-    const timeInfo = formatScheduledTime(scheduled_start_time)
-    if (timeInfo) {
-      message += `⏰ Starts ${timeInfo}\n\n`
+    const scheduledDate = formatScheduledDate(scheduled_start_time)
+    if (scheduledDate) {
+      message += `📅 Scheduled: ${scheduledDate}\n\n`
     }
   }
   
+  // Add room code (pin) if available
   if (room_code) {
-    message += `🔑 Room Code: \`${room_code}\`\n\n`
+    message += `🔑 Pin: \`${room_code}\`\n\n`
   }
   
-  // Add link to quiz if frontend URL is available
+  // Add link to quiz - always include if frontend URL is available
   if (frontend_url) {
-    // If room_code is available, link to lobby, otherwise link to quiz admin page
+    // If room_code is available, link to lobby, otherwise link to upcoming page
     const quizUrl = room_code 
       ? `${frontend_url}/quiz/lobby/${room_code}`
-      : `${frontend_url}/quiz/admin?quizId=${payload.quiz_id}`
+      : `${frontend_url}/quiz/next`
     message += `🔗 [Join Quiz](${quizUrl})`
+  } else {
+    // If no frontend URL, at least show a message
+    message += `🔗 Join Quiz`
   }
   
   return message

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense, useRef, useCallback } from "react";
+import { useEffect, useState, Suspense, useRef, useCallback, useMemo } from "react";
 import { useRouter, useParams } from "next/navigation";
 
 // Disable pre-rendering for this page
@@ -15,7 +15,10 @@ import { usePlayerSessionsRealtime, useLobbyMessagesRealtime } from "@/lib/use-r
 import { NETWORK_TOKENS } from "@/lib/token-config";
 import { ZERO_ADDRESS } from "@/lib/contracts";
 import QuizCalendarButton from "@/components/QuizCalendarButton";
+import Footer from "@/components/Footer";
 import { sdk } from "@farcaster/miniapp-sdk";
+import QRCodeModal from "@/components/QRCodeModal";
+import { callEdgeFunction } from "@/lib/supabase-client";
 import { hapticImpact } from "@/lib/haptics";
 import { AdsterixWidget } from "@nektarlabs/adsterix-widget";
 
@@ -87,8 +90,74 @@ function LobbyContent() {
   const [isCreator, setIsCreator] = useState(false);
   const [copiedPin, setCopiedPin] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [showShareOptions, setShowShareOptions] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
   const [messageText, setMessageText] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isScheduledLocal, setIsScheduledLocal] = useState(false);
+  const [scheduledStartTimeLocal, setScheduledStartTimeLocal] = useState<string>("");
+  const [isUpdatingSchedule, setIsUpdatingSchedule] = useState(false);
+
+  // Initialize scheduled time from quiz data
+  useEffect(() => {
+    if (gameData?.quizzes?.scheduled_start_time) {
+      const scheduledDate = new Date(gameData.quizzes.scheduled_start_time);
+      const offset = scheduledDate.getTimezoneOffset();
+      const local = new Date(scheduledDate.getTime() - offset * 60_000);
+      setScheduledStartTimeLocal(local.toISOString().slice(0, 16));
+      setIsScheduledLocal(true);
+    } else {
+      setIsScheduledLocal(false);
+      setScheduledStartTimeLocal("");
+    }
+  }, [gameData?.quizzes?.scheduled_start_time]);
+
+  const minScheduledTime = useMemo(() => {
+    const date = new Date(Date.now() + 60_000);
+    const offset = date.getTimezoneOffset();
+    const local = new Date(date.getTime() - offset * 60_000);
+    return local.toISOString().slice(0, 16);
+  }, []);
+
+  const handleUpdateSchedule = async () => {
+    if (!gameData?.quiz_id) return;
+    
+    // Check if user is creator
+    const playerSessionId = typeof window !== "undefined" 
+      ? localStorage.getItem("playerSessionId") 
+      : null;
+    const isUserCreator = isCreator || (playerSessionId && gameData?.creator_session_id && playerSessionId === gameData.creator_session_id);
+    
+    if (!isUserCreator) return;
+
+    setIsUpdatingSchedule(true);
+    try {
+      const scheduledStartIso = isScheduledLocal && scheduledStartTimeLocal
+        ? new Date(scheduledStartTimeLocal).toISOString()
+        : null;
+
+      await callEdgeFunction("update-quiz", {
+        quiz_id: gameData.quiz_id,
+        scheduled_start_time: scheduledStartIso,
+      });
+
+      // Update local gameData
+      if (gameData.quizzes) {
+        setGameData({
+          ...gameData,
+          quizzes: {
+            ...gameData.quizzes,
+            scheduled_start_time: scheduledStartIso,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("Error updating schedule:", error);
+      setError("Failed to update schedule. Please try again.");
+    } finally {
+      setIsUpdatingSchedule(false);
+    }
+  };
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const hasNavigatedRef = useRef(false);
   // Reactions: messageId -> emoji -> array of player_session_ids
@@ -204,9 +273,16 @@ function LobbyContent() {
     prizeTokenAddress !== ZERO_ADDRESS
       ? `${prizeTokenAddress.slice(0, 6)}...${prizeTokenAddress.slice(-4)}`
       : null;
+  // Format prize amount with more decimals for ETH/native tokens
   const formattedPrizeAmount =
     prizeAmount > 0
-      ? prizeAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })
+      ? prizeTokenAddress === ZERO_ADDRESS
+        ? prizeAmount.toLocaleString(undefined, { 
+            maximumFractionDigits: 18,
+            minimumFractionDigits: 0,
+            useGrouping: false
+          })
+        : prizeAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })
       : "0";
   const showPrizePool = prizeAmount > 0;
   const scheduledStartTime = gameData?.quizzes?.scheduled_start_time || null;
@@ -734,6 +810,20 @@ function LobbyContent() {
     }
   };
 
+  const handleCastQuiz = async () => {
+    const roomCodeToUse = contextRoomCode || roomCodeFromUrl || "";
+    const quizUrl = typeof window !== "undefined"
+      ? `${window.location.origin}/quiz/lobby/${roomCodeToUse}`
+      : "";
+    const text = `🎯 Join my quiz on Hoot! The PIN is: ${roomCodeToUse}\n\n${quizUrl}`;
+    await sdk.actions.composeCast({ 
+      text,
+      close: false,
+      channelKey: 'hoot',
+      embeds: [quizUrl as string]
+    });
+  };
+
   const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -1151,22 +1241,22 @@ function LobbyContent() {
             />
           </div>
           <div className="flex items-center justify-center min-h-screen px-4">
-            <div className="max-w-md w-full bg-purple-900/40 border border-purple-700/60 rounded-2xl p-8 text-center space-y-5">
+            <div className="max-w-md w-full rounded-2xl p-8 text-center space-y-5" style={{ backgroundColor: "var(--color-surface-elevated)", border: "1px solid var(--color-border-medium)" }}>
               <h1 className="text-2xl font-bold">Connect your wallet</h1>
-              <p className="text-sm text-gray-300">{displayDescription}</p>
+              <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{displayDescription}</p>
               {authError && !walletInitializing && (
-                <div className="bg-red-500/20 border border-red-500 rounded-lg p-3 text-sm text-red-200">
+                <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: "rgba(239, 68, 68, 0.2)", border: "1px solid var(--color-error)", color: "var(--color-error)" }}>
                   {authError}
                 </div>
               )}
               {walletInitializing && (
-                <div className="bg-blue-500/20 border border-blue-500 rounded-lg p-3 text-sm text-blue-200">
+                <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: "rgba(59, 130, 246, 0.2)", border: "1px solid var(--color-info)", color: "var(--color-info)" }}>
                   Your wallet is loading. Please wait a moment...
                 </div>
               )}
               {showSpinner ? (
-                <div className="flex flex-col items-center gap-2 text-sm text-gray-300">
-                  <div className="w-6 h-6 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+                <div className="flex flex-col items-center gap-2 text-sm" style={{ color: "var(--color-text-secondary)" }}>
+                  <div className="w-6 h-6 rounded-full animate-spin" style={{ border: "2px solid var(--color-primary-medium)", borderTopColor: "transparent" }} />
                   <span>
                     {walletInitializing
                       ? "Waiting for wallet..."
@@ -1179,11 +1269,23 @@ function LobbyContent() {
                 <button
                   onClick={() => handleAuthClick(needsPrivyFlow ? "privy" : "miniapp")}
                   disabled={isButtonDisabled}
-                  className={`w-full py-2 rounded text-white font-medium transition-colors ${
-                    isButtonDisabled
-                      ? "bg-gray-600 cursor-not-allowed opacity-50"
-                      : "bg-purple-600 hover:bg-purple-700"
-                  }`}
+                  className="w-full py-2 rounded font-medium transition-colors"
+                  style={{
+                    backgroundColor: isButtonDisabled ? "var(--color-text-muted)" : "var(--color-primary)",
+                    color: "var(--color-text)",
+                    cursor: isButtonDisabled ? "not-allowed" : "pointer",
+                    opacity: isButtonDisabled ? 0.5 : 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isButtonDisabled) {
+                      e.currentTarget.style.backgroundColor = "var(--color-primary-hover)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isButtonDisabled) {
+                      e.currentTarget.style.backgroundColor = "var(--color-primary)";
+                    }
+                  }}
                 >
                   {buttonLabel}
                 </button>
@@ -1193,7 +1295,7 @@ function LobbyContent() {
                   Something went wrong. Please try again.
                 </p>
               )}
-              <p className="text-xs text-gray-500">{footerMessage}</p>
+              <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>{footerMessage}</p>
             </div>
           </div>
         </div>
@@ -1240,7 +1342,7 @@ function LobbyContent() {
           <div className="flex items-center justify-center min-h-screen">
             <div className="text-center">
               <div className="text-2xl font-bold mb-4">Game not found</div>
-              <Link href="/" className="text-blue-400 hover:underline">
+              <Link href="/" className="hover:underline" style={{ color: "var(--color-info)" }}>
                 Go back home
               </Link>
             </div>
@@ -1267,11 +1369,11 @@ function LobbyContent() {
         <div className="relative z-10 container mx-auto py-8 px-4 flex flex-col items-center">
         {/* Connection Status Indicator */}
         {!isRealtimeConnected && (
-          <div className="fixed top-4 right-4 z-50 bg-red-600/95 backdrop-blur-sm border border-red-400 rounded-lg p-4 shadow-2xl max-w-xs">
+          <div className="fixed top-4 right-4 z-50 backdrop-blur-sm rounded-lg p-4 shadow-2xl max-w-xs" style={{ backgroundColor: "rgba(239, 68, 68, 0.95)", border: "1px solid var(--color-error)" }}>
             <div className="flex items-start gap-3">
               <div className="flex-shrink-0">
                 {isReconnecting ? (
-                  <div className="w-4 h-4 border-2 border-red-300 border-t-transparent rounded-full animate-spin"></div>
+                  <div className="w-4 h-4 rounded-full animate-spin" style={{ border: "2px solid var(--color-error)", borderTopColor: "transparent" }}></div>
                 ) : (
                   <div className="w-4 h-4 bg-red-400 rounded-full animate-pulse"></div>
                 )}
@@ -1280,7 +1382,7 @@ function LobbyContent() {
                 <p className="font-semibold text-sm mb-1">
                   {isReconnecting ? "Reconnecting..." : "Connection Lost"}
                 </p>
-                <p className="text-xs text-red-200">
+                <p className="text-xs" style={{ color: "var(--color-error)" }}>
                   {isReconnecting
                     ? `Attempt ${reconnectAttempts}/10`
                     : reconnectAttempts >= 10
@@ -1310,20 +1412,167 @@ function LobbyContent() {
           />
         </div>
 
-        <h1 className="text-3xl font-bold mb-8">
+        <h1 className="text-3xl font-bold mb-2">
           {quiz?.title || "Quiz Lobby"}
         </h1>
 
-        {/* Join Form - Show if not joined */}
-        {!joined && (
+        {/* PIN and QR Code Split Button */}
+        <div className="mb-4 w-full max-w-md mx-auto">
+          <div className="flex gap-2">
+            {/* PIN Button - Left Half */}
+            
+            
+
+          </div>
+        </div>
+
+        {/* Cast and Share Buttons */}
+        <div className="mb-8 w-full max-w-md mx-auto flex gap-2">
+          {/* Cast Button */}
+          <button
+            onClick={handleCastQuiz}
+            className="flex-1 rounded-lg p-4 flex items-center justify-center gap-2 transition-colors"
+            style={{
+              backgroundColor: "var(--color-primary)",
+              border: "none",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--color-primary-hover)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--color-primary)";
+            }}
+          >
+            <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            <span className="text-white font-medium">Cast your quiz</span>
+          </button>
+          
+          {/* Share Button - Icon Only */}
+          <button
+            onClick={() => setShowShareOptions(!showShareOptions)}
+            className="rounded-lg p-4 flex items-center justify-center transition-colors"
+            style={{
+              backgroundColor: "var(--color-primary)",
+              border: "none",
+              minWidth: "56px",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--color-primary-hover)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = "var(--color-primary)";
+            }}
+          >
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+            </svg>
+          </button>
+        </div>
+        
+        {/* Share Options - Show when Share button is clicked */}
+        {showShareOptions && (
+          <div className="mb-8 w-full max-w-md mx-auto space-y-2">
+            {/* Copy PIN Button */}
+            <button
+              onClick={handleCopyPin}
+              className="w-full rounded-lg p-3 flex items-center justify-between transition-colors"
+              style={{
+                backgroundColor: "var(--color-surface-elevated)",
+                border: "1px solid var(--color-primary-medium)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--color-surface)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--color-surface-elevated)";
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <p className="text-2xl font-bold text-white font-mono">
+                  {contextRoomCode || roomCodeFromUrl || "N/A"}
+                </p>
+                <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>Lobby PIN</span>
+              </div>
+              <div 
+                className="p-2 rounded-lg transition-colors flex-shrink-0"
+                style={{
+                  backgroundColor: copiedPin ? "var(--color-success)" : "var(--color-surface)",
+                  color: copiedPin ? "var(--color-text)" : "var(--color-text-secondary)",
+                }}
+                onMouseEnter={(e) => {
+                  if (!copiedPin) {
+                    e.currentTarget.style.backgroundColor = "var(--color-surface-elevated)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!copiedPin) {
+                    e.currentTarget.style.backgroundColor = "var(--color-surface)";
+                  }
+                }}
+              >
+                {copiedPin ? (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                )}
+              </div>
+            </button>
+            
+            {/* QR Code Button */}
+            <button
+              onClick={() => setShowQRModal(true)}
+              className="w-full rounded-lg p-3 flex items-center justify-between transition-colors"
+              style={{
+                backgroundColor: "var(--color-surface-elevated)",
+                border: "1px solid var(--color-primary-medium)",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--color-surface)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = "var(--color-surface-elevated)";
+              }}
+            >
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+                <span className="text-white font-medium">QR Code</span>
+              </div>
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Join Form - Show if not joined and not creator */}
+        {(() => {
+          // Check if user is creator by comparing localStorage playerSessionId with creator_session_id
+          if (typeof window === "undefined" || !gameData) {
+            // If gameData is not loaded yet, show form only if not joined
+            return !joined && !isCreator;
+          }
+          
+          const playerSessionId = localStorage.getItem("playerSessionId");
+          const isUserCreator = playerSessionId && gameData?.creator_session_id && playerSessionId === gameData.creator_session_id;
+          const shouldShowJoinForm = !joined && !isCreator && !isUserCreator;
+          return shouldShowJoinForm;
+        })() && (
           <form onSubmit={handleJoin} className="w-full max-w-md mb-8">
             {error && (
-              <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+              <div className="mb-4 rounded-lg p-3 text-center" style={{ backgroundColor: "rgba(239, 68, 68, 0.2)", border: "1px solid var(--color-error)", color: "var(--color-error)" }}>
                 {error}
               </div>
             )}
             {authError && (
-              <div className="mb-4 bg-red-500/20 border border-red-500 rounded-lg p-3 text-center text-red-200">
+              <div className="mb-4 rounded-lg p-3 text-center" style={{ backgroundColor: "rgba(239, 68, 68, 0.2)", border: "1px solid var(--color-error)", color: "var(--color-error)" }}>
                 Authentication Error: {authError}
               </div>
             )}
@@ -1349,23 +1598,23 @@ function LobbyContent() {
                 color: "white",
                 fontWeight: "500",
                 backgroundColor:
-                  isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
+                  isJoining || isAuthLoading ? "var(--color-text-muted)" : "var(--color-primary)",
                 border: "none",
                 cursor:
                   isJoining || isAuthLoading ? "not-allowed" : "pointer",
                 opacity: isJoining || isAuthLoading ? 0.5 : 1,
                 transition: "background-color 0.2s ease",
                 background:
-                  isJoining || isAuthLoading ? "#4a5568" : "#795AFF",
+                  isJoining || isAuthLoading ? "var(--color-text-muted)" : "var(--color-primary)",
               }}
               onMouseEnter={(e) => {
                 if (!isJoining && !isAuthLoading) {
-                  e.currentTarget.style.backgroundColor = "#6B46C1";
+                  e.currentTarget.style.backgroundColor = "var(--color-primary-hover)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!isJoining && !isAuthLoading) {
-                  e.currentTarget.style.backgroundColor = "#795AFF";
+                  e.currentTarget.style.backgroundColor = "var(--color-primary)";
                 }
               }}
             >
@@ -1395,97 +1644,135 @@ function LobbyContent() {
               
               return (
                 <>
-                  <div className="bg-purple-900/30 border border-purple-700/50 rounded-lg p-6 mb-8 w-full max-w-md">
-              <h2 className="text-xl font-semibold mb-4 text-purple-200">
+                  <div className="rounded-lg p-6 mb-8 w-full max-w-md" style={{ backgroundColor: "var(--color-surface-elevated)", border: "1px solid var(--color-border-medium)" }}>
+              <h2 className="text-xl font-semibold mb-4" style={{ color: "var(--color-text-secondary)" }}>
                 Quiz Details
               </h2>
               
               <div className="space-y-4">
-                <div>
-                  <p className="text-gray-300 mb-2">Share this link with other players:</p>
-                  <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3 flex items-center justify-between">
-                    <p className="text-sm text-blue-400 break-all flex-1 mr-2">
-                      {typeof window !== "undefined"
-                        ? `${window.location.origin}/quiz/lobby/${contextRoomCode || roomCodeFromUrl || ""}`
-                        : "Loading..."}
-                    </p>
-                    <button
-                      onClick={handleCopyLink}
-                      className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
-                        copiedLink 
-                          ? 'bg-green-600 text-white' 
-                          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                      }`}
-                      title={copiedLink ? 'Copied!' : 'Copy link'}
-                    >
-                      {copiedLink ? (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                </div>
                 
                 <div>
-                  <p className="text-gray-300 mb-2">Or share the PIN:</p>
-                  <div className="bg-purple-800/50 border border-purple-600 rounded-lg p-3 flex items-center justify-between">
-                    <p className="text-2xl font-bold text-white font-mono flex-1 text-center">
-                      {contextRoomCode || roomCodeFromUrl || "N/A"}
-                    </p>
-                    <button
-                      onClick={handleCopyPin}
-                      className={`p-2 rounded-lg transition-colors ml-2 flex-shrink-0 ${
-                        copiedPin 
-                          ? 'bg-green-600 text-white' 
-                          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                      }`}
-                      title={copiedPin ? 'Copied!' : 'Copy PIN'}
-                    >
-                      {copiedPin ? (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
-                </div>
-                
-                <div>
-                  <p className="text-gray-300 mb-2">Prize pool:</p>
+                  <p className="mb-2" style={{ color: "var(--color-text-secondary)" }}>Prize pool:</p>
                   {showPrizePool ? (
-                    <div className="bg-purple-950/30 border border-purple-700/50 rounded-lg p-3 flex flex-col gap-1">
-                      <span className="text-2xl font-bold text-white">
+                    <div className="rounded-lg p-3 flex flex-col gap-1" style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border-medium)" }}>
+                      <span className="text-2xl font-bold" style={{ color: "var(--color-text)" }}>
                         {formattedPrizeAmount} {prizeTokenSymbol}
                       </span>
-                      <span className="text-xs text-gray-300">
+                      <span className="text-xs" style={{ color: "var(--color-text-secondary)" }}>
                         {prizeTokenName}
                         {shortPrizeToken ? ` • ${shortPrizeToken}` : ""}
                       </span>
                     </div>
                   ) : (
-                    <div className="bg-purple-950/20 border border-purple-700/40 rounded-lg p-3 text-sm text-gray-300">
+                    <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border-light)", color: "var(--color-text-secondary)" }}>
                       Quiz creator hasn&apos;t funded a prize yet.
                     </div>
                   )}
                 </div>
 
+                {/* Schedule Quiz - Only for creator */}
+                {(() => {
+                  // Check if user is creator - use both state and direct check
+                  const playerSessionId = typeof window !== "undefined" 
+                    ? localStorage.getItem("playerSessionId") 
+                    : null;
+                  const isUserCreator = (isCreator || (playerSessionId && gameData?.creator_session_id && playerSessionId === gameData.creator_session_id));
+                  
+                  return isUserCreator ? (
+                  <div className="mt-4">
+                    <div 
+                      className="rounded-lg p-4"
+                      style={{ 
+                        backgroundColor: "var(--color-surface-elevated)",
+                        border: "1px solid var(--color-border-light)"
+                      }}
+                    >
+                      <label className="flex items-center gap-3 cursor-pointer mb-3">
+                        <div
+                          onClick={() => {
+                            setIsScheduledLocal(!isScheduledLocal);
+                            if (isScheduledLocal) {
+                              setScheduledStartTimeLocal("");
+                            }
+                          }}
+                          style={{
+                            position: "relative",
+                            width: "44px",
+                            height: "24px",
+                            borderRadius: "12px",
+                            backgroundColor: isScheduledLocal ? "var(--color-primary)" : "var(--color-background)",
+                            border: "1px solid var(--color-border)",
+                            cursor: "pointer",
+                            transition: "background-color 0.2s",
+                            flexShrink: 0,
+                          }}
+                        >
+                          <div
+                            style={{
+                              position: "absolute",
+                              top: "2px",
+                              left: isScheduledLocal ? "22px" : "2px",
+                              width: "18px",
+                              height: "18px",
+                              borderRadius: "50%",
+                              backgroundColor: "var(--color-text)",
+                              transition: "left 0.2s",
+                            }}
+                          />
+                        </div>
+                        <span className="font-medium" style={{ color: "var(--color-text)" }}>
+                          Schedule this quiz to start automatically
+                        </span>
+                      </label>
+                      {isScheduledLocal && (
+                        <div style={{ marginTop: "var(--spacing-md)", display: "flex", flexDirection: "column", gap: "var(--spacing-xs)" }}>
+                          <input
+                            type="datetime-local"
+                            value={scheduledStartTimeLocal}
+                            onChange={(e) => setScheduledStartTimeLocal(e.target.value)}
+                            min={minScheduledTime}
+                            style={{
+                              width: "100%",
+                              padding: "var(--spacing-sm) var(--spacing-md)",
+                              backgroundColor: "var(--color-background)",
+                              border: "1px solid var(--color-border)",
+                              borderRadius: "var(--radius-md)",
+                              color: "var(--color-text)",
+                              outline: "none",
+                            }}
+                          />
+                          <div className="text-body text-sm" style={{ color: "var(--color-text-secondary)" }}>
+                            Times are shown in your local timezone. The quiz will move to
+                            the lobby automatically and generate a room code.
+                          </div>
+                          <button
+                            onClick={handleUpdateSchedule}
+                            disabled={isUpdatingSchedule || !scheduledStartTimeLocal}
+                            className="mt-2 rounded-lg p-2 text-white font-medium transition-colors"
+                            style={{
+                              backgroundColor: isUpdatingSchedule || !scheduledStartTimeLocal ? "var(--color-text-muted)" : "var(--color-primary)",
+                              border: "none",
+                              cursor: isUpdatingSchedule || !scheduledStartTimeLocal ? "not-allowed" : "pointer",
+                              opacity: isUpdatingSchedule || !scheduledStartTimeLocal ? 0.5 : 1,
+                            }}
+                          >
+                            {isUpdatingSchedule ? "Updating..." : "Update Schedule"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  ) : null;
+                })()}
+
                 {formattedScheduledStart && (
                   <div className="mt-4">
-                    <p className="text-gray-300 mb-2">Scheduled start:</p>
-                    <div className="bg-purple-950/30 border border-purple-700/50 rounded-lg p-3 text-sm text-gray-100">
+                    <p className="mb-2" style={{ color: "var(--color-text-secondary)" }}>Scheduled start:</p>
+                    <div className="rounded-lg p-3 text-sm" style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border-medium)", color: "var(--color-text)" }}>
                       {formattedScheduledStart}
                     </div>
                     {timeRemainingMs !== null && timeRemainingMs > 0 && (
-                      <p className="mt-1 text-xs text-purple-200">
+                      <p className="mt-1 text-xs" style={{ color: "var(--color-text-secondary)" }}>
                         Starts in{" "}
                         <span className="font-mono font-semibold">
                           {formatTimeRemaining(timeRemainingMs)}
@@ -1500,7 +1787,7 @@ function LobbyContent() {
                   lobbyRoomCode &&
                   lobbyGoogleCalendarUrl && (
                     <div className="mt-4">
-                      <p className="text-gray-300 mb-2">
+                      <p className="mb-2" style={{ color: "var(--color-text-secondary)" }}>
                         Add this quiz to your calendar:
                       </p>
                       <QuizCalendarButton
@@ -1521,14 +1808,21 @@ function LobbyContent() {
                   <div className="mt-4">
                     <button
                       onClick={goToResults}
-                      className="w-full py-2 px-4 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-semibold transition-colors"
+                      className="w-full py-2 px-4 rounded-lg font-semibold transition-colors"
+                      style={{ backgroundColor: "var(--color-primary)", color: "var(--color-text)" }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "var(--color-primary-hover)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "var(--color-primary)";
+                      }}
                     >
                       View Results
                     </button>
                   </div>
                 )}
 
-                <div className="pt-2 border-t border-purple-700/50">
+                <div className="pt-2" style={{ borderTop: "1px solid var(--color-border-medium)" }}>
                   Status:{" "}
                   <span className="capitalize">
                     {currentGame?.status || gameData?.status || "waiting"}
@@ -1537,31 +1831,38 @@ function LobbyContent() {
               </div>
             </div>
 
-            <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
-              <h2 className="text-xl font-semibold mb-4 text-purple-200 flex items-center justify-between">
+            <div className="rounded-lg p-6 mb-8 w-full max-w-md" style={{ backgroundColor: "var(--color-surface-elevated)", border: "1px solid var(--color-primary-medium)" }}>
+              <h2 className="text-xl font-semibold mb-4 flex items-center justify-between" style={{ color: "var(--color-text-secondary)" }}>
                 <span>Players ({filteredPlayers.length})</span>
                 {filteredPlayers.length > 0 && (
-                  <span className="text-sm text-green-400 flex items-center gap-1">
-                    <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+                  <span className="text-sm flex items-center gap-1" style={{ color: "var(--color-success)" }}>
+                    <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: "var(--color-success)" }}></span>
                     Live
                   </span>
                 )}
               </h2>
 
               {filteredPlayers.length === 0 ? (
-                <p className="text-gray-400">Waiting for players to join...</p>
+                <p style={{ color: "var(--color-text-muted)" }}>Waiting for players to join...</p>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {filteredPlayers.map((player) => (
                     <div
                       key={player.id}
-                      className="bg-purple-700/30 border border-purple-500/30 p-3 rounded text-center text-purple-100 relative group hover:bg-purple-700/50 transition-colors"
+                      className="p-3 rounded text-center relative group transition-colors"
+                      style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-primary-light)", color: "var(--color-text)" }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "var(--color-surface-elevated)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "var(--color-surface)";
+                      }}
                     >
                       <div className="font-medium truncate" title={player.player_name}>
                         {player.player_name}
                       </div>
                       {player.total_score > 0 && (
-                        <div className="text-xs text-purple-300 mt-1">
+                        <div className="text-xs mt-1" style={{ color: "var(--color-text-secondary)" }}>
                           {player.total_score} pts
                         </div>
                       )}
@@ -1573,8 +1874,8 @@ function LobbyContent() {
 
 
             {/* Chat Component */}
-            <div className="bg-purple-800/40 border border-purple-600/50 rounded-lg p-6 mb-8 w-full max-w-md">
-        <h2 className="text-xl font-semibold mb-4 text-purple-200 flex items-center justify-between">
+            <div className="rounded-lg p-6 mb-8 w-full max-w-md" style={{ backgroundColor: "var(--color-surface-elevated)", border: "1px solid var(--color-primary-medium)" }}>
+        <h2 className="text-xl font-semibold mb-4 flex items-center justify-between" style={{ color: "var(--color-text-secondary)" }}>
           <span>💬 Lobby Chat</span>
           {isMessagesConnected && (
             <span className="text-xs text-green-400 flex items-center gap-1">
@@ -1605,9 +1906,9 @@ function LobbyContent() {
         )}
 
         {/* Messages List - Discord style (no boxes) */}
-        <div className="rounded-lg p-4 mb-4 max-h-64 overflow-y-auto bg-purple-900/30">
+        <div className="rounded-lg p-4 mb-4 max-h-64 overflow-y-auto" style={{ backgroundColor: "var(--color-surface-elevated)" }}>
           {messages.length === 0 ? (
-            <p className="text-gray-400 text-sm text-center py-4">No messages yet. Start the conversation!</p>
+            <p className="text-sm text-center py-4" style={{ color: "var(--color-text-muted)" }}>No messages yet. Start the conversation!</p>
           ) : (
             <div className="space-y-1">
               {messages.map((message) => {
@@ -1618,23 +1919,33 @@ function LobbyContent() {
                 return (
                   <div
                     key={message.id}
-                    className={`py-1 px-2 rounded hover:bg-purple-700/20 transition-colors ${
-                      message.is_creator ? "bg-yellow-500/10 border-l-2 border-yellow-400" : ""
-                    }`}
+                    className="py-1 px-2 rounded transition-colors"
+                    style={{
+                      backgroundColor: message.is_creator ? "rgba(251, 191, 36, 0.1)" : "transparent",
+                      borderLeft: message.is_creator ? "2px solid var(--color-warning)" : "none",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!message.is_creator) {
+                        e.currentTarget.style.backgroundColor = "var(--color-surface)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!message.is_creator) {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                      }
+                    }}
                   >
                     <div className="flex items-start gap-2">
                       {message.is_creator && (
-                        <span className="text-yellow-400 font-semibold text-sm flex-shrink-0">👑</span>
+                        <span className="font-semibold text-sm flex-shrink-0" style={{ color: "var(--color-warning)" }}>👑</span>
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline gap-2">
-                          <span className={`text-sm font-semibold ${
-                            message.is_creator ? "text-yellow-300" : "text-purple-200"
-                          }`}>
+                          <span className="text-sm font-semibold" style={{ color: message.is_creator ? "var(--color-warning)" : "var(--color-text-secondary)" }}>
                             {message.player_name}
                             {isCurrentUser && " (you)"}
                           </span>
-                          <span className="text-xs text-gray-400">
+                          <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>
                             {new Date(message.created_at).toLocaleTimeString([], {
                               hour: "2-digit",
                               minute: "2-digit",
@@ -1642,7 +1953,7 @@ function LobbyContent() {
                             })}
                           </span>
                         </div>
-                        <p className="text-gray-100 text-sm whitespace-pre-wrap break-words mt-0.5">
+                        <p className="text-sm whitespace-pre-wrap break-words mt-0.5" style={{ color: "var(--color-text)" }}>
                           {message.message}
                         </p>
                         
@@ -1660,11 +1971,22 @@ function LobbyContent() {
                                   <button
                                     key={emoji}
                                     onClick={() => handleReaction(message.id, emoji)}
-                                    className={`flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors ${
-                                      hasReacted
-                                        ? "bg-purple-600/30 border border-purple-500/50 text-purple-200"
-                                        : "bg-gray-700/50 border border-gray-600/50 text-gray-300 hover:bg-gray-700/70"
-                                    }`}
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors"
+                                    style={{
+                                      backgroundColor: hasReacted ? "var(--color-primary-light)" : "var(--color-surface)",
+                                      border: `1px solid ${hasReacted ? "var(--color-primary-medium)" : "var(--color-border)"}`,
+                                      color: hasReacted ? "var(--color-text-secondary)" : "var(--color-text-secondary)",
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      if (!hasReacted) {
+                                        e.currentTarget.style.backgroundColor = "var(--color-surface-elevated)";
+                                      }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      if (!hasReacted) {
+                                        e.currentTarget.style.backgroundColor = "var(--color-surface)";
+                                      }
+                                    }}
                                   >
                                     <span>{emoji}</span>
                                     <span className="text-xs">{count}</span>
@@ -1675,7 +1997,8 @@ function LobbyContent() {
                                 return (
                                   <span
                                     key={emoji}
-                                    className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-700/50 border border-gray-600/50 text-gray-300"
+                                    className="flex items-center gap-1 px-2 py-0.5 rounded text-xs"
+                                    style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)", color: "var(--color-text-secondary)" }}
                                   >
                                     <span>{emoji}</span>
                                     <span className="text-xs">{count}</span>
@@ -1689,13 +2012,22 @@ function LobbyContent() {
                               <div className="relative emoji-picker-container">
                                 <button
                                   onClick={() => setOpenEmojiPicker(openEmojiPicker === message.id ? null : message.id)}
-                                  className="px-2 py-0.5 rounded text-xs bg-gray-700/50 border border-gray-600/50 text-gray-400 hover:bg-gray-700/70 hover:text-gray-300 transition-colors"
+                                  className="px-2 py-0.5 rounded text-xs transition-colors"
+                                  style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)", color: "var(--color-text-muted)" }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = "var(--color-surface-elevated)";
+                                    e.currentTarget.style.color = "var(--color-text-secondary)";
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = "var(--color-surface)";
+                                    e.currentTarget.style.color = "var(--color-text-muted)";
+                                  }}
                                   title="Add reaction"
                                 >
                                   <span>+</span>
                                 </button>
                                 {openEmojiPicker === message.id && (
-                                  <div className="absolute bottom-full left-0 mb-2 flex gap-1 bg-gray-800 border border-gray-700 rounded-lg p-2 shadow-lg z-10">
+                                  <div className="absolute bottom-full left-0 mb-2 flex gap-1 rounded-lg p-2 shadow-lg z-10" style={{ backgroundColor: "var(--color-surface-elevated)", border: "1px solid var(--color-border)" }}>
                                     {availableEmojis.map((emoji) => (
                                       <button
                                         key={emoji}
@@ -1733,14 +2065,41 @@ function LobbyContent() {
                 value={messageText}
                 onChange={(e) => setMessageText(e.target.value)}
                 placeholder="Send a message..."
-                className="flex-1 min-w-0 px-4 py-2 rounded bg-white border border-gray-300 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="flex-1 min-w-0 px-4 py-2 rounded focus:outline-none"
+                style={{
+                  backgroundColor: "var(--color-text)",
+                  border: "1px solid var(--color-border)",
+                  color: "var(--color-background)",
+                }}
+                onFocus={(e) => {
+                  e.currentTarget.style.borderColor = "var(--color-primary)";
+                  e.currentTarget.style.boxShadow = "0 0 0 2px var(--color-primary-medium)";
+                }}
+                onBlur={(e) => {
+                  e.currentTarget.style.borderColor = "var(--color-border)";
+                  e.currentTarget.style.boxShadow = "none";
+                }}
                 maxLength={500}
                 disabled={isSendingMessage}
               />
               <button
                 type="submit"
                 disabled={!messageText.trim() || isSendingMessage}
-                className="flex-shrink-0 px-6 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded text-white font-medium transition-colors"
+                className="flex-shrink-0 px-6 py-2 rounded font-medium transition-colors disabled:cursor-not-allowed"
+                style={{
+                  backgroundColor: (!messageText.trim() || isSendingMessage) ? "var(--color-text-muted)" : "var(--color-primary)",
+                  color: "var(--color-text)",
+                }}
+                onMouseEnter={(e) => {
+                  if (messageText.trim() && !isSendingMessage) {
+                    e.currentTarget.style.backgroundColor = "var(--color-primary-hover)";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (messageText.trim() && !isSendingMessage) {
+                    e.currentTarget.style.backgroundColor = "var(--color-primary)";
+                  }
+                }}
               >
                 {isSendingMessage ? (
                   <span className="flex items-center gap-2">
@@ -1751,7 +2110,7 @@ function LobbyContent() {
                 )}
               </button>
             </div>
-            <p className="text-xs text-gray-400">Everyone in the lobby can chat</p>
+            <p className="text-xs" style={{ color: "var(--color-text-muted)" }}>Everyone in the lobby can chat</p>
           </form>
         )}
       </div>
@@ -1778,7 +2137,7 @@ function LobbyContent() {
 
             {joined && (
               <div className="w-full max-w-md flex flex-col gap-4">
-                <div className="relative bg-purple-600/20 border border-purple-500 rounded-lg p-4 text-center">
+                <div className="relative rounded-lg p-4 text-center" style={{ backgroundColor: "var(--color-primary-light)", border: "1px solid var(--color-primary-medium)" }}>
                   {/* Connection Status Indicator - Green Dot */}
                   {isRealtimeConnected && (
                     <div
@@ -1794,7 +2153,7 @@ function LobbyContent() {
                       👑 You are the quiz creator
                     </p>
                   ) : (
-                    <p className="text-sm text-gray-300">
+                    <p className="text-sm" style={{ color: "var(--color-text-secondary)" }}>
                       Waiting for the quiz creator to start...
                     </p>
                   )}
@@ -1806,13 +2165,15 @@ function LobbyContent() {
                     onClick={handleStartQuiz}
                     className="w-full py-2 rounded text-white font-medium transition-colors"
                     style={{
-                      backgroundColor: "#22c55e", // green-500 - same as correct answers
+                      backgroundColor: "var(--color-success)",
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#16a34a"; // green-600 on hover
+                      e.currentTarget.style.backgroundColor = "var(--color-success)";
+                      e.currentTarget.style.opacity = "0.9";
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = "#22c55e"; // green-500 normal state
+                      e.currentTarget.style.backgroundColor = "var(--color-success)";
+                      e.currentTarget.style.opacity = "1";
                     }}
                   >
                     Start Quiz ({filteredPlayers.length} {filteredPlayers.length === 1 ? 'player' : 'players'})
@@ -1821,7 +2182,14 @@ function LobbyContent() {
 
                 <button
                   onClick={handleLeaveLobby}
-                  className="w-full py-2 bg-purple-800/50 border border-purple-600/50 hover:bg-purple-700/50 rounded text-purple-100 font-medium text-center transition-colors"
+                  className="w-full py-2 rounded font-medium text-center transition-colors"
+                  style={{ backgroundColor: "var(--color-surface-elevated)", border: "1px solid var(--color-primary-medium)", color: "var(--color-text)" }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-surface)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = "var(--color-surface-elevated)";
+                  }}
                 >
                   Leave Lobby
                 </button>
@@ -1834,6 +2202,15 @@ function LobbyContent() {
         )}
         </div>
       </div>
+
+      <Footer />
+      
+      {/* QR Code Modal */}
+      <QRCodeModal
+        isOpen={showQRModal}
+        onClose={() => setShowQRModal(false)}
+        roomCode={contextRoomCode || roomCodeFromUrl || ""}
+      />
     </>
   );
 }

@@ -3,6 +3,7 @@ import { handleCorsPreFlight } from "../_shared/cors.ts"
 import { successResponse, errorResponse } from "../_shared/response.ts"
 import { initSupabaseClient } from "../_shared/supabase.ts"
 import { sendFrameNotification } from "../_shared/neynar.ts"
+import { sendTelegramMessage } from "../_shared/telegram.ts"
 
 const NOTIFICATION_TARGET_FIDS = []
 const FRONTEND_BASE_URL =
@@ -21,99 +22,134 @@ serve(async (req) => {
 
     const supabase = initSupabaseClient(req, true)
 
-    type QuizWebhookRecord = {
-      id: string
-      title: string
-      prize_amount: number | null
-      prize_token: string | null
-      network_id: string | null
-      scheduled_start_time: string | null
-      scheduled_notification_sent?: boolean | null
-      is_private?: boolean | null
-    }
+    const rawBody = await req.text()
+    console.log("notify-game-session-created: raw body", rawBody)
 
-    let quizRecord: QuizWebhookRecord | null = null
-
+    let payload: any = null
     try {
-      const requestBody = await req.json() as unknown
-      console.log(
-        "notify-game-session-created: parsed JSON body",
-        JSON.stringify(requestBody, null, 2),
-      )
-
-      const looksLikeWebhook =
-        requestBody &&
-        typeof requestBody === "object" &&
-        "record" in requestBody &&
-        "old_record" in requestBody &&
-        "type" in requestBody &&
-        "table" in requestBody
-
-      if (!looksLikeWebhook) {
-        console.warn(
-          "notify-game-session-created: ignoring non-webhook payload",
-        )
-        return successResponse({
-          success: true,
-          skipped: true,
-          reason: "Event ignored: not a DB webhook payload",
-        })
-      }
-
-      const { type, table, record } = requestBody as {
-        type: string
-        table: string
-        record: QuizWebhookRecord
-        old_record: QuizWebhookRecord | null
-      }
-
-      console.log(
-        "notify-game-session-created: detected DB webhook payload",
-        { type, table },
-      )
-
-      // Only handle UPDATE events on quizzes
-      if (type !== "UPDATE" || table !== "quizzes") {
-        console.log(
-          "notify-game-session-created: ignoring event (not a quizzes UPDATE)",
-        )
-        return successResponse({
-          success: true,
-          skipped: true,
-          reason: "Event ignored: not a quizzes UPDATE",
-        })
-      }
-
-      if (!record || !record.id) {
-        console.error(
-          "notify-game-session-created: invalid webhook payload - missing record.id",
-        )
-        return errorResponse(
-          "Invalid webhook payload: record.id is required",
-          400,
-        )
-      }
-
-      quizRecord = record
+      payload = rawBody ? JSON.parse(rawBody) : null
     } catch (e) {
-      console.error(
-        "notify-game-session-created: failed to parse JSON webhook payload",
+      console.warn(
+        "notify-game-session-created: failed to parse JSON body",
         e,
       )
-      return errorResponse("Invalid webhook payload", 400)
     }
 
-    const quiz = quizRecord
+    const url = new URL(req.url)
+    const gameSessionId =
+      payload?.game_session_id ||
+      payload?.record?.id ||
+      url.searchParams.get("game_session_id") ||
+      undefined
+
+    console.log(
+      "notify-game-session-created: parsed payload",
+      payload,
+      "gameSessionId",
+      gameSessionId,
+    )
+
+    if (!gameSessionId) {
+      console.warn(
+        "notify-game-session-created: missing game_session_id in payload",
+      )
+      return errorResponse("game_session_id is required", 400)
+    }
+
+    const { data: gameSession, error: gsError } = await supabase
+      .from("game_sessions")
+      .select(
+        `
+        id,
+        room_code,
+        quiz_id,
+        quizzes (
+          id,
+          title,
+          description,
+          prize_amount,
+          prize_token,
+          network_id,
+          scheduled_start_time,
+          scheduled_notification_sent,
+          is_private
+        )
+      `
+      )
+      .eq("id", gameSessionId)
+      .single()
+
+    if (gsError || !gameSession) {
+      console.error(
+        "notify-game-session-created: game session not found",
+        gameSessionId,
+        gsError,
+      )
+      return errorResponse("Game session not found", 404)
+    }
+
+    const quiz = gameSession.quizzes as
+      | {
+          id: string
+          title: string
+          description: string | null
+          prize_amount: number | null
+          prize_token: string | null
+          network_id: string | null
+          scheduled_start_time: string | null
+          scheduled_notification_sent?: boolean | null
+          is_private: boolean | null
+        }
+      | null
+
+    if (!quiz) {
+      console.error(
+        "notify-game-session-created: quiz not found for game session",
+        gameSessionId,
+      )
+      return errorResponse("Quiz not found", 404)
+    }
 
     const hasPrizeAmount = (quiz.prize_amount ?? 0) > 0
     const hasPrizeToken = !!quiz.prize_token
     const hasPrize = hasPrizeAmount && hasPrizeToken
     const alreadyNotified = !!quiz.scheduled_notification_sent
     const isPrivate = !!quiz.is_private
+    const hasScheduledTime = !!quiz.scheduled_start_time
+    const scheduledInFuture = quiz.scheduled_start_time
+      ? new Date(quiz.scheduled_start_time).getTime() > Date.now()
+      : false
 
-    if (!hasPrize || isPrivate) {
+    // Send Telegram notification for any quiz with prize when game session is created
+    // (regardless of whether it's scheduled or not)
+    if (hasPrizeAmount && !quiz.is_private) {
+      const frontendUrl = Deno.env.get("FRONTEND_URL") || Deno.env.get("FRONTEND_BASE_URL") || "http://localhost:3000"
+      const roomCode = gameSession.room_code
+      
+      sendTelegramMessage({
+        quiz_id: quiz.id,
+        title: quiz.title,
+        description: quiz.description || null,
+        prize_amount: quiz.prize_amount || 0,
+        prize_token: quiz.prize_token || null,
+        scheduled_start_time: quiz.scheduled_start_time || null,
+        room_code: roomCode,
+        frontend_url: frontendUrl
+      }).catch((error) => {
+        // Log error but don't fail the notification
+        console.error("Failed to send Telegram notification:", error)
+      })
+    }
+
+    // Continue with Neynar notification logic for scheduled quizzes only
+    if (
+      !hasPrizeToken ||
+      !hasPrizeAmount ||
+      !hasScheduledTime ||
+      !scheduledInFuture
+    ) {
       console.log(
-        "notify-game-session-created: skipping (not eligible based on prize / is_private)",
+        "notify-game-session-created: skipping Neynar notification (not eligible)",
         {
           quizId: quiz.id,
           hasPrizeAmount,
@@ -130,7 +166,7 @@ serve(async (req) => {
 
     if (alreadyNotified) {
       console.log(
-        "notify-game-session-created: skipping (already notified)",
+        "notify-game-session-created: skipping Neynar notification (already notified)",
         { quizId: quiz.id },
       )
       return successResponse({
@@ -181,26 +217,14 @@ serve(async (req) => {
     const body = bodyBase.length > 128 ? bodyBase.slice(0, 125) + "..." : bodyBase
 
     // Find the most recent game session for this quiz to get the lobby room code
+    // Use the gameSession we already have instead of querying again
     let targetUrl: string
-    const { data: gameSessions, error: gsError } = await supabase
-      .from("game_sessions")
-      .select("room_code, created_at")
-      .eq("quiz_id", quiz.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-
-    if (gsError) {
-      console.warn(
-        "notify-game-session-created: failed to fetch game session, falling back to admin page",
-        gsError,
-      )
-      targetUrl = `${FRONTEND_BASE_URL}`
-    } else if (gameSessions && gameSessions.length > 0) {
-      const roomCode = gameSessions[0].room_code as string
+    if (gameSession.room_code) {
+      const roomCode = gameSession.room_code as string
       targetUrl = `${FRONTEND_BASE_URL}/quiz/lobby/${roomCode}`
     } else {
       console.warn(
-        "notify-game-session-created: no game sessions found for quiz, falling back to home page",
+        "notify-game-session-created: no room code in game session, falling back to home page",
         { quizId: quiz.id },
       )
       targetUrl = `${FRONTEND_BASE_URL}`

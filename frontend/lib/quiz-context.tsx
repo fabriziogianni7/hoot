@@ -216,6 +216,16 @@ export function QuizProvider({ children }: { children: ReactNode }) {
       
       console.log('Game session created:', gameSession.id, 'Room code:', generatedRoomCode)
       
+      // Notify that game session was created (for Telegram notification with room_code)
+      // This is non-blocking - don't fail if notification fails
+      callEdgeFunction<{ game_session_id: string }, { success: boolean }>(
+        'notify-game-session-created',
+        { game_session_id: gameSession.id }
+      ).catch((error) => {
+        console.warn('Failed to notify game session creation:', error)
+        // Don't throw - this is non-critical
+      })
+      
       return generatedRoomCode
     } catch (error) {
       console.error('Error starting game:', error)
