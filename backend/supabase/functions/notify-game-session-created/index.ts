@@ -107,16 +107,18 @@ serve(async (req) => {
         "notify-game-session-created: quiz not found for game session",
         gameSessionId,
       )
-      return errorResponse("Quiz not found for game session", 404)
+      return errorResponse("Quiz not found", 404)
     }
 
-    const hasPrizeToken = !!quiz.prize_token
     const hasPrizeAmount = (quiz.prize_amount ?? 0) > 0
-    const hasScheduledTime = !!quiz.scheduled_start_time
-    const scheduledInFuture =
-      hasScheduledTime &&
-      new Date(quiz.scheduled_start_time as string).getTime() > Date.now()
+    const hasPrizeToken = !!quiz.prize_token
+    const hasPrize = hasPrizeAmount && hasPrizeToken
     const alreadyNotified = !!quiz.scheduled_notification_sent
+    const isPrivate = !!quiz.is_private
+    const hasScheduledTime = !!quiz.scheduled_start_time
+    const scheduledInFuture = quiz.scheduled_start_time
+      ? new Date(quiz.scheduled_start_time).getTime() > Date.now()
+      : false
 
     // Send Telegram notification for any quiz with prize when game session is created
     // (regardless of whether it's scheduled or not)
@@ -150,17 +152,15 @@ serve(async (req) => {
         "notify-game-session-created: skipping Neynar notification (not eligible)",
         {
           quizId: quiz.id,
-          hasPrizeToken,
           hasPrizeAmount,
-          hasScheduledTime,
-          scheduledInFuture,
-          scheduledStartTime: quiz.scheduled_start_time,
+          hasPrizeToken,
+          isPrivate,
         },
       )
       return successResponse({
         success: true,
         skipped: true,
-        reason: "Not a future scheduled prize quiz",
+        reason: "Quiz has no prize or is private",
       })
     }
 
@@ -176,9 +176,12 @@ serve(async (req) => {
       })
     }
 
-    const scheduledTime = new Date(quiz.scheduled_start_time as string)
-    const formattedTime =
-      new Intl.DateTimeFormat("en-GB", {
+    const scheduledTime = quiz.scheduled_start_time
+      ? new Date(quiz.scheduled_start_time as string)
+      : null
+
+    const formattedTime = scheduledTime
+      ? new Intl.DateTimeFormat("en-GB", {
         timeZone: "UTC",
         day: "2-digit",
         month: "short",
@@ -187,7 +190,9 @@ serve(async (req) => {
         minute: "2-digit",
         hour12: false,
       }).format(scheduledTime) + " UTC"
+      : "soon"
 
+    // Resolve token symbol from tokens table (based on network_id + prize_token)
     let tokenSymbol = "tokens"
     if (quiz.prize_token && quiz.network_id) {
       const { data: token, error: tokenError } = await supabase
@@ -197,7 +202,12 @@ serve(async (req) => {
         .eq("address", quiz.prize_token)
         .single()
 
-      if (!tokenError && token?.symbol) {
+      if (tokenError) {
+        console.warn(
+          "notify-game-session-created: failed to fetch token symbol, using default",
+          tokenError,
+        )
+      } else if (token?.symbol) {
         tokenSymbol = token.symbol
       }
     }
@@ -206,13 +216,22 @@ serve(async (req) => {
     const bodyBase = `${quiz.title} starts at ${formattedTime} with ${quiz.prize_amount} ${tokenSymbol} in prizes. Open To Get Notified before it starts.`
     const body = bodyBase.length > 128 ? bodyBase.slice(0, 125) + "..." : bodyBase
 
-    const roomCode = gameSession.room_code
-    const targetUrl = `${FRONTEND_BASE_URL}/quiz/lobby/${roomCode}`
+    // Find the most recent game session for this quiz to get the lobby room code
+    // Use the gameSession we already have instead of querying again
+    let targetUrl: string
+    if (gameSession.room_code) {
+      const roomCode = gameSession.room_code as string
+      targetUrl = `${FRONTEND_BASE_URL}/quiz/lobby/${roomCode}`
+    } else {
+      console.warn(
+        "notify-game-session-created: no room code in game session, falling back to home page",
+        { quizId: quiz.id },
+      )
+      targetUrl = `${FRONTEND_BASE_URL}`
+    }
 
     console.log("notify-game-session-created: sending Neynar notification", {
       quizId: quiz.id,
-      gameSessionId,
-      roomCode,
       title,
       body,
       targetUrl,
@@ -244,14 +263,12 @@ serve(async (req) => {
 
     console.log("notify-game-session-created: notification sent and quiz updated", {
       quizId: quiz.id,
-      gameSessionId,
-      roomCode,
+      targetUrl,
     })
 
     return successResponse({
       success: true,
-      game_session_id: gameSessionId,
-      room_code: roomCode,
+      quiz_id: quiz.id,
     })
   } catch (error) {
     console.error("Error in notify-game-session-created:", error)

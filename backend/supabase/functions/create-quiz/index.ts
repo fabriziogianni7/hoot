@@ -139,6 +139,38 @@ async function createQuestions(supabase: ReturnType<typeof initSupabaseClient>, 
   }
 }
 
+function generateRoomCode(): string {
+  // Same format as frontend startGame: 6 uppercase alphanumeric characters
+  return Math.random().toString(36).substring(2, 8).toUpperCase()
+}
+
+async function createGameSession(
+  supabase: ReturnType<typeof initSupabaseClient>,
+  quizId: string
+): Promise<{ id: string; room_code: string }> {
+  const roomCode = generateRoomCode()
+
+  const { data: gameSession, error: gameError } = await supabase
+    .from('game_sessions')
+    .insert({
+      quiz_id: quizId,
+      room_code: roomCode,
+      status: 'waiting',
+      current_question_index: 0
+    })
+    .select('id, room_code')
+    .single()
+
+  if (gameError) {
+    // Rollback: delete questions and quiz if game session creation fails
+    await supabase.from('questions').delete().eq('quiz_id', quizId)
+    await supabase.from('quizzes').delete().eq('id', quizId)
+    throw new Error(`Failed to create game session: ${gameError.message}`)
+  }
+
+  return gameSession as { id: string; room_code: string }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return handleCorsPreFlight()
@@ -217,6 +249,7 @@ serve(async (req) => {
     return successResponse({ 
       success: true, 
       quiz_id: quiz.id,
+      room_code: gameSession.room_code,
       message: 'Quiz created successfully' 
     })
 

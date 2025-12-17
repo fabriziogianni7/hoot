@@ -90,6 +90,7 @@ function AdminPageContent() {
   const [bountyAmountSetFromStorage, setBountyAmountSetFromStorage] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState<string>("usdc");
   const [quizTransaction, setQuizTransaction] = useState<string>("");
+  const [createdQuizId, setCreatedQuizId] = useState<string | null>(null);
   const [scheduledStartTime, setScheduledStartTime] = useState<string>("");
   const [isScheduled, setIsScheduled] = useState(false);
   const [isPrivate, setIsPrivate] = useState(false);
@@ -1037,15 +1038,30 @@ function AdminPageContent() {
     try {
       setError("");
 
-      // First, create the quiz in backend
-      const result = await handleSaveQuiz();
+      // First, ensure the quiz and game session exist (idempotent)
+      let quizId: string;
+      let roomCode: string;
 
-      if (!result) {
-        setError("Failed to create quiz. Please try again.");
-        return;
+      if (createdQuizId && createdRoomCode) {
+        quizId = createdQuizId;
+        roomCode = createdRoomCode;
+        console.log("Reusing existing quiz and room for bounty:", {
+          quizId,
+          roomCode,
+        });
+      } else {
+        const result = await handleSaveQuiz();
+
+        if (!result) {
+          setError("Failed to create quiz. Please try again.");
+          return;
+        }
+
+        quizId = result.quizId;
+        roomCode = result.roomCode;
+        setCreatedQuizId(quizId);
+        setCreatedRoomCode(roomCode);
       }
-
-      const { quizId } = result;
       setCreationStep(CreationStep.PREPARING_BOUNTY);
 
       // Use override values if provided (from pendingQuizCreation), otherwise use state
@@ -1067,6 +1083,7 @@ function AdminPageContent() {
       const bountyAmountNum = parseFloat(actualBountyAmount);
       if (isNaN(bountyAmountNum) || bountyAmountNum <= 0) {
         setError("Invalid bounty amount");
+        setCreationStep(CreationStep.NONE);
         return;
       }
 
@@ -1083,6 +1100,7 @@ function AdminPageContent() {
           setError(
             `Insufficient ${actualToken.symbol} balance. You have ${ethBalance.formatted} ${actualToken.symbol} but need ${actualBountyAmount} ${actualToken.symbol}`
           );
+          setCreationStep(CreationStep.NONE);
           return;
         }
       } else if (actualToken) {
@@ -1122,10 +1140,12 @@ function AdminPageContent() {
           setError(
             `Insufficient ${actualToken.symbol} balance. You have ${actualDisplayBalance} ${actualToken.symbol} but need ${actualBountyAmount} ${actualToken.symbol}`
           );
+          setCreationStep(CreationStep.NONE);
           return;
         }
       } else {
         setError("Invalid token selection");
+        setCreationStep(CreationStep.NONE);
         return;
       }
 
@@ -1311,8 +1331,8 @@ function AdminPageContent() {
         chainId: chain?.id,
       });
 
-      // Create quiz in backend (no contract info yet)
-      const backendQuizId = await createQuizOnBackend(
+      // Create quiz in backend (no contract info yet) and initial game session
+      const { quizId: backendQuizId, roomCode } = await createQuizOnBackend(
         quiz,
         undefined, // Contract address (will be set later if bounty is added)
         chain.id, // network id
@@ -1324,12 +1344,12 @@ function AdminPageContent() {
         isPrivate
       );
 
-      console.log("Quiz saved to backend with ID:", backendQuizId);
+      console.log("Quiz saved to backend with ID:", backendQuizId, "and room code:", roomCode);
       if (scheduledStartIso) {
         console.log("Scheduling quiz start for", scheduledStartIso);
       }
 
-      // Start game session and join as creator
+      // Join existing game session as the creator
       setCreationStep(CreationStep.CREATING_ROOM);
       let generatedRoomCode: string;
       try {
@@ -1366,12 +1386,13 @@ function AdminPageContent() {
       // Store creator ID in localStorage
       localStorage.setItem("playerSessionId", creatorPlayerId);
 
-      // Store room code
-      setCreatedRoomCode(generatedRoomCode);
+      // Store quiz and room info
+      setCreatedQuizId(backendQuizId);
+      setCreatedRoomCode(roomCode);
       setIsCreating(false);
       setCreationStep(CreationStep.NONE);
 
-      return { quizId: backendQuizId, roomCode: generatedRoomCode };
+      return { quizId: backendQuizId, roomCode };
     } catch (err) {
       console.error("Error creating quiz:", err);
       const errorMessage =

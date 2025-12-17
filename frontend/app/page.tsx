@@ -13,6 +13,9 @@ import { generateQuizViaAI } from "@/lib/supabase-client";
 import { extractPdfText, extractTextFile } from "@/lib/utils";
 import type { GenerateQuizResponse } from "@/lib/backend-types";
 import { getTokensForNetwork } from "@/lib/token-config";
+import QuizCalendarButton from "@/components/QuizCalendarButton";
+import { useSound } from "@/lib/sound-context";
+import { hapticImpact } from "@/lib/haptics";
 
 export default function Home() {
   const { isFrameReady, setFrameReady } = useMiniKit();
@@ -72,10 +75,58 @@ export default function Home() {
     prize_token?: string | null;
     network_id?: number | null;
   };
+
+  // Upcoming quizzes banner state
+  type UpcomingQuiz = {
+    quizId: string;
+    title: string;
+    scheduled_start_time: string;
+    prize_amount?: number | null;
+    prize_token?: string | null;
+    network_id?: number | null;
+  };
+
   const [upcomingQuizzes, setUpcomingQuizzes] = useState<UpcomingQuiz[]>([]);
   const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
   const [timeRemaining, setTimeRemaining] = useState<Record<string, number>>({});
 
+  const [upcomingSessions, setUpcomingSessions] = useState<NextPublicSession[]>(
+    []
+  );
+  const [activeSessionIndex, setActiveSessionIndex] = useState(0);
+  const [timeRemainingMs, setTimeRemainingMs] = useState<number | null>(null);
+  const [bannerTouchStartX, setBannerTouchStartX] = useState<number | null>(
+    null
+  );
+
+  const { soundEnabled, toggleSound } = useSound();
+
+  const [globalRank, setGlobalRank] = useState<number | null>(null);
+  const [globalTotalPoints, setGlobalTotalPoints] = useState<number | null>(
+    null
+  );
+  const [isRankLoading, setIsRankLoading] = useState(false);
+
+  const currentSession =
+    upcomingSessions.length > 0
+      ? upcomingSessions[
+          Math.min(activeSessionIndex, upcomingSessions.length - 1)
+        ]
+      : null;
+
+  const goToNextSession = () => {
+    if (upcomingSessions.length <= 1) return;
+    setActiveSessionIndex((prev) =>
+      prev + 1 >= upcomingSessions.length ? 0 : prev + 1
+    );
+  };
+
+  const goToPreviousSession = () => {
+    if (upcomingSessions.length <= 1) return;
+    setActiveSessionIndex((prev) =>
+      prev - 1 < 0 ? upcomingSessions.length - 1 : prev - 1
+    );
+  };
 
   const isFarcasterMiniapp = Boolean(
     isMiniapp && miniappClient === "farcaster"
@@ -83,6 +134,261 @@ export default function Home() {
   const isBaseMiniapp = Boolean(isMiniapp && miniappClient === "base");
   const canEnableNotifications = isFarcasterMiniapp || isBaseMiniapp;
 
+  // Load global leaderboard rank for the authenticated user via backend API
+  useEffect(() => {
+    if (!loggedUser?.isAuthenticated || !loggedUser.session?.access_token) {
+      setGlobalRank(null);
+      setGlobalTotalPoints(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadRank = async () => {
+      setIsRankLoading(true);
+      try {
+        const res = await fetch("/api/leaderboard/me", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${loggedUser?.session?.access_token ?? ""}`,
+          },
+        });
+
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          console.error("[Home] Error loading global rank (API):", res.status, body);
+          if (!cancelled) {
+            setGlobalRank(null);
+            setGlobalTotalPoints(null);
+          }
+          return;
+        }
+
+        const json = (await res.json()) as {
+          data: { rank: number | null; total_points: number | null } | null;
+        };
+
+        if (cancelled) return;
+
+        setGlobalRank(json.data?.rank ?? null);
+        setGlobalTotalPoints(json.data?.total_points ?? null);
+      } catch (error) {
+        console.error("[Home] Error loading global rank:", error);
+        if (!cancelled) {
+          setGlobalRank(null);
+          setGlobalTotalPoints(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsRankLoading(false);
+        }
+      }
+    };
+
+    loadRank();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loggedUser?.isAuthenticated, loggedUser?.session?.access_token]);
+
+  // Fetch next upcoming public quiz (and its room code)
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchNextSessions = async () => {
+      try {
+        console.log("[Home] Fetching upcoming public quiz sessions...");
+        const nowIso = new Date().toISOString();
+        // First, find the next public scheduled quizzes (up to 15)
+        const { data: quizzes, error: quizError } = await supabase
+          .from("quizzes")
+          .select(
+            "id,title,scheduled_start_time,is_private,status,prize_amount,prize_token,network_id"
+          )
+          .eq("is_private", false)
+          .not("scheduled_start_time", "is", null)
+          .gt("scheduled_start_time", nowIso)
+          .in("status", ["pending", "starting"])
+          .order("scheduled_start_time", { ascending: true })
+          .limit(15);
+
+        if (quizError) {
+          console.error("Error fetching upcoming public quizzes:", quizError);
+          if (!cancelled) {
+            setUpcomingSessions([]);
+            setTimeRemainingMs(null);
+          }
+          return;
+        }
+
+        const quizRows =
+          (quizzes || []) as {
+            id: string;
+            title: string;
+            scheduled_start_time: string | null;
+            prize_amount?: number | null;
+            prize_token?: string | null;
+            network_id?: number | null;
+          }[];
+
+        console.log("[Home] Upcoming quiz candidates:", quizRows);
+
+        if (!quizRows.length) {
+          console.log("[Home] No suitable quizzes found for banner.");
+          if (!cancelled) {
+            setUpcomingSessions([]);
+            setTimeRemainingMs(null);
+          }
+          return;
+        }
+
+        const quizIds = quizRows
+          .filter((q) => q.scheduled_start_time)
+          .map((q) => q.id);
+
+        if (!quizIds.length) {
+          console.log("[Home] No quizzes with scheduled_start_time; hiding banner.");
+          if (!cancelled) {
+            setUpcomingSessions([]);
+            setTimeRemainingMs(null);
+          }
+          return;
+        }
+
+        // Then, find waiting/starting game sessions for those quizzes to get room codes
+        const { data: sessions, error: sessionError } = await supabase
+          .from("game_sessions")
+          .select("quiz_id,room_code,status,created_at")
+          .in("quiz_id", quizIds)
+          .in("status", ["waiting", "starting"])
+          .order("created_at", { ascending: true });
+
+        if (sessionError) {
+          console.error(
+            "Error fetching game sessions for upcoming quizzes:",
+            sessionError
+          );
+          if (!cancelled) {
+            setUpcomingSessions([]);
+            setTimeRemainingMs(null);
+          }
+          return;
+        }
+
+        const sessionRows =
+          (sessions || []) as {
+            quiz_id: string;
+            room_code: string | null;
+            status: string;
+            created_at: string;
+          }[];
+
+        // For each quiz, pick the earliest-created waiting/starting session
+        const sessionByQuizId = new Map<string, (typeof sessionRows)[number]>();
+        for (const s of sessionRows) {
+          if (!sessionByQuizId.has(s.quiz_id)) {
+            sessionByQuizId.set(s.quiz_id, s);
+          }
+        }
+
+        const combined: NextPublicSession[] = [];
+
+        for (const quiz of quizRows) {
+          if (!quiz.scheduled_start_time) continue;
+          const sessionRow = sessionByQuizId.get(quiz.id);
+          if (!sessionRow) continue;
+
+          const scheduledTime = new Date(quiz.scheduled_start_time).getTime();
+          const diff = scheduledTime - Date.now();
+          if (diff <= 0) continue;
+
+          combined.push({
+            quizId: quiz.id,
+            title: quiz.title,
+            scheduled_start_time: quiz.scheduled_start_time,
+            room_code: sessionRow.room_code ?? null,
+            prize_amount: quiz.prize_amount ?? null,
+            prize_token: quiz.prize_token ?? null,
+            network_id: quiz.network_id ?? null,
+          });
+        }
+
+        console.log("[Home] Filtered upcoming sessions with room codes:", combined);
+
+        if (!cancelled) {
+          if (!combined.length) {
+            console.log(
+              "[Home] No upcoming quizzes with active sessions; hiding banner."
+            );
+            setUpcomingSessions([]);
+            setTimeRemainingMs(null);
+            return;
+          }
+
+          // combined is already ordered by scheduled_start_time asc via quizzes query
+          setUpcomingSessions(combined);
+          setActiveSessionIndex(0);
+
+          const firstScheduledTime = new Date(
+            combined[0].scheduled_start_time
+          ).getTime();
+          setTimeRemainingMs(firstScheduledTime - Date.now());
+        }
+      } catch (err) {
+        console.error(
+          "Unexpected error loading next public quiz session:",
+          err
+        );
+      }
+    };
+
+    console.log("[Home] useEffect[supabase] running", {
+      hasSupabase: Boolean(supabase),
+    });
+
+    if (!supabase) {
+      console.warn("[Home] Supabase client not available, skipping fetch.");
+      return;
+    }
+    fetchNextSessions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  // Countdown timer for the next session
+  useEffect(() => {
+    const session = currentSession;
+    if (!session || !session.scheduled_start_time) {
+      return;
+    }
+
+    const scheduledTime = new Date(session.scheduled_start_time).getTime();
+
+    const update = () => {
+      const diff = scheduledTime - Date.now();
+      if (diff <= 0) {
+        setTimeRemainingMs(0);
+        return false;
+      }
+      setTimeRemainingMs(diff);
+      return true;
+    };
+
+    // Run once immediately
+    if (!update()) return;
+
+    const interval = setInterval(() => {
+      const keepRunning = update();
+      if (!keepRunning) {
+        clearInterval(interval);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [currentSession]);
 
   // Load intro modal preference from localStorage (client-side only)
   useEffect(() => {
@@ -223,6 +529,9 @@ export default function Home() {
         );
 
         if (gameSession) {
+          // Successful join: trigger medium impact haptic (Farcaster miniapp)
+          void hapticImpact("medium");
+
           // Navigate to lobby with room code
           router.push(`/quiz/lobby/${gamePin.trim().toUpperCase()}`);
         } else {
@@ -559,12 +868,15 @@ export default function Home() {
         }}
       />
 
-      {/* User badge in top right corner */}
-      <div
+      {/* Top-left sound toggle - always visible */}
+      <button
+        type="button"
+        onClick={toggleSound}
+        aria-label={soundEnabled ? "Mute sounds" : "Unmute sounds"}
         style={{
           position: "absolute",
-          top: "var(--spacing-md)",
-          right: "var(--spacing-md)",
+          top: "1rem",
+          left: "1rem",
           zIndex: 10,
         }}
       >

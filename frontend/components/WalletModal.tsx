@@ -478,7 +478,16 @@ export default function WalletModal({ onClose }: WalletModalProps) {
             <TokenSelector />
 
             {/* Address Display */}
-            <div className="bg-gray-900 rounded-lg p-6 text-center">
+            <div className="bg-gray-900 rounded-lg p-6 text-center relative">
+              <button
+                onClick={() => setViewMode("main")}
+                className="absolute top-3 right-3 text-gray-400 hover:text-white transition-colors"
+                aria-label="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
               <p className="text-gray-400 text-sm mb-4">Your Wallet Address</p>
               {walletAddress && (
                 <div className="mb-4 flex justify-center">

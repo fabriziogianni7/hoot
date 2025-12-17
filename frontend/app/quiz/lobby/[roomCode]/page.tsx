@@ -19,6 +19,8 @@ import Footer from "@/components/Footer";
 import { sdk } from "@farcaster/miniapp-sdk";
 import QRCodeModal from "@/components/QRCodeModal";
 import { callEdgeFunction } from "@/lib/supabase-client";
+import { hapticImpact } from "@/lib/haptics";
+import { AdsterixWidget } from "@nektarlabs/adsterix-widget";
 
 function LobbyContent() {
   const router = useRouter();
@@ -736,6 +738,9 @@ function LobbyContent() {
     if (countdown === null || countdown <= 0) return;
 
     const timer = setTimeout(() => {
+      // Provide light impact feedback for each countdown tick
+      void hapticImpact("light");
+
       setCountdown(countdown - 1);
 
       if (countdown === 1 && joined && currentGame) {
@@ -1867,6 +1872,7 @@ function LobbyContent() {
               )}
             </div>
 
+
             {/* Chat Component */}
             <div className="rounded-lg p-6 mb-8 w-full max-w-md" style={{ backgroundColor: "var(--color-surface-elevated)", border: "1px solid var(--color-primary-medium)" }}>
         <h2 className="text-xl font-semibold mb-4 flex items-center justify-between" style={{ color: "var(--color-text-secondary)" }}>
@@ -1876,6 +1882,8 @@ function LobbyContent() {
             </span>
           )}
         </h2>
+
+        
 
         {/* Creator Banners - Only show to non-creators, only latest message */}
         {!isCreator && creatorBanners.length > 0 && (
@@ -2106,6 +2114,26 @@ function LobbyContent() {
           </form>
         )}
       </div>
+
+       {/* Adsterix Sponsored Banner */}
+       <div className="bg-purple-900/40 border border-purple-700/70 rounded-lg p-4 mb-8 w-full max-w-md">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-semibold uppercase tracking-wide text-purple-200">
+                  Sponsored
+                </span>
+                <span className="text-[10px] text-purple-300">
+                  Powered by Adsterix
+                </span>
+              </div>
+              <AdsterixWidget
+                castHash="0xb060d3a4f9397115665760d58b53d0645aa0fdd1"
+                width="100%"
+              />
+                <span className="text-[10px] text-purple-300 mt-2">
+                  Buy a slot at 11.00 or 18.00 UTC+1 to be featured on a Hoot!
+                </span>
+            </div>
+
 
             {joined && (
               <div className="w-full max-w-md flex flex-col gap-4">
